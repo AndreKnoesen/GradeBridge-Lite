@@ -1,0 +1,5 @@
+{
+  "name": "GradeBridge-Lite",
+  "description": "A pure client-side student submission application for academic assignments. Features auto-save, local processing, and professional PDF generation.",
+  "requestFramePermissions": []
+}
