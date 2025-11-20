@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
+import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
-import { AlertTriangle, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -303,45 +304,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Privacy Modal */}
-      {showPrivacyModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
-             <div className="bg-blue-900 p-6 text-white flex items-center gap-3">
-                <ShieldCheck className="w-8 h-8" />
-                <div>
-                    <h2 className="text-lg font-bold">Privacy & Security Notice</h2>
-                    <p className="text-blue-200 text-xs">GradeBridge Lite | Student Edition</p>
-                </div>
-             </div>
-             <div className="p-6 space-y-4 text-sm text-gray-600 leading-relaxed">
-                <p>
-                    <strong>100% Local Execution:</strong> This application runs entirely in your browser. 
-                    No student data, answers, or files are ever sent to a server.
-                </p>
-                <p>
-                    <strong>FERPA Compliance:</strong> Because data never leaves your device until you submit the final PDF to your instructor, 
-                    your educational records remain in your control.
-                </p>
-                <p>
-                    <strong>Data Persistence:</strong> Your work is saved to your browser's "Local Storage". 
-                    Please do not clear your browser cache while working on an assignment. We recommend using the "Backup" feature frequently.
-                </p>
-                <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs">
-                    <strong>Disclaimer:</strong> This software is provided "as is", without warranty of any kind. 
-                    MIT License.
-                </div>
-             </div>
-             <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end">
-                <button 
-                  onClick={acceptPrivacy}
-                  className="bg-blue-800 hover:bg-blue-700 text-white px-6 py-2 rounded font-medium transition-colors"
-                >
-                    I Understand & Agree
-                </button>
-             </div>
-          </div>
-        </div>
-      )}
+      {showPrivacyModal && <PrivacyNotice onAccept={acceptPrivacy} />}
     </div>
   );
 };

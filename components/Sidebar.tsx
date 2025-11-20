@@ -37,8 +37,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="w-full lg:w-[320px] bg-slate-900 text-slate-100 flex flex-col h-full shadow-2xl overflow-y-auto z-20">
       <div className="p-6 border-b border-slate-700 bg-slate-950">
-        <h1 className="text-xl font-bold text-white tracking-tight">GradeBridge Lite</h1>
-        <div className="text-xs text-slate-400 mt-1">BridgeSuite | Student Submission Tool</div>
+        <div className="flex items-center gap-3 mb-2">
+          <img src="/logos/BridgeSuite.png" alt="BridgeSuite" className="w-10 h-10 object-contain" />
+          <div>
+            <h1 className="text-lg font-bold text-white">Veri<span className="text-[#00A4E4]">Q</span>Ai</h1>
+            <div className="text-xs text-slate-400">Student Submission</div>
+          </div>
+        </div>
         <div className="text-[10px] text-slate-600 mt-1 font-mono">{VERSION}</div>
       </div>
 
