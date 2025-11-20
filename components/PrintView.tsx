@@ -83,7 +83,7 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
         {elements.map((type, idx) => {
           if (type === SUBMISSION_TYPES.TEXT && data.textAnswer) {
             return (
-              <div key={idx} className="p-6 bg-white border-2 border-gray-200 rounded font-serif text-base leading-relaxed text-black">
+              <div key={idx} className="font-serif text-base leading-relaxed text-black">
                 <LatexContent content={data.textAnswer} />
               </div>
             );
@@ -93,19 +93,19 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
             return (
               <div key={idx} className="text-center">
                 <div className="text-xs text-gray-500 mb-1 text-left font-bold uppercase tracking-wider">Image 1 of {data.imageAnswers.length}</div>
-                <img 
-                  src={data.imageAnswers[0]} 
-                  alt="Student work" 
-                  // STRICT HEIGHT CONTROL: Max 60mm on the problem page to ensure it fits with text
-                  className="max-w-full max-h-[60mm] border-2 border-gray-800 shadow-sm inline-block object-contain" 
+                <img
+                  src={data.imageAnswers[0]}
+                  alt="Student work"
+                  // Increased to 140mm for better readability
+                  className="max-w-full max-h-[140mm] border-2 border-gray-800 shadow-sm inline-block object-contain" 
                 />
               </div>
             );
           }
           if (type === SUBMISSION_TYPES.AI && data.aiReflective) {
             return (
-              <div key={idx} className="p-5 bg-purple-50 border-2 border-purple-100 rounded text-sm text-purple-900">
-                <strong className="block text-purple-900 text-base mb-2 uppercase tracking-wide">AI Reflection & Tools Used:</strong>
+              <div key={idx} className="text-sm text-gray-900">
+                <strong className="block text-gray-700 text-base mb-2 uppercase tracking-wide">AI Reflection & Tools Used:</strong>
                 <div className="whitespace-pre-wrap"><LatexContent content={data.aiReflective} /></div>
               </div>
             );
@@ -153,8 +153,9 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
          // Case A: NO Subsections
          if (!hasSubsections) {
             const submission = submissionData[problemId];
-            const extraImages = submission?.imageAnswers?.slice(1) || [];
-            const hasExtraPages = extraImages.length > 0;
+            const maxImages = problem.max_images_allowed || 0;
+            const uploadedImages = submission?.imageAnswers || [];
+            const hasExtraPages = maxImages > 1; // Extra pages if max > 1 (first image is on main page)
 
             return (
               <React.Fragment key={pIdx}>
@@ -164,45 +165,55 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
                       <h3 className="text-2xl font-bold text-black">Problem {pIdx + 1}</h3>
                       <span className="text-lg font-bold text-gray-600 bg-gray-100 px-3 py-1 rounded">{problem.points} Points</span>
                   </div>
-                  
+
                   <div className="mb-6 font-serif text-lg leading-relaxed text-gray-800 text-justify flex-none">
                       <LatexContent content={problem.problem_statement} />
                   </div>
 
                   {problem.problem_image && (
                     <div className="mb-6 text-center flex-none">
-                      <img 
-                        src={`data:${problem.problem_image.content_type};base64,${problem.problem_image.data}`} 
-                        className="max-w-full max-h-[60mm] mx-auto shadow-sm border border-gray-200"
-                        alt="Problem Diagram" 
+                      <img
+                        src={`data:${problem.problem_image.content_type};base64,${problem.problem_image.data}`}
+                        className="max-w-full max-h-[120mm] mx-auto shadow-sm border border-gray-200"
+                        alt="Problem Diagram"
                       />
                     </div>
                   )}
 
                   {/* Red Line: Start of Answer */}
                   <StartMarker />
-                  
+
                   <div className="flex-none">
                     <RenderMainAnswer data={submission} elements={problem.submission_elements || []} />
                   </div>
-                  
+
                   {/* Blue Line: End of Answer (Only if NO extra pages) */}
                   {!hasExtraPages && <EndMarker />}
                 </Page>
 
-                {/* Extra Pages for Additional Images - End Marker on LAST page */}
-                {extraImages.map((img, imgIdx) => {
-                   const isLast = imgIdx === extraImages.length - 1;
+                {/* Extra Pages for Additional Images - ALWAYS create pages for max_images_allowed */}
+                {maxImages > 1 && Array.from({ length: maxImages - 1 }).map((_, imgIdx) => {
+                   const actualImageIndex = imgIdx + 1; // Images 2, 3, etc.
+                   const img = uploadedImages[actualImageIndex];
+                   const isLast = imgIdx === maxImages - 2; // Last slot
+
                    return (
-                    <Page key={`extra-${imgIdx}`} title={assignment.course_code} subtitle={`Problem ${pIdx + 1} (Image ${imgIdx + 2})`}>
-                        <div className="text-sm text-gray-500 mb-2 font-bold uppercase tracking-wider flex-none">Image {imgIdx + 2} of {extraImages.length + 1}</div>
+                    <Page key={`extra-${imgIdx}`} title={assignment.course_code} subtitle={`Problem ${pIdx + 1} (Image ${actualImageIndex + 1})`}>
+                        <div className="text-sm text-gray-500 mb-2 font-bold uppercase tracking-wider flex-none">
+                          Image {actualImageIndex + 1} of {maxImages}
+                        </div>
                         <div className="flex-1 flex items-start justify-center">
-                            <img 
-                              src={img} 
-                              alt={`Extra ${imgIdx}`} 
-                              // Max 180mm to allow room for End Marker at bottom
-                              className="max-w-full max-h-[180mm] border-2 border-gray-800 shadow-sm object-contain" 
-                            />
+                            {img ? (
+                              <img
+                                src={img}
+                                alt={`Student work ${actualImageIndex + 1}`}
+                                className="max-w-full max-h-[240mm] border-2 border-gray-800 shadow-sm object-contain"
+                              />
+                            ) : (
+                              <div className="text-gray-400 italic text-center p-8 border-2 border-dashed border-gray-300 rounded">
+                                No image submitted for this slot
+                              </div>
+                            )}
                         </div>
                         {isLast && <EndMarker />}
                     </Page>
@@ -226,10 +237,10 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
                  </div>
                  {problem.problem_image && (
                     <div className="mt-8 text-center flex-none">
-                      <img 
-                        src={`data:${problem.problem_image.content_type};base64,${problem.problem_image.data}`} 
-                        className="max-w-full max-h-[140mm] mx-auto shadow-sm border border-gray-200"
-                        alt="Problem Diagram" 
+                      <img
+                        src={`data:${problem.problem_image.content_type};base64,${problem.problem_image.data}`}
+                        className="max-w-full max-h-[160mm] mx-auto shadow-sm border border-gray-200"
+                        alt="Problem Diagram"
                       />
                     </div>
                  )}
@@ -239,8 +250,9 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
               {problem.subsections!.map((sub, sIdx) => {
                  const subId = `${problemId}_s${sIdx}`;
                  const submission = submissionData[subId];
-                 const extraImages = submission?.imageAnswers?.slice(1) || [];
-                 const hasExtraPages = extraImages.length > 0;
+                 const maxImages = sub.max_images_allowed || 0;
+                 const uploadedImages = submission?.imageAnswers || [];
+                 const hasExtraPages = maxImages > 1; // Extra pages if max > 1 (first image is on main page)
 
                  return (
                    <React.Fragment key={sIdx}>
@@ -252,32 +264,43 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
                             <span>Part {String.fromCharCode(97 + sIdx)}</span>
                             <span className="text-lg font-normal text-gray-500 ml-auto">({sub.points} points)</span>
                          </div>
-                         
+
                          <div className="p-4 bg-gray-50 border-l-4 border-gray-300 mb-6 font-serif text-lg text-gray-800 flex-none">
                             <LatexContent content={sub.subsection_statement} />
                          </div>
 
                          <StartMarker />
-                         
+
                          <div className="flex-none">
                            <RenderMainAnswer data={submission} elements={sub.submission_elements} />
                          </div>
-                         
+
                          {!hasExtraPages && <EndMarker />}
                       </Page>
 
-                      {/* Extra Pages for Additional Images in Subsection */}
-                      {extraImages.map((img, imgIdx) => {
-                        const isLast = imgIdx === extraImages.length - 1;
+                      {/* Extra Pages for Additional Images in Subsection - ALWAYS create pages for max_images_allowed */}
+                      {maxImages > 1 && Array.from({ length: maxImages - 1 }).map((_, imgIdx) => {
+                        const actualImageIndex = imgIdx + 1; // Images 2, 3, etc.
+                        const img = uploadedImages[actualImageIndex];
+                        const isLast = imgIdx === maxImages - 2; // Last slot
+
                         return (
-                          <Page key={`sub-extra-${imgIdx}`} title={assignment.course_code} subtitle={`Problem ${pIdx + 1}(${String.fromCharCode(97 + sIdx)}) - Image ${imgIdx + 2}`}>
-                                <div className="text-sm text-gray-500 mb-2 font-bold uppercase tracking-wider flex-none">Image {imgIdx + 2} of {extraImages.length + 1}</div>
+                          <Page key={`sub-extra-${imgIdx}`} title={assignment.course_code} subtitle={`Problem ${pIdx + 1}(${String.fromCharCode(97 + sIdx)}) - Image ${actualImageIndex + 1}`}>
+                                <div className="text-sm text-gray-500 mb-2 font-bold uppercase tracking-wider flex-none">
+                                  Image {actualImageIndex + 1} of {maxImages}
+                                </div>
                                 <div className="flex-1 flex items-start justify-center">
-                                    <img 
-                                      src={img} 
-                                      alt={`Extra ${imgIdx}`} 
-                                      className="max-w-full max-h-[180mm] border-2 border-gray-800 shadow-sm object-contain" 
-                                    />
+                                    {img ? (
+                                      <img
+                                        src={img}
+                                        alt={`Student work ${actualImageIndex + 1}`}
+                                        className="max-w-full max-h-[240mm] border-2 border-gray-800 shadow-sm object-contain"
+                                      />
+                                    ) : (
+                                      <div className="text-gray-400 italic text-center p-8 border-2 border-dashed border-gray-300 rounded">
+                                        No image submitted for this slot
+                                      </div>
+                                    )}
                                 </div>
                                 {isLast && <EndMarker />}
                           </Page>
