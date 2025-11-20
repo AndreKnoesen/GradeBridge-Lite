@@ -8,7 +8,7 @@ interface PrivacyNoticeProps {
 export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto">
         <div className="bg-gradient-to-r from-academic-800 to-academic-900 text-white p-6 rounded-t-lg">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-8 h-8" />
@@ -19,7 +19,7 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
           </div>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-4">
           <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
             <ShieldCheck className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
@@ -76,10 +76,10 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
           </div>
         </div>
 
-        <div className="p-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+        <div className="p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
           <button
             onClick={onAccept}
-            className="w-full bg-academic-800 text-white py-3 px-6 rounded-md font-medium hover:bg-academic-900 transition-colors shadow-sm"
+            className="w-full bg-academic-800 text-white py-2.5 px-6 rounded-md font-medium hover:bg-academic-900 transition-colors shadow-sm"
           >
             I Understand - Continue to Submission App
           </button>
