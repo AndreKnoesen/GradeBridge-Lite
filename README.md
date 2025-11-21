@@ -1,4 +1,4 @@
-# GradeBridge-Lite
+# GradeBridge-Student-Submission
 
 A pure client-side student submission application for academic assignments with auto-save, LaTeX support, and professional PDF generation designed for Gradescope compatibility.
 
@@ -9,7 +9,7 @@ A pure client-side student submission application for academic assignments with 
 
 ## Overview
 
-**GradeBridge-Lite** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format. All processing happens **entirely in the browser** - no server required, no data transmitted anywhere.
+**GradeBridge-Student-Submission** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format. All processing happens **entirely in the browser** - no server required, no data transmitted anywhere.
 
 ### Key Features
 
@@ -81,7 +81,7 @@ npm run preview
 
 ### 1. First Time Setup
 
-When you first open GradeBridge-Lite, you'll see a **privacy notice** explaining that all data is stored locally in your browser. Click "I Understand" to proceed.
+When you first open GradeBridge-Student-Submission, you'll see a **privacy notice** explaining that all data is stored locally in your browser. Click "I Understand" to proceed.
 
 ### 2. Load an Assignment
 
@@ -157,7 +157,7 @@ Click **"Load Work"** and select a previously exported JSON backup to restore yo
 
 ## Assignment JSON Format
 
-Instructors create assignments using the **GradeBridge-Lite Assignment Maker**. The JSON structure:
+Instructors create assignments using the **GradeBridge-Student-Submission Assignment Maker**. The JSON structure:
 
 ```json
 {
@@ -208,7 +208,7 @@ Instructors create assignments using the **GradeBridge-Lite Assignment Maker**. 
 
 ### What Gets Stored
 
-GradeBridge-Lite stores data in **browser localStorage**:
+GradeBridge-Student-Submission stores data in **browser localStorage**:
 
 - **Key**: `gradebridge_submission`
 - **Contains**: Student info, assignment structure, all answers
@@ -235,7 +235,7 @@ GradeBridge-Lite stores data in **browser localStorage**:
 ## File Structure
 
 ```
-GradeBridge-Lite/
+GradeBridge-Student-Submission/
 ├── App.tsx                          # Main application component
 ├── index.tsx                        # Entry point
 ├── types.ts                         # TypeScript interfaces
@@ -257,7 +257,7 @@ GradeBridge-Lite/
 
 ## Gradescope Coordination
 
-GradeBridge-Lite PDFs are designed to match **Assignment Maker** template PDFs for Gradescope auto-grading.
+GradeBridge-Student-Submission PDFs are designed to match **Assignment Maker** template PDFs for Gradescope auto-grading.
 
 **Critical Requirements**:
 - One page per subsection
