@@ -1,6 +1,6 @@
 # GradeBridge-Student-Submission
 
-A pure client-side student submission application for academic assignments with auto-save, LaTeX support, and professional PDF generation designed for Gradescope compatibility.
+An open source community edition pure client-side student submission application for academic assignments with auto-save, LaTeX support, and professional PDF generation designed for Gradescope compatibility.
 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -9,7 +9,12 @@ A pure client-side student submission application for academic assignments with 
 
 ## Overview
 
-**GradeBridge-Student-Submission** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format. All processing happens **entirely in the browser** - no server required, no data transmitted anywhere.
+**GradeBridge Student Submission** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format.
+
+100% Local: All processing happens entirely in your browser. No server is required, and no student data is ever transmitted over the internet.
+
+Open Source: This is a free, community-supported tool maintained by the BridgeSuite Open Source Project.
+
 
 ### Key Features
 
@@ -377,3 +382,4 @@ MIT License - see LICENSE file for details
 
 **Version**: 3.0.0
 **Last Updated**: November 2025
+
