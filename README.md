@@ -5,7 +5,7 @@ An open source community edition pure client-side student submission application
 ![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**🚀 [Live Demo](https://andreknoesen.github.io/GradeBridge-Student-Submission/)** - Try the app now!
+**🚀 [Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** - Try the app now!
 
 ## Overview
 
@@ -51,7 +51,7 @@ Open Source: This is a free, community-supported tool maintained by the BridgeSu
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/AndreKnoesen/GradeBridge-Student-Submission.git
+   git clone https://github.com/BridgeSuite/GradeBridge-Student-Submission.git
    cd GradeBridge-Student-Submission
    ```
 
@@ -162,7 +162,7 @@ Click **"Load Work"** and select a previously exported JSON backup to restore yo
 
 ## Assignment JSON Format
 
-Instructors create assignments using the **GradeBridge-Student-Submission Assignment Maker**. The JSON structure:
+Instructors create assignments using the **GradeBridge Assignment Maker**. The JSON structure:
 
 ```json
 {
@@ -367,9 +367,9 @@ MIT License - see LICENSE file for details
 
 ## Contact & Support
 
-- **GitHub**: [AndreKnoesen/GradeBridge-Student-Submission](https://github.com/AndreKnoesen/GradeBridge-Student-Submission)
-- **Issues**: [GitHub Issues](https://github.com/AndreKnoesen/GradeBridge-Student-Submission/issues)
-- **Live App**: [https://andreknoesen.github.io/GradeBridge-Student-Submission/](https://andreknoesen.github.io/GradeBridge-Student-Submission/)
+- **GitHub**: [BridgeSuite/GradeBridge-Student-Submission](https://github.com/BridgeSuite/GradeBridge-Student-Submission)
+- **Issues**: [GitHub Issues](https://github.com/BridgeSuite/GradeBridge-Student-Submission/issues)
+- **Live App**: [https://bridgesuite.github.io/GradeBridge-Student-Submission/](https://bridgesuite.github.io/GradeBridge-Student-Submission/)
 
 ## Acknowledgments
 
@@ -377,9 +377,3 @@ MIT License - see LICENSE file for details
 - LaTeX rendering by [KaTeX](https://katex.org/)
 - PDF generation by [html2pdf.js](https://github.com/eKoopmans/html2pdf.js)
 - Icons by [Lucide](https://lucide.dev/)
-
----
-
-**Version**: 3.0.0
-**Last Updated**: November 2025
-
