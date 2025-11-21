@@ -5,6 +5,8 @@ A pure client-side student submission application for academic assignments with 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
+**🚀 [Live Demo](https://andreknoesen.github.io/GradeBridge-Student-Submission/)** - Try the app now!
+
 ## Overview
 
 **GradeBridge-Lite** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format. All processing happens **entirely in the browser** - no server required, no data transmitted anywhere.
@@ -44,8 +46,8 @@ A pure client-side student submission application for academic assignments with 
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/AndreKnoesen/GradeBridge-Lite.git
-   cd GradeBridge-Lite
+   git clone https://github.com/AndreKnoesen/GradeBridge-Student-Submission.git
+   cd GradeBridge-Student-Submission
    ```
 
 2. **Install dependencies**:
@@ -360,8 +362,9 @@ MIT License - see LICENSE file for details
 
 ## Contact & Support
 
-- **GitHub**: [AndreKnoesen/GradeBridge-Lite](https://github.com/AndreKnoesen/GradeBridge-Lite)
-- **Issues**: [GitHub Issues](https://github.com/AndreKnoesen/GradeBridge-Lite/issues)
+- **GitHub**: [AndreKnoesen/GradeBridge-Student-Submission](https://github.com/AndreKnoesen/GradeBridge-Student-Submission)
+- **Issues**: [GitHub Issues](https://github.com/AndreKnoesen/GradeBridge-Student-Submission/issues)
+- **Live App**: [https://andreknoesen.github.io/GradeBridge-Student-Submission/](https://andreknoesen.github.io/GradeBridge-Student-Submission/)
 
 ## Acknowledgments
 
