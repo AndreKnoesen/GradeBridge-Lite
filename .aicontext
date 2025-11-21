@@ -1,0 +1,506 @@
+# GradeBridge Student Submission - AI Context
+
+## Project Overview
+
+**Name**: GradeBridge Student Submission
+**Purpose**: Client-side web application for students to complete and submit academic assignments with professional PDF generation for Gradescope
+**Organization**: BridgeSuite (Open Source Educational Tools)
+**Repository**: https://github.com/BridgeSuite/GradeBridge-Student-Submission
+**Live App**: https://bridgesuite.github.io/GradeBridge-Student-Submission/
+**License**: MIT
+
+**Key Philosophy**: 100% client-side, privacy-first, no server required, no data transmission
+
+---
+
+## Architecture
+
+### Tech Stack
+- **React 19.2** with **TypeScript** (strict mode)
+- **Vite 6.2** for build and dev server
+- **No backend** - purely client-side application
+- **LocalStorage** for data persistence
+- **External CDN libraries**:
+  - KaTeX (LaTeX math rendering)
+  - html2pdf.js (PDF generation)
+- **Lucide React** for icons
+
+### Build Configuration
+```typescript
+// vite.config.ts
+base: '/GradeBridge-Student-Submission/'  // CRITICAL for GitHub Pages
+server: { port: 3001 }
+```
+
+### Deployment
+- **Platform**: GitHub Pages
+- **Branch**: `gh-pages` (auto-created by gh-pages package)
+- **Deploy command**: `npm run deploy`
+- **Important files**:
+  - `public/.nojekyll` - Prevents Jekyll processing (required for _assets folder)
+  - Deploy script uses `--dotfiles` flag to include .nojekyll
+
+### GitHub Pages Setup Requirements
+1. Vite base path must match repo name
+2. `.nojekyll` file in public/ directory
+3. gh-pages package with `--dotfiles` flag
+4. GitHub Pages settings: Deploy from `gh-pages` branch (NOT main)
+5. Script paths must be relative (`./index.tsx` not `/index.tsx`)
+6. NO importmaps - let Vite bundle dependencies
+
+---
+
+## Critical Requirements
+
+### Privacy & Data
+- **NO external API calls** (except CDN for KaTeX/html2pdf)
+- **NO analytics or tracking**
+- **NO cookies**
+- **LocalStorage only** for persistence (key: `gradebridge_submission`)
+- All processing happens in browser
+- Data never leaves student's device (unless they export)
+
+### Gradescope Compatibility
+- **One page per subsection** in PDF output
+- **Consistent headers** on all pages (student info, course code, problem number)
+- **Page breaks** enforced between subsections
+- **Problem numbering** must match Assignment Maker template PDFs
+- Image answers get dedicated full pages
+- PDF filename format: `{StudentID}_{StudentName}_{CourseCode}.pdf`
+
+### Auto-Save
+- Saves to localStorage **every 1 second**
+- Prevents data loss from browser crashes
+- Sidebar shows last save timestamp
+- Must be reliable and non-intrusive
+
+---
+
+## File Structure
+
+```
+GradeBridge-Lite/
+├── App.tsx                    # Main app component, state management
+├── index.tsx                  # Entry point, renders App
+├── types.ts                   # TypeScript interfaces (Assignment, Problem, Submission)
+├── constants.ts               # Colors, branding, app constants
+├── components/
+│   ├── Sidebar.tsx            # Left sidebar (controls, student info, actions)
+│   ├── ProblemRenderer.tsx    # Renders problems and subsections
+│   ├── SubmissionWidget.tsx   # Input widgets (text, image, AI reflective)
+│   ├── PrintView.tsx          # PDF layout component (hidden, used for PDF gen)
+│   ├── KatexRenderer.tsx      # LaTeX rendering wrapper
+│   └── PrivacyNotice.tsx      # Privacy modal (shown on first use)
+├── public/
+│   └── .nojekyll              # CRITICAL: Prevents GitHub Pages Jekyll processing
+├── index.html                 # Loads KaTeX and html2pdf from CDN
+├── vite.config.ts             # Vite config with base path
+├── package.json               # Dependencies and deploy scripts
+├── .github/                   # Contribution templates
+│   ├── CONTRIBUTING.md
+│   ├── ISSUE_TEMPLATE/
+│   └── PULL_REQUEST_TEMPLATE.md
+└── README.md                  # Comprehensive user guide
+```
+
+---
+
+## Key Components
+
+### App.tsx
+- Main state management (assignment, student info, submissions)
+- Auto-save logic (1-second interval)
+- PDF generation orchestration
+- LocalStorage read/write
+- JSON import/export for backups
+
+### Sidebar.tsx
+- Student information input (name, ID)
+- Load assignment JSON button
+- Export work (JSON backup)
+- Load work (restore from backup)
+- Preview PDF / Download PDF buttons
+- Clear all data button
+- Last save timestamp display
+
+### ProblemRenderer.tsx
+- Renders problem statements with images
+- Handles subsections
+- Displays points for each problem/subsection
+- Integrates SubmissionWidget for each subsection
+
+### SubmissionWidget.tsx
+- **Text input**: Textarea with LaTeX preview (KatexRenderer)
+- **Image input**: Drag-and-drop + click to browse, shows thumbnails
+- **AI Reflective**: Multi-field form for documenting AI tool usage
+- Max image limits enforced per subsection
+- Real-time validation
+
+### PrintView.tsx
+- Hidden component (only shown during PDF generation)
+- Mimics Gradescope-compatible layout
+- Headers on every page
+- One page per subsection
+- Page breaks enforced via CSS
+- Called by html2pdf.js when generating PDF
+
+### KatexRenderer.tsx
+- Parses text for LaTeX ($...$ and $$...$$)
+- Renders math with KaTeX library
+- Error handling for malformed LaTeX
+- Inline vs display mode
+
+### PrivacyNotice.tsx
+- Modal shown on first app load
+- Explains data storage and privacy
+- "I Understand" button sets localStorage flag
+- Only shows once per browser
+
+---
+
+## Data Flow
+
+### 1. Load Assignment
+```
+User selects JSON file
+  → FileReader reads file
+  → Validate JSON structure
+  → Parse assignment object
+  → Update state
+  → Auto-save triggers
+```
+
+### 2. Student Answers
+```
+User types/uploads
+  → State updates immediately
+  → Auto-save (debounced 1 sec)
+  → Write to localStorage
+  → Update "last saved" timestamp
+```
+
+### 3. Generate PDF
+```
+User clicks "Download PDF"
+  → Validate required fields
+  → Show PrintView component
+  → html2pdf.js renders PrintView
+  → Generate PDF blob
+  → Download PDF file
+  → Also download JSON backup
+  → Clear localStorage (optional)
+```
+
+### 4. Export/Import
+```
+Export: Serialize state → JSON file download
+Import: Read JSON file → Validate → Update state → Auto-save
+```
+
+---
+
+## Assignment JSON Format
+
+```json
+{
+  "assignment_title": "Mini-Project 1",
+  "course_code": "ECE416",
+  "course_name": "Digital Control Systems",
+  "preamble": "Instructions...",
+  "total_points": 50,
+  "problems": [
+    {
+      "problem_statement": "Problem text...",
+      "points": 10,
+      "problem_image": {
+        "data": "base64_encoded_image",
+        "content_type": "image/png",
+        "filename": "diagram.png"
+      },
+      "subsections": [
+        {
+          "subsection_statement": "Part (a) text",
+          "points": 5,
+          "submission_elements": ["Answer as text", "Answer as image", "AI Reflective"],
+          "max_images_allowed": 2
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Fields**:
+- `submission_elements`: Array of allowed answer types
+  - `"Answer as text"` → Text/LaTeX input
+  - `"Answer as image"` → Image uploads
+  - `"AI Reflective"` → AI usage documentation
+- `max_images_allowed`: Maximum images for image-based answers
+- `problem_image`: Base64 image attached to problem statement
+- `subsections`: Optional sub-parts of a problem
+
+---
+
+## Common Tasks
+
+### Add a New Submission Type
+1. Update `types.ts` → Add to `SubmissionElement` type
+2. Update `SubmissionWidget.tsx` → Add new widget UI
+3. Update `PrintView.tsx` → Add rendering for PDF output
+4. Test with sample assignment
+5. Update README with new submission type
+
+### Modify PDF Layout
+1. Edit `PrintView.tsx` → Change CSS or structure
+2. Test with `npm run dev` → Click "Preview PDF"
+3. Check page breaks with multi-problem assignments
+4. Verify headers/footers match Gradescope template
+5. Test with images (ensure they fit on page)
+
+### Fix Auto-Save Issues
+1. Check `App.tsx` → `useEffect` with 1-second interval
+2. Verify localStorage write in browser DevTools (Application tab)
+3. Check for errors in console
+4. Test browser refresh (data should persist)
+5. Verify "last saved" timestamp updates
+
+### Update Dependencies
+```bash
+npm update              # Update to latest compatible versions
+npm run build           # Test build succeeds
+npm run preview         # Test production build
+npm run deploy          # Deploy to GitHub Pages
+```
+
+### Add New Feature
+1. Create feature branch: `git checkout -b feature/feature-name`
+2. Implement changes (follow TypeScript strict mode)
+3. Test locally: `npm run dev`
+4. Build: `npm run build && npm run preview`
+5. Commit with descriptive message
+6. Push and create PR using template
+7. Mention in CHANGELOG if significant
+
+---
+
+## Testing Workflows
+
+### Manual Testing Checklist
+- [ ] Load assignment JSON (valid and invalid)
+- [ ] Enter student information
+- [ ] Complete text answers with LaTeX
+- [ ] Upload images (single, multiple, exceed limit)
+- [ ] Complete AI reflective documentation
+- [ ] Export work (JSON backup)
+- [ ] Load work (restore from backup)
+- [ ] Generate PDF (preview and download)
+- [ ] Browser refresh (verify auto-save)
+- [ ] Clear all data
+- [ ] Test on multiple browsers (Chrome, Firefox, Safari, Edge)
+
+### Test Assignments
+Create test JSONs with:
+- 1 problem, 1 subsection (minimal)
+- 10 problems, 20 subsections (large)
+- Problems with images
+- All submission types
+- Long text with LaTeX
+
+### Browser Compatibility
+- Chrome 90+ ✅
+- Firefox 88+ ✅
+- Safari 14+ ✅
+- Edge 90+ ✅
+- IE 11 ❌ (not supported)
+
+---
+
+## Deployment Process
+
+### Step-by-Step
+```bash
+# 1. Make changes locally
+npm run dev              # Test in development
+
+# 2. Build for production
+npm run build            # Creates dist/ folder
+
+# 3. Preview production build
+npm run preview          # Test at http://localhost:4173
+
+# 4. Deploy to GitHub Pages
+npm run deploy           # Pushes dist/ to gh-pages branch
+
+# 5. Verify deployment
+# Go to: https://bridgesuite.github.io/GradeBridge-Student-Submission/
+# Hard refresh (Ctrl+Shift+R) to bypass cache
+```
+
+### Troubleshooting Deployment
+
+**Blank page after deployment:**
+- Check GitHub Pages settings: Should deploy from `gh-pages` branch
+- Verify `base` in vite.config.ts matches repo name
+- Check `.nojekyll` exists in dist/ folder (use `--dotfiles` flag)
+- Look for console errors in browser DevTools
+- Hard refresh or try incognito mode
+
+**Assets not loading (404):**
+- Verify base path in vite.config.ts
+- Check script paths are relative (`./index.tsx` not `/index.tsx`)
+- Ensure no importmaps (use bundled dependencies)
+
+**PDF generation fails:**
+- Check internet connection (html2pdf loads from CDN)
+- Verify html2pdf script in index.html
+- Check console for errors
+- Try different browser
+
+---
+
+## Code Style & Patterns
+
+### TypeScript
+- Use **strict mode** (no `any` types unless absolutely necessary)
+- Define interfaces in `types.ts`
+- Use **const** by default, **let** only for reassignment
+- Prefer functional components with hooks
+
+### React Patterns
+- Functional components with **React.FC**
+- **useState** for component state
+- **useEffect** for side effects (auto-save, localStorage)
+- **useCallback** for event handlers passed as props
+- Avoid prop drilling (use context if needed)
+
+### Naming Conventions
+- **Components**: PascalCase (`SubmissionWidget.tsx`)
+- **Files**: PascalCase for components, camelCase for utilities
+- **Variables**: camelCase (`studentName`, `maxImagesAllowed`)
+- **Constants**: UPPER_SNAKE_CASE in constants.ts
+
+### Comments
+- Explain **why**, not **what**
+- Document complex logic, browser workarounds, Gradescope requirements
+- JSDoc for exported functions/components
+
+### Example
+```typescript
+interface ProblemProps {
+  problem: Problem;
+  onSubmit: (data: SubmissionData) => void;
+}
+
+export const ProblemRenderer: React.FC<ProblemProps> = ({ problem, onSubmit }) => {
+  // Auto-save debounced to prevent excessive localStorage writes
+  // which can cause performance issues on older devices
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      saveToLocalStorage(data);
+    }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [data]);
+
+  return <div>...</div>;
+};
+```
+
+---
+
+## Integration with Assignment Maker
+
+This app **consumes** JSON files created by **GradeBridge Assignment Maker**.
+
+### Coordination Requirements
+- JSON schema must match exactly
+- Problem numbering must align for Gradescope
+- PDF page structure must match Assignment Maker template PDFs
+- Both apps must use consistent terminology
+
+### Breaking Changes
+If Assignment Maker changes JSON format:
+1. Update `types.ts` to match new schema
+2. Update parsing logic in `App.tsx`
+3. Test with new JSON files
+4. Update README with new format
+5. Consider backward compatibility
+
+---
+
+## Known Issues & Limitations
+
+1. **Page breaks in PDF**: Complex layouts may have imperfect breaks (html2pdf limitation)
+2. **Large images**: PDFs with many large images take 10-20 seconds to generate
+3. **Mobile devices**: Optimized for desktop/laptop; mobile functional but not ideal
+4. **LocalStorage limits**: Browsers typically limit to 5-10MB (watch image sizes)
+5. **Browser cache**: GitHub Pages CDN can be stubborn (hard refresh needed)
+
+---
+
+## Educational Context
+
+### User Base
+- **Students**: Complete assignments, upload work, generate PDFs
+- **Educators**: Create assignments (using Assignment Maker), grade on Gradescope
+- **Audience**: University-level engineering/math courses
+
+### Privacy Requirements
+- Students may be minors or in FERPA-protected environments
+- No data collection or transmission is critical
+- Transparency about data storage builds trust
+
+### Academic Integrity
+- AI Reflective documentation promotes responsible AI use
+- Tool encourages original work with proper attribution
+- No features that facilitate cheating
+
+### Accessibility
+- Consider students with disabilities
+- Keyboard navigation
+- Screen reader compatibility
+- Color contrast for readability
+
+---
+
+## Contact & Resources
+
+- **GitHub Org**: https://github.com/BridgeSuite
+- **Repository**: https://github.com/BridgeSuite/GradeBridge-Student-Submission
+- **Live App**: https://bridgesuite.github.io/GradeBridge-Student-Submission/
+- **Issues**: https://github.com/BridgeSuite/GradeBridge-Student-Submission/issues
+- **Contributing**: See .github/CONTRIBUTING.md
+- **Related App**: GradeBridge Assignment Maker (creates assignment JSONs)
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Development
+npm install              # Install dependencies
+npm run dev              # Start dev server (port 3001)
+npm run build            # Build for production
+npm run preview          # Preview production build
+
+# Deployment
+npm run deploy           # Deploy to GitHub Pages
+
+# Git
+git checkout -b feature/name   # Create feature branch
+git add .                      # Stage changes
+git commit -m "message"        # Commit with message
+git push origin feature/name   # Push branch
+```
+
+---
+
+## Version History
+
+- **v3.0.0** (Current): React 19.2, comprehensive docs, GitHub templates
+- **v2.x**: Added AI Reflective documentation
+- **v1.x**: Initial release with text/image submissions
+
+---
+
+**Last Updated**: 2025-01-20
+**Maintainer**: BridgeSuite Open Source Project
