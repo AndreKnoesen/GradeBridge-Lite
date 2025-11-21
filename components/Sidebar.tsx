@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft } from 'lucide-react';
+import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft, AlertCircle } from 'lucide-react';
 import { AppState } from '../types';
 import { VERSION } from '../constants';
 
@@ -150,9 +150,14 @@ const Sidebar: React.FC<SidebarProps> = ({
              </div>
            )}
            {!isReadyForPDF && state.viewMode === 'edit' && (
-             <p className="text-[10px] text-amber-400 mt-2 text-center">
-               * Name, ID, and Assignment required to preview
-             </p>
+             <div className="mt-3 p-3 bg-amber-900/20 border border-amber-700/50 rounded-lg">
+               <div className="flex items-start gap-2">
+                 <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                 <p className="text-xs text-amber-300 leading-relaxed">
+                   <strong>Required:</strong> Enter your Name, Student ID, and upload an Assignment to preview your submission.
+                 </p>
+               </div>
+             </div>
            )}
         </div>
       </div>
