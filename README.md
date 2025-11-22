@@ -151,6 +151,12 @@ npm run deploy     # Deploy to GitHub Pages
 
 ---
 
+## Known Limitations
+
+- **CDN Dependencies** - KaTeX and html2pdf.js load from CDN; internet required for LaTeX rendering and PDF generation
+- **Long Text Answers** - Very long answers that exceed one page may have imperfect breaks (html2pdf limitation)
+- **Mobile Experience** - Optimized for desktop; functional but not ideal on phones
+
 ## Browser Support
 
 Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
