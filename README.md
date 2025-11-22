@@ -37,6 +37,8 @@ Open Source: This is a free, community-supported tool maintained by the BridgeSu
 - **100% Client-Side Processing**: All work is stored locally in your browser
 - **Auto-Save**: Work is automatically saved every second to prevent data loss
 - **LaTeX Math Support**: Write mathematical expressions using `$...$` for inline and `$$...$$` for display math
+- **LaTeX Help Cheatsheet**: Built-in reference guide for common LaTeX syntax (fractions, integrals, Greek letters, matrices)
+- **Try Demo Assignment**: Instantly explore all features without uploading a JSON file
 - **Professional PDF Generation**: Export submissions as properly formatted PDFs for Gradescope
 - **Multiple Submission Types**:
   - Text answers with LaTeX rendering
@@ -104,14 +106,34 @@ npm run preview
 
 When you first open GradeBridge-Student-Submission, you'll see a **privacy notice** explaining that all data is stored locally in your browser. Click "I Understand" to proceed.
 
-### 2. Load an Assignment
+### 2. Try the Demo (Optional)
+
+New to GradeBridge? Click **"Try Demo Assignment"** in the sidebar to instantly load a sample assignment showcasing:
+- Calculus problems with LaTeX math
+- Physics questions with image uploads
+- Computer science Big-O notation
+- AI Reflective documentation
+
+No file upload needed - explore all features immediately!
+
+### 3. Load an Assignment
 
 1. Obtain an assignment JSON file from your instructor
-2. In the sidebar, click **"Load Assignment"**
+2. In the sidebar, click **"Upload JSON"**
 3. Select the JSON file from your computer
 4. The assignment will load with all problems and instructions
 
-### 3. Enter Student Information
+### 4. LaTeX Help
+
+Click **"LaTeX Math Help"** in the sidebar to open a cheatsheet with:
+- **Basics**: Fractions, exponents, square roots, parentheses
+- **Symbols**: Greek letters, comparison operators, arrows, set notation
+- **Calculus**: Derivatives, integrals, limits, summations
+- **Matrices**: Matrix syntax, bracket types, vectors
+
+Each example shows the code to type and the rendered result.
+
+### 5. Enter Student Information
 
 Fill in your:
 - **Student Name** (as it appears on official records)
@@ -119,7 +141,7 @@ Fill in your:
 
 This information appears on every page of your PDF submission.
 
-### 4. Complete Problems
+### 6. Complete Problems
 
 For each problem/subsection:
 
@@ -139,7 +161,7 @@ For each problem/subsection:
   - Describe prompts, validation steps, and learning outcomes
   - Required for assignments with AI usage policies
 
-### 5. Save and Export
+### 7. Save and Export
 
 #### Auto-Save
 Your work is automatically saved to browser storage every second. The sidebar shows the last save time.
@@ -158,7 +180,7 @@ Click **"Export Work"** to download a JSON backup file containing:
 #### Restore Work
 Click **"Load Work"** and select a previously exported JSON backup to restore your progress.
 
-### 6. Generate PDF
+### 8. Generate PDF
 
 1. Click **"Preview PDF"** to see how your submission will look
 2. Review all answers, formatting, and page breaks
@@ -170,7 +192,7 @@ Click **"Load Work"** and select a previously exported JSON backup to restore yo
 **PDF Naming Convention**:
 `{StudentID}_{StudentName}_{CourseCode}.pdf`
 
-### 7. Submit to Gradescope
+### 9. Submit to Gradescope
 
 1. Upload the generated PDF to Gradescope
 2. Gradescope should auto-detect problem regions (if instructor configured properly)
