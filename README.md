@@ -7,6 +7,22 @@ An open source community edition pure client-side student submission application
 
 **🚀 [Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** - Try the app now!
 
+## The Problem This Solves
+
+**Traditional student submissions:** Inconsistent formatting, broken equations, messy PDFs that are nightmare to grade.
+
+**GradeBridge workflow:** Students get guided, structured submission forms that auto-generate perfectly formatted PDFs for graders.
+
+This is **Part 2** of the complete GradeBridge workflow:
+1. **[Assignment Maker](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker)** - Instructors create structured assignments 
+2. **Student Submission** (this app) - Students complete work and generate grading-ready PDFs
+
+**The Result:** No more "my formatting broke" excuses. Professional, consistent submissions that make grading 50% faster.
+
+📖 **[See the complete workflow explanation →](https://github.com/BridgeSuite/.github/blob/main/profile/WORKFLOW_MOTIVATION.md)**
+
+---
+
 ## Overview
 
 **GradeBridge Student Submission** is a React-based web application that enables students to complete and submit academic assignments in a structured, professional format.
