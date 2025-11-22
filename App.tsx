@@ -5,6 +5,7 @@ import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
+import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -104,6 +105,14 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleLoadDemo = () => {
+    // Load the demo assignment directly without file upload
+    setState(prev => ({ ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {} }));
+    setStatusMessage(DEMO_LOADED_MESSAGE);
+    // Clear the message after 5 seconds
+    setTimeout(() => setStatusMessage(''), 5000);
   };
 
   const handleExportWork = () => {
@@ -233,10 +242,11 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
       {/* Sidebar */}
-      <Sidebar 
+      <Sidebar
         state={state}
         onUpdateStudent={handleUpdateStudent}
         onLoadAssignment={handleLoadAssignment}
+        onLoadDemo={handleLoadDemo}
         onLoadWork={handleLoadWork}
         onExportWork={handleExportWork}
         onClearWork={handleClearWork}
@@ -257,7 +267,23 @@ const App: React.FC = () => {
                   <AlertTriangle className="w-10 h-10 text-gray-300" />
                 </div>
                 <h2 className="text-xl font-semibold text-gray-600 mb-2">No Assignment Loaded</h2>
-                <p className="max-w-md">Upload an assignment JSON file from the sidebar to begin your work.</p>
+                <p className="max-w-md mb-6">Upload an assignment JSON file from the sidebar to begin your work.</p>
+
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-gray-500">New here? Try a demo first:</p>
+                  <button
+                    onClick={handleLoadDemo}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg shadow-lg transition-all font-medium"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                    </svg>
+                    Try Demo Assignment
+                  </button>
+                  <p className="text-xs text-gray-400 max-w-xs">
+                    Explore all features with a sample math assignment - no file needed!
+                  </p>
+                </div>
               </div>
             ) : (
               <>

@@ -1,12 +1,14 @@
-import React, { useRef } from 'react';
-import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft, AlertCircle } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft, AlertCircle, Sparkles, HelpCircle } from 'lucide-react';
 import { AppState } from '../types';
 import { VERSION } from '../constants';
+import { LaTeXCheatsheet } from './LaTeXCheatsheet';
 
 interface SidebarProps {
   state: AppState;
   onUpdateStudent: (field: string, value: string) => void;
   onLoadAssignment: (file: File) => void;
+  onLoadDemo: () => void;
   onLoadWork: (file: File) => void;
   onExportWork: () => void;
   onClearWork: () => void;
@@ -19,6 +21,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   state,
   onUpdateStudent,
   onLoadAssignment,
+  onLoadDemo,
   onLoadWork,
   onExportWork,
   onClearWork,
@@ -28,6 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const assignmentInputRef = useRef<HTMLInputElement>(null);
   const workInputRef = useRef<HTMLInputElement>(null);
+  const [showLatexHelp, setShowLatexHelp] = useState(false);
 
   const handleAssignmentClick = () => assignmentInputRef.current?.click();
   const handleWorkClick = () => workInputRef.current?.click();
@@ -81,13 +85,32 @@ const Sidebar: React.FC<SidebarProps> = ({
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment</h3>
           
           {!state.assignment ? (
-            <button
-              onClick={handleAssignmentClick}
-              className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group"
-            >
-              <Upload className="w-5 h-5 group-hover:text-blue-400" />
-              <span className="text-sm font-medium">Upload JSON</span>
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleAssignmentClick}
+                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group"
+              >
+                <Upload className="w-5 h-5 group-hover:text-blue-400" />
+                <span className="text-sm font-medium">Upload JSON</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-slate-700"></div>
+                <span className="text-xs text-slate-500">or</span>
+                <div className="flex-1 h-px bg-slate-700"></div>
+              </div>
+
+              <button
+                onClick={onLoadDemo}
+                className="w-full flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition-all text-white group shadow-lg"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="text-sm font-medium">Try Demo Assignment</span>
+              </button>
+              <p className="text-[10px] text-slate-500 text-center">
+                No file needed - explore all features instantly
+              </p>
+            </div>
           ) : (
              <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 shadow-sm">
               <div className="flex justify-between items-start mb-2">
@@ -120,6 +143,16 @@ const Sidebar: React.FC<SidebarProps> = ({
            
            <button onClick={onClearWork} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-950/30 hover:text-red-300 p-2 rounded border border-transparent hover:border-red-900 transition-colors text-xs">
               <Trash2 className="w-4 h-4" /> Clear All Data
+           </button>
+        </div>
+
+        {/* LaTeX Help */}
+        <div className="pt-4 border-t border-slate-700">
+           <button
+              onClick={() => setShowLatexHelp(true)}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 p-3 rounded border border-slate-700 text-sm transition-colors text-slate-200"
+            >
+              <HelpCircle className="w-4 h-4 text-blue-400" /> LaTeX Math Help
            </button>
         </div>
 
@@ -174,6 +207,9 @@ const Sidebar: React.FC<SidebarProps> = ({
            )}
         </div>
       </div>
+
+      {/* LaTeX Cheatsheet Modal */}
+      <LaTeXCheatsheet isOpen={showLatexHelp} onClose={() => setShowLatexHelp(false)} />
     </div>
   );
 };
