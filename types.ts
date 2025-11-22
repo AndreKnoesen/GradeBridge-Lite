@@ -1,34 +1,43 @@
-export interface AssignmentImage {
-  data: string; // Base64
-  content_type: string;
-  filename: string;
+// =====================================================
+// Assignment Format (matches Assignment Maker export)
+// =====================================================
+
+export enum SubmissionType {
+  TEXT = 'Text',
+  IMAGE = 'Image',
+  AI_REFLECTIVE = 'AI Reflective',
+  MATLAB_GRADER = 'MatlabGrader',
+  CODE = 'Code',
+  FILE_UPLOAD = 'File Upload'
 }
 
 export interface Subsection {
-  subsection_statement: string;
+  id: string;
+  name: string;
+  description: string;
   points: number;
-  submission_elements: string[];
-  max_images_allowed?: number;
-  allow_pdf_upload?: boolean;
+  submissionType: SubmissionType | string;
+  maxImages?: number;
+  config?: string;
 }
 
 export interface Problem {
-  problem_statement: string;
-  points: number;
-  problem_image?: AssignmentImage;
-  submission_elements?: string[]; // Optional if subsections exist
-  max_images_allowed?: number;
-  allow_pdf_upload?: boolean;
-  subsections?: Subsection[];
+  id: string;
+  name: string;
+  description: string;
+  subsections: Subsection[];
 }
 
 export interface Assignment {
-  assignment_title: string;
-  course_code: string;
-  course_name?: string;
-  preamble?: string;
-  total_points: number;
+  id: string;
+  courseCode: string;
+  title: string;
+  dueDate: string;
+  dueTime: string;
+  preamble: string;
   problems: Problem[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface SubmissionData {

@@ -93,15 +93,13 @@ const App: React.FC = () => {
     reader.onload = (e) => {
       try {
         const json = JSON.parse(e.target?.result as string) as Assignment;
-        // Basic validation
-        if (!json.problems || !json.assignment_title || !json.course_code) {
+        // Basic validation - Assignment Maker format uses courseCode, title, problems
+        if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
         }
-        setState(prev => ({ ...prev, assignment: json, submissionData: {} })); // Reset submission on new assignment? Or keep? Let's reset to be safe or maybe keep matching IDs. Let's reset for now to avoid conflicts.
-        // Actually, prompting might be better, but let's keep it simple: New Assignment = New Start usually.
-        // To be safe, we'll clear submission data if the assignment changes.
+        setState(prev => ({ ...prev, assignment: json, submissionData: {} }));
       } catch (err) {
-        alert("Error loading assignment: Invalid JSON format.");
+        alert("Error loading assignment: Invalid JSON format. Make sure the file was exported from Assignment Maker.");
       }
     };
     reader.readAsText(file);
@@ -121,8 +119,8 @@ const App: React.FC = () => {
       student_name: state.studentName,
       student_id: state.studentId,
       submission_data: state.submissionData,
-      assignment_title: state.assignment.assignment_title,
-      course_code: state.assignment.course_code,
+      assignment_title: state.assignment.title,
+      course_code: state.assignment.courseCode,
       exported_at: new Date().toISOString(),
       version: VERSION
     };
@@ -130,7 +128,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.assignment.course_code}_${state.assignment.assignment_title}_backup.json`;
+    a.download = `${state.assignment.courseCode}_${state.assignment.title}_backup.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -152,8 +150,8 @@ const App: React.FC = () => {
         }
         
         // Logic to verify course code match if assignment exists
-        if (state.assignment && state.assignment.course_code !== json.course_code) {
-            alert(`Warning: Backup is for ${json.course_code} but loaded assignment is ${state.assignment.course_code}.`);
+        if (state.assignment && state.assignment.courseCode !== json.course_code) {
+            alert(`Warning: Backup is for ${json.course_code} but loaded assignment is ${state.assignment.courseCode}.`);
         }
 
         setState(prev => ({
@@ -208,7 +206,7 @@ const App: React.FC = () => {
     // 3. HTML2PDF Options
     const opt = {
       margin: 0, // Critical: margin 0 to prevent offset issues with our full-page divs
-      filename: `${state.studentId}_${state.studentName}_${state.assignment.course_code}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
+      filename: `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -288,8 +286,8 @@ const App: React.FC = () => {
             ) : (
               <>
                  <div className="mb-8 border-b border-gray-200 pb-6">
-                    <div className="text-sm font-bold text-blue-800 uppercase tracking-wide mb-1">{state.assignment.course_code}</div>
-                    <h1 className="text-3xl font-serif font-bold text-gray-900 mb-4">{state.assignment.assignment_title}</h1>
+                    <div className="text-sm font-bold text-blue-800 uppercase tracking-wide mb-1">{state.assignment.courseCode}</div>
+                    <h1 className="text-3xl font-serif font-bold text-gray-900 mb-4">{state.assignment.title}</h1>
                     {state.assignment.preamble && (
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-blue-900 text-sm leading-relaxed">
                             <strong>Instructions:</strong> {state.assignment.preamble}

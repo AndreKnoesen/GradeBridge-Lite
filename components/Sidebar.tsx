@@ -117,11 +117,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                  <span className="bg-green-900 text-green-300 text-[10px] px-2 py-0.5 rounded border border-green-800">Loaded</span>
                  <button onClick={handleAssignmentClick} className="text-xs text-blue-400 hover:text-blue-300 hover:underline">Change</button>
               </div>
-              <h4 className="font-bold text-white text-sm mb-1">{state.assignment.course_code}</h4>
-              <p className="text-xs text-slate-300 line-clamp-2">{state.assignment.assignment_title}</p>
+              <h4 className="font-bold text-white text-sm mb-1">{state.assignment.courseCode}</h4>
+              <p className="text-xs text-slate-300 line-clamp-2">{state.assignment.title}</p>
               <div className="mt-3 pt-3 border-t border-slate-700 text-xs flex justify-between text-slate-400">
                  <span>{state.assignment.problems.length} Problems</span>
-                 <span>{state.assignment.total_points} Pts</span>
+                 <span>{state.assignment.problems.reduce((sum, p) => sum + p.subsections.reduce((s, sub) => s + sub.points, 0), 0)} Pts</span>
               </div>
              </div>
           )}
