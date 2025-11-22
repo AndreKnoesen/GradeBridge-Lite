@@ -19,7 +19,7 @@ This is **Part 2** of the complete GradeBridge workflow:
 
 **The Result:** No more "my formatting broke" excuses. Professional, consistent submissions that make grading 50% faster.
 
-📖 **[See the complete workflow explanation →](https://github.com/BridgeSuite/.github/blob/main/profile/WORKFLOW_MOTIVATION.md)**
+📖 [constraints that create this problem](WORKFLOW_MOTIVATION.md)
 
 ---
 
