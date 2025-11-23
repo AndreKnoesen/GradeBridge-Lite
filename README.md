@@ -5,7 +5,7 @@ Complete academic assignments with LaTeX support and generate professional PDFs 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** | **[Assignment Maker](https://bridgesuite.github.io/GradeBridge-Assignment-Maker/)**
+**[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** | 
 
 ---
 
