@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { SUBMISSION_TYPES } from '../constants';
 import { SubmissionData } from '../types';
-import { Image as ImageIcon, Trash2, X } from 'lucide-react';
+import { Image as ImageIcon, Trash2, X, Lightbulb } from 'lucide-react';
 import { LatexContent } from './KatexRenderer';
 
 interface SubmissionWidgetProps {
@@ -99,6 +99,10 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
             </div>
           </div>
         )}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+          <Lightbulb className="w-3 h-3" />
+          <span>Focus on your answer - PDF formatting is handled automatically for Gradescope.</span>
+        </div>
       </div>
     );
   }
@@ -164,8 +168,12 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
             ))}
           </div>
         )}
-        <div className="text-right text-xs text-gray-500">
-          {images.length} / {maxImages} images uploaded
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <div className="flex items-center gap-1.5 text-slate-500">
+            <Lightbulb className="w-3 h-3" />
+            <span>Upload clear images - PDF layout is optimized for Gradescope.</span>
+          </div>
+          <span>{images.length} / {maxImages} images uploaded</span>
         </div>
       </div>
     );
@@ -185,6 +193,10 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           className="w-full p-3 border border-purple-200 bg-purple-50 text-gray-900 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm placeholder-purple-300"
           placeholder="Describe how you used AI tools for this problem (prompts used, validation steps, etc.)..."
         />
+        <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-1">
+          <Lightbulb className="w-3 h-3" />
+          <span>Document your process - formatting is handled automatically.</span>
+        </div>
       </div>
     );
   }

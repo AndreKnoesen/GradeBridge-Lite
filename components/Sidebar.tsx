@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft, AlertCircle, Sparkles, HelpCircle } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Upload, FileJson, Save, RefreshCw, Trash2, Eye, Download, ArrowLeft, AlertCircle, Sparkles, HelpCircle, Info, X } from 'lucide-react';
 import { AppState } from '../types';
-import { VERSION } from '../constants';
+import { VERSION, PDF_NOTICE_KEY } from '../constants';
 import { LaTeXCheatsheet } from './LaTeXCheatsheet';
 
 interface SidebarProps {
@@ -32,9 +32,29 @@ const Sidebar: React.FC<SidebarProps> = ({
   const assignmentInputRef = useRef<HTMLInputElement>(null);
   const workInputRef = useRef<HTMLInputElement>(null);
   const [showLatexHelp, setShowLatexHelp] = useState(false);
+  const [showPdfTooltip, setShowPdfTooltip] = useState(false);
+  const [showPdfNoticeModal, setShowPdfNoticeModal] = useState(false);
+  const [pdfNoticeShown, setPdfNoticeShown] = useState(() => {
+    return localStorage.getItem(PDF_NOTICE_KEY) === 'true';
+  });
 
   const handleAssignmentClick = () => assignmentInputRef.current?.click();
   const handleWorkClick = () => workInputRef.current?.click();
+
+  const handleDownloadClick = () => {
+    if (!pdfNoticeShown) {
+      setShowPdfNoticeModal(true);
+    } else {
+      onDownloadPDF();
+    }
+  };
+
+  const handleConfirmDownload = () => {
+    localStorage.setItem(PDF_NOTICE_KEY, 'true');
+    setPdfNoticeShown(true);
+    setShowPdfNoticeModal(false);
+    onDownloadPDF();
+  };
 
   const isReadyForPDF = state.studentName && state.studentId && state.assignment;
 
@@ -159,22 +179,70 @@ const Sidebar: React.FC<SidebarProps> = ({
         {/* Preview / Print */}
         <div className="pt-4 border-t border-slate-700">
            {state.viewMode === 'edit' ? (
-             <button 
-                onClick={onToggleView}
-                disabled={!isReadyForPDF}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-700"
-              >
-                <Eye className="w-4 h-4" /> Preview & Download PDF
-              </button>
+             <div className="space-y-2">
+               <div className="flex items-center gap-2">
+                 <button
+                    onClick={onToggleView}
+                    disabled={!isReadyForPDF}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-700"
+                  >
+                    <Eye className="w-4 h-4" /> Preview & Download PDF
+                  </button>
+                  <div className="relative">
+                    <button
+                      onMouseEnter={() => setShowPdfTooltip(true)}
+                      onMouseLeave={() => setShowPdfTooltip(false)}
+                      onClick={() => setShowPdfTooltip(!showPdfTooltip)}
+                      className="p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                      title="About PDF format"
+                    >
+                      <Info className="w-4 h-4" />
+                    </button>
+                    {showPdfTooltip && (
+                      <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50">
+                        <div className="text-xs text-slate-200 space-y-2">
+                          <p className="font-semibold text-blue-400">Why does the PDF look different?</p>
+                          <p>The PDF format is <strong>optimized for Gradescope</strong> to enable efficient grading.</p>
+                          <p className="text-slate-400">Focus on your answers - the formatting is handled automatically!</p>
+                        </div>
+                        <div className="absolute bottom-0 right-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-slate-800 border-r border-b border-slate-600"></div>
+                      </div>
+                    )}
+                  </div>
+               </div>
+             </div>
            ) : (
              <div className="space-y-3">
-                <button 
-                  onClick={onDownloadPDF}
-                  className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium flex items-center justify-center gap-2 transition-all shadow-lg animate-pulse hover:animate-none"
-                >
-                  <Download className="w-4 h-4" /> Download Submission
-                </button>
-                <button 
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownloadClick}
+                    className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium flex items-center justify-center gap-2 transition-all shadow-lg animate-pulse hover:animate-none"
+                  >
+                    <Download className="w-4 h-4" /> Download Submission
+                  </button>
+                  <div className="relative">
+                    <button
+                      onMouseEnter={() => setShowPdfTooltip(true)}
+                      onMouseLeave={() => setShowPdfTooltip(false)}
+                      onClick={() => setShowPdfTooltip(!showPdfTooltip)}
+                      className="p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                      title="About PDF format"
+                    >
+                      <Info className="w-4 h-4" />
+                    </button>
+                    {showPdfTooltip && (
+                      <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50">
+                        <div className="text-xs text-slate-200 space-y-2">
+                          <p className="font-semibold text-blue-400">Why does the PDF look different?</p>
+                          <p>The PDF format is <strong>optimized for Gradescope</strong> to enable efficient grading.</p>
+                          <p className="text-slate-400">Do not modify the PDF after download.</p>
+                        </div>
+                        <div className="absolute bottom-0 right-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-slate-800 border-r border-b border-slate-600"></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
                   onClick={onToggleView}
                   className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium flex items-center justify-center gap-2 transition-all text-sm"
                 >
@@ -210,6 +278,76 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {/* LaTeX Cheatsheet Modal */}
       <LaTeXCheatsheet isOpen={showLatexHelp} onClose={() => setShowLatexHelp(false)} />
+
+      {/* First-time PDF Download Notice Modal */}
+      {showPdfNoticeModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg">
+                    <Info className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">About Your PDF</h3>
+                </div>
+                <button
+                  onClick={() => setShowPdfNoticeModal(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 text-blue-600 rounded-full p-1 mt-0.5">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <p>The PDF format is <strong>specifically designed for Gradescope</strong> to enable efficient, consistent grading.</p>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 text-blue-600 rounded-full p-1 mt-0.5">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <p><strong>Do not modify</strong> the PDF after downloading - submit it directly to Gradescope.</p>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 text-blue-600 rounded-full p-1 mt-0.5">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <p>Focus on the <strong>quality of your answers</strong> - the formatting is handled automatically!</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mt-4">
+                <p className="text-xs text-slate-600 text-center">
+                  This message will only appear once.
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 pb-6">
+              <button
+                onClick={handleConfirmDownload}
+                className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all shadow-lg"
+              >
+                <Download className="w-4 h-4" /> Got it, Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

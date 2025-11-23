@@ -1,5 +1,6 @@
 export const STORAGE_KEY = 'gradebridge_submission';
 export const PRIVACY_KEY = 'gradebridge_privacy_acknowledged';
+export const PDF_NOTICE_KEY = 'gradebridge_pdf_notice_shown';
 export const VERSION = 'v3.0.0';
 
 export const SUBMISSION_TYPES = {
