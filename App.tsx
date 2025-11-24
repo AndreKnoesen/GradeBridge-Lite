@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -20,6 +20,15 @@ const App: React.FC = () => {
   });
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [showMobileBanner, setShowMobileBanner] = useState(false);
+
+  // Mobile detection
+  useEffect(() => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+    if (isMobile) {
+      setShowMobileBanner(true);
+    }
+  }, []);
 
   // Initial Load
   useEffect(() => {
@@ -273,6 +282,27 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
+      {/* Mobile Warning Banner */}
+      {showMobileBanner && (
+        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
+          <div className="flex items-center justify-between gap-3 max-w-4xl mx-auto">
+            <div className="flex items-center gap-3">
+              <Monitor className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-medium">
+                For the best experience, use a desktop or laptop. File downloads on mobile can be hard to find.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowMobileBanner(false)}
+              className="p-1 hover:bg-amber-600 rounded transition-colors flex-shrink-0"
+              aria-label="Dismiss"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <Sidebar
         state={state}
@@ -436,16 +466,9 @@ const App: React.FC = () => {
                          <Download className="w-6 h-6" />
                          Download Submission PDF
                        </button>
-                       <div className="group relative">
-                         <Info className="w-5 h-5 text-slate-400 cursor-help" />
-                         <div className="invisible group-hover:visible absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-700 text-white text-xs rounded-lg shadow-xl z-50">
-                           <p className="font-semibold text-blue-300 mb-1">About the PDF format</p>
-                           <p>Optimized for Gradescope grading. Submit directly without modifications.</p>
-                         </div>
-                       </div>
                      </div>
                      <p className="text-slate-400 text-xs text-center mt-2">
-                       Scroll up to review your submission
+                       Don't worry about the PDF format - it's optimized for Gradescope grading
                      </p>
                    </div>
                </>
