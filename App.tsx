@@ -397,39 +397,44 @@ const App: React.FC = () => {
         )}
 
         {/* Print Preview Mode */}
-        <div className={`${state.viewMode === 'print' ? 'block' : 'hidden'} bg-gray-500 p-8 pb-32 min-h-full`}>
+        <div className={`${state.viewMode === 'print' ? 'flex flex-col' : 'hidden'} bg-gray-500 min-h-full`}>
            {state.assignment && (
-               <div className="flex flex-col items-center">
-                   <div className="shadow-2xl">
-                       <PrintView
-                         assignment={state.assignment}
-                         submissionData={state.submissionData}
-                         studentName={state.studentName}
-                         studentId={state.studentId}
-                       />
+               <>
+                   {/* Scrollable Preview Area */}
+                   <div className="flex-1 overflow-y-auto p-8 pb-40 flex justify-center">
+                       <div className="shadow-2xl">
+                           <PrintView
+                             assignment={state.assignment}
+                             submissionData={state.submissionData}
+                             studentName={state.studentName}
+                             studentId={state.studentId}
+                           />
+                       </div>
                    </div>
 
-                   {/* Download Actions - At bottom of preview */}
-                   <div className="mt-8 mb-4 flex flex-col items-center gap-4 w-full max-w-md">
-                     <button
-                       onClick={handleDownloadPDF}
-                       className="w-full py-4 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
-                     >
-                       <Download className="w-6 h-6" />
-                       Download Submission PDF
-                     </button>
-                     <button
-                       onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
-                       className="w-full py-3 px-6 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all"
-                     >
-                       <ChevronLeft className="w-5 h-5" />
-                       Back to Edit
-                     </button>
-                     <p className="text-white/70 text-sm text-center">
-                       Review your submission above, then click Download to generate your PDF for Gradescope.
+                   {/* Fixed Download Bar - Always visible at bottom */}
+                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 p-4 shadow-2xl z-40">
+                     <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto">
+                       <button
+                         onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
+                         className="py-3 px-5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all"
+                       >
+                         <ChevronLeft className="w-5 h-5" />
+                         Back to Edit
+                       </button>
+                       <button
+                         onClick={handleDownloadPDF}
+                         className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
+                       >
+                         <Download className="w-6 h-6" />
+                         Download Submission PDF
+                       </button>
+                     </div>
+                     <p className="text-slate-400 text-xs text-center mt-2">
+                       Scroll up to review your submission
                      </p>
                    </div>
-               </div>
+               </>
            )}
         </div>
 
