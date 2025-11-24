@@ -246,16 +246,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
              </div>
            )}
-           {!isReadyForPDF && state.viewMode === 'edit' && (
-             <div className="mt-3 p-3 bg-amber-900/20 border border-amber-700/50 rounded-lg">
-               <div className="flex items-start gap-2">
-                 <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                 <p className="text-xs text-amber-300 leading-relaxed">
-                   <strong>Required:</strong> Enter your Name, Student ID, and upload an Assignment to preview your submission.
-                 </p>
-               </div>
-             </div>
-           )}
         </div>
       </div>
 
