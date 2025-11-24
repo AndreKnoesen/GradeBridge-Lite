@@ -57,6 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const isReadyForPDF = state.studentName && state.studentId && state.assignment;
+  const hasStudentInfo = state.studentName.trim() && state.studentId.trim();
 
   return (
     <div className="w-full lg:w-[320px] bg-slate-900 text-slate-100 flex flex-col h-full shadow-2xl overflow-y-auto z-20">
@@ -73,9 +74,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="p-6 space-y-8 flex-1">
         
-        {/* Student Info */}
+        {/* Student Info - Step 1 */}
         <div className="space-y-4">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Info</h3>
+          <div className="flex items-center gap-2">
+            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${hasStudentInfo ? 'bg-green-500 text-white' : 'bg-blue-500 text-white animate-pulse'}`}>1</span>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Info</h3>
+            {hasStudentInfo && <span className="text-green-400 text-xs">Complete</span>}
+          </div>
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium mb-1 text-slate-300">Full Name *</label>
@@ -98,17 +103,25 @@ const Sidebar: React.FC<SidebarProps> = ({
               />
             </div>
           </div>
+          {!hasStudentInfo && (
+            <p className="text-xs text-amber-400">Enter your name and ID to continue</p>
+          )}
         </div>
 
-        {/* Assignment Section */}
-        <div className="space-y-4">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment</h3>
-          
+        {/* Assignment Section - Step 2 */}
+        <div className={`space-y-4 ${!hasStudentInfo ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className="flex items-center gap-2">
+            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${state.assignment ? 'bg-green-500 text-white' : hasStudentInfo ? 'bg-blue-500 text-white animate-pulse' : 'bg-slate-600 text-slate-400'}`}>2</span>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment</h3>
+            {state.assignment && <span className="text-green-400 text-xs">Loaded</span>}
+          </div>
+
           {!state.assignment ? (
             <div className="space-y-3">
               <button
                 onClick={handleAssignmentClick}
-                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group"
+                disabled={!hasStudentInfo}
+                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group disabled:cursor-not-allowed disabled:hover:border-slate-600 disabled:hover:bg-transparent"
               >
                 <Upload className="w-5 h-5 group-hover:text-blue-400" />
                 <span className="text-sm font-medium">Upload JSON</span>
@@ -122,7 +135,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
               <button
                 onClick={onLoadDemo}
-                className="w-full flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition-all text-white group shadow-lg"
+                disabled={!hasStudentInfo}
+                className="w-full flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition-all text-white group shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-purple-600 disabled:hover:to-blue-600"
               >
                 <Sparkles className="w-4 h-4" />
                 <span className="text-sm font-medium">Try Demo Assignment</span>
@@ -166,14 +180,17 @@ const Sidebar: React.FC<SidebarProps> = ({
            </button>
         </div>
 
-        {/* LaTeX Help */}
+        {/* LaTeX Equation Help */}
         <div className="pt-4 border-t border-slate-700">
            <button
               onClick={() => setShowLatexHelp(true)}
               className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 p-3 rounded border border-slate-700 text-sm transition-colors text-slate-200"
             >
-              <HelpCircle className="w-4 h-4 text-blue-400" /> LaTeX Math Help
+              <HelpCircle className="w-4 h-4 text-blue-400" /> Math Equation Format Help
            </button>
+           <p className="text-[10px] text-slate-500 text-center mt-1">
+             Use LaTeX notation for mathematical equations
+           </p>
         </div>
 
         {/* Preview / Print */}

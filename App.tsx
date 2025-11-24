@@ -137,33 +137,68 @@ const App: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const json = JSON.parse(e.target?.result as string) as BackupData;
-        // Validate
-        if (!json.submission_data || !json.course_code) throw new Error();
-        
-        // We need the assignment structure to render. 
-        // If the user hasn't loaded the assignment JSON yet, this backup assumes they have, 
-        // OR the backup should ideally contain the assignment structure too, but the prompt separates them.
-        // However, if the current state doesn't have an assignment, we warn them.
-        if (!state.assignment && !window.confirm("You haven't loaded an assignment file yet. This backup might not display correctly without the original assignment structure. Continue?")) {
-            return;
+        const json = JSON.parse(e.target?.result as string);
+
+        // Check if user accidentally loaded an assignment file instead of a backup
+        if (json.problems && json.courseCode && !json.submission_data) {
+          alert(
+            "Wrong file type!\n\n" +
+            "You selected an ASSIGNMENT file (used to define problems).\n\n" +
+            "To restore your work, use a BACKUP file instead.\n" +
+            "Backup files are named like: CourseCode_Title_backup.json\n\n" +
+            "To load an assignment, use 'Upload JSON' in the Assignment section above."
+          );
+          return;
         }
-        
+
+        // Validate backup format
+        if (!json.submission_data || !json.course_code) {
+          alert(
+            "Invalid backup file format.\n\n" +
+            "Make sure you're loading a backup file created by 'Save Backup'.\n" +
+            "Backup files contain your answers and are named: CourseCode_Title_backup.json"
+          );
+          return;
+        }
+
+        const backupData = json as BackupData;
+
+        // We need the assignment structure to render
+        if (!state.assignment && !window.confirm(
+          "You haven't loaded an assignment file yet.\n\n" +
+          "This backup might not display correctly without the original assignment structure.\n\n" +
+          "Recommended: First upload the assignment JSON, then load your backup.\n\n" +
+          "Continue anyway?"
+        )) {
+          return;
+        }
+
         // Logic to verify course code match if assignment exists
-        if (state.assignment && state.assignment.courseCode !== json.course_code) {
-            alert(`Warning: Backup is for ${json.course_code} but loaded assignment is ${state.assignment.courseCode}.`);
+        if (state.assignment && state.assignment.courseCode !== backupData.course_code) {
+          if (!window.confirm(
+            `Course code mismatch!\n\n` +
+            `Backup is for: ${backupData.course_code}\n` +
+            `Loaded assignment is: ${state.assignment.courseCode}\n\n` +
+            `This backup may not match the current assignment. Continue anyway?`
+          )) {
+            return;
+          }
         }
 
         setState(prev => ({
           ...prev,
-          studentName: json.student_name,
-          studentId: json.student_id,
-          submissionData: json.submission_data,
+          studentName: backupData.student_name,
+          studentId: backupData.student_id,
+          submissionData: backupData.submission_data,
           lastSaved: new Date().toISOString()
         }));
-        alert("Work restored successfully.");
+        alert("Work restored successfully!");
       } catch (err) {
-        alert("Invalid backup file.");
+        alert(
+          "Could not read file.\n\n" +
+          "Make sure the file is a valid JSON backup created by this app.\n" +
+          "Backup files are named: CourseCode_Title_backup.json"
+        );
       }
     };
     reader.readAsText(file);

@@ -27,7 +27,10 @@ export const LaTeXCheatsheet: React.FC<LaTeXCheatsheetProps> = ({ isOpen, onClos
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600 rounded-t-xl">
           <div className="flex items-center gap-3">
             <BookOpen className="w-6 h-6 text-white" />
-            <h2 className="text-xl font-bold text-white">LaTeX Math Cheatsheet</h2>
+            <div>
+              <h2 className="text-xl font-bold text-white">Math Equation Format Guide</h2>
+              <p className="text-xs text-white/80">LaTeX notation for typing mathematical equations</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -290,7 +293,7 @@ const MatricesTab: React.FC = () => (
 
       <div className="bg-gray-50 rounded-lg p-4 mb-4">
         <h4 className="font-semibold text-gray-700 mb-2">Basic Matrix (no brackets)</h4>
-        <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto">
+        <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto text-gray-800">
 {`\\begin{matrix}
 a & b \\\\
 c & d
@@ -321,7 +324,7 @@ c & d
       <div className="space-y-4">
         <div className="bg-green-50 rounded-lg p-4">
           <h4 className="font-semibold text-green-800 mb-2">2x2 Matrix with Parentheses</h4>
-          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto">
+          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto text-gray-800">
 {`\\begin{pmatrix}
 1 & 2 \\\\
 3 & 4
@@ -331,7 +334,7 @@ c & d
 
         <div className="bg-purple-50 rounded-lg p-4">
           <h4 className="font-semibold text-purple-800 mb-2">3x3 Matrix with Square Brackets</h4>
-          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto">
+          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto text-gray-800">
 {`\\begin{bmatrix}
 a_{11} & a_{12} & a_{13} \\\\
 a_{21} & a_{22} & a_{23} \\\\
@@ -342,7 +345,7 @@ a_{31} & a_{32} & a_{33}
 
         <div className="bg-orange-50 rounded-lg p-4">
           <h4 className="font-semibold text-orange-800 mb-2">Determinant</h4>
-          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto">
+          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto text-gray-800">
 {`\\begin{vmatrix}
 a & b \\\\
 c & d
@@ -352,7 +355,7 @@ c & d
 
         <div className="bg-blue-50 rounded-lg p-4">
           <h4 className="font-semibold text-blue-800 mb-2">Augmented Matrix (for systems)</h4>
-          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto">
+          <pre className="text-sm font-mono bg-white p-3 rounded border overflow-x-auto text-gray-800">
 {`\\left[
 \\begin{array}{cc|c}
 1 & 2 & 3 \\\\
