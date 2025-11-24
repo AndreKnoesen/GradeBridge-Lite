@@ -142,9 +142,16 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.assignment.courseCode}_${state.assignment.title}_backup.json`;
+    // Same naming pattern as PDF: studentId_studentName_courseCode
+    a.download = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
     a.click();
     URL.revokeObjectURL(url);
+    // Show LMS upload reminder (same as PDF)
+    alert(
+      "Backup Saved Successfully!\n\n" +
+      "You can upload this JSON file to your LMS (Canvas, etc.) as a backup of your work.\n\n" +
+      "The file is in your Downloads folder."
+    );
   };
 
   const handleLoadWork = (file: File) => {
