@@ -228,13 +228,7 @@ const App: React.FC = () => {
 
   const handleDownloadPDF = async () => {
     if (!state.assignment) return;
-    
-    // 1. Auto Backup JSON
-    setStatusMessage("Saving JSON backup...");
-    handleExportWork(); 
 
-    // 2. Wait briefly to ensure JSON download starts and UI is ready
-    await new Promise(r => setTimeout(r, 800));
     setStatusMessage("Generating PDF... Please wait.");
 
     const element = document.getElementById('pdf-content');
