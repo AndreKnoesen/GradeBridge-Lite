@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -295,28 +295,61 @@ const App: React.FC = () => {
         {state.viewMode === 'edit' && (
           <div className="max-w-4xl mx-auto p-6 lg:p-12 pb-32">
             {!state.assignment ? (
-              <div className="flex flex-col items-center justify-center h-[60vh] text-center text-gray-400">
-                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                  <AlertTriangle className="w-10 h-10 text-gray-300" />
-                </div>
-                <h2 className="text-xl font-semibold text-gray-600 mb-2">No Assignment Loaded</h2>
-                <p className="max-w-md mb-6">Upload an assignment JSON file from the sidebar to begin your work.</p>
+              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center text-gray-400 py-8">
+                <h2 className="text-xl font-semibold text-gray-600 mb-6">
+                  {!state.studentName.trim() || !state.studentId.trim()
+                    ? "Welcome! Let's Get Started"
+                    : "Ready to Load Your Assignment"}
+                </h2>
 
-                <div className="flex flex-col items-center gap-3">
-                  <p className="text-sm text-gray-500">New here? Try a demo first:</p>
-                  <button
-                    onClick={handleLoadDemo}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg shadow-lg transition-all font-medium"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                    </svg>
-                    Try Demo Assignment
-                  </button>
-                  <p className="text-xs text-gray-400 max-w-xs">
-                    Explore all features with a sample math assignment - no file needed!
-                  </p>
+                {/* How-To Guide */}
+                <div className="max-w-lg mb-8 text-left bg-blue-50 border border-blue-200 rounded-lg p-5 shadow-sm">
+                  <h3 className="font-bold text-blue-800 mb-3 text-center">How to Submit Your Assignment</h3>
+                  <ol className="space-y-3 text-sm text-blue-900">
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.studentName.trim() && state.studentId.trim() ? 'bg-green-50' : 'bg-blue-100'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.studentName.trim() && state.studentId.trim() ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
+                      <span><strong>Enter your info</strong> - Type your Full Name and Student ID in the sidebar (left panel)</span>
+                    </li>
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() && state.studentId.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() && state.studentId.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
+                      <span><strong>Load assignment</strong> - Upload the JSON file your instructor provided (or try demo)</span>
+                    </li>
+                    <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+                      <span><strong>Complete your work</strong> - Fill in answers for each problem</span>
+                    </li>
+                    <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
+                      <span><strong>Download PDF</strong> - Click the green "Preview & Download PDF" button in the sidebar</span>
+                    </li>
+                  </ol>
+                  <div className="mt-4 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                    <strong>Tip:</strong> Your work auto-saves in this browser. Use "Save Backup" to keep a copy you can restore later.
+                  </div>
                 </div>
+
+                {state.studentName.trim() && state.studentId.trim() ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <p className="text-sm text-gray-600 font-medium">Upload an assignment JSON from the sidebar, or try the demo:</p>
+                    <button
+                      onClick={handleLoadDemo}
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg shadow-lg transition-all font-medium"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                      </svg>
+                      Try Demo Assignment
+                    </button>
+                    <p className="text-xs text-gray-400 max-w-xs">
+                      Explore all features with a sample math assignment
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-amber-700 font-medium">Please enter your Name and Student ID first</p>
+                    <p className="text-sm text-amber-600">Complete Step 1 in the sidebar (left panel) to continue</p>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -340,6 +373,21 @@ const App: React.FC = () => {
                        onSubmissionChange={handleSubmissionChange}
                      />
                    ))}
+                 </div>
+
+                 {/* Floating Download Reminder - appears at bottom when scrolled */}
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                     <ChevronLeft className="w-5 h-5 animate-pulse" />
+                     <span className="text-sm font-medium">Ready to submit? Click "Preview & Download PDF" in the sidebar</span>
+                   </div>
+                   <button
+                     onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
+                     className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-50 transition-colors shadow"
+                   >
+                     <Download className="w-4 h-4" />
+                     Go to Download
+                   </button>
                  </div>
               </>
             )}
