@@ -381,17 +381,14 @@ const App: React.FC = () => {
                  </div>
 
                  {/* Floating Download Reminder - appears at bottom when scrolled */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                     <ChevronLeft className="w-5 h-5 animate-pulse" />
-                     <span className="text-sm font-medium">Ready to submit? Click "Preview & Download PDF" in the sidebar</span>
-                   </div>
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-center gap-4">
+                   <span className="text-sm font-medium">Ready to submit?</span>
                    <button
                      onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
                      className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-50 transition-colors shadow"
                    >
                      <Download className="w-4 h-4" />
-                     Go to Download
+                     Preview & Download PDF
                    </button>
                  </div>
               </>
