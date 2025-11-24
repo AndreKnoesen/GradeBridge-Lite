@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save, FileJson } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -462,22 +462,29 @@ const App: React.FC = () => {
 
                    {/* Fixed Download Bar - Always visible at bottom */}
                    <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                     <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto w-full px-4">
+                     <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
                        <button
                          onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
-                         className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
+                         className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
                        >
                          <ChevronLeft className="w-4 h-4" />
-                         Back to Edit
+                         Back
                        </button>
-                       <p className="text-amber-300 text-sm font-medium px-3 text-center">
-                         PDF format is optimized for Gradescope - don't modify it!
+                       <p className="hidden sm:block text-amber-300 text-xs font-medium px-2 text-center">
+                         Upload to LMS as instructed
                        </p>
                        <button
-                         onClick={handleDownloadPDF}
-                         className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
+                         onClick={handleExportWork}
+                         className="py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
                        >
-                         <Download className="w-6 h-6" />
+                         <FileJson className="w-4 h-4" />
+                         Download JSON
+                       </button>
+                       <button
+                         onClick={handleDownloadPDF}
+                         className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
+                       >
+                         <Download className="w-5 h-5" />
                          Download PDF
                        </button>
                      </div>
