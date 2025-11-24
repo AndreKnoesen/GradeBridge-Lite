@@ -404,28 +404,22 @@ const App: React.FC = () => {
                    ))}
                  </div>
 
-                 {/* Floating Download Reminder - appears at bottom when scrolled */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-between px-6">
-                   <div className="hidden sm:flex items-center gap-2 text-green-100 text-sm">
-                     <span className="text-lg">←</span>
-                     <span>Download a backup file from the sidebar to keep your work safe</span>
-                   </div>
-                   <div className="flex items-center gap-4 mx-auto sm:mx-0">
-                     <span className="text-sm font-medium hidden sm:inline">Ready to submit?</span>
+                 {/* Floating Bottom Bar - consistent with preview bar */}
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 p-4 shadow-2xl z-40">
+                   <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto">
+                     <p className="hidden sm:block text-slate-400 text-sm">
+                       ← Save backup from sidebar
+                     </p>
+                     <p className="text-amber-300 text-sm font-medium px-3 text-center">
+                       Ready to submit?
+                     </p>
                      <button
                        onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
-                       className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-50 transition-colors shadow"
+                       className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
                      >
-                       <Download className="w-4 h-4" />
+                       <Download className="w-6 h-6" />
                        Preview & Download PDF
                      </button>
-                     <div className="group relative">
-                       <Info className="w-5 h-5 text-green-200 cursor-help" />
-                       <div className="invisible group-hover:visible absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl z-50">
-                         <p className="font-semibold text-blue-300 mb-1">About the PDF format</p>
-                         <p>Optimized for Gradescope grading. Submit directly without modifications.</p>
-                       </div>
-                     </div>
                    </div>
                  </div>
               </>
