@@ -83,7 +83,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     return (
       <div className="space-y-2 w-full">
         <label className="block text-sm font-medium text-gray-700">
-          Your Answer (Text/LaTeX supported):
+          Your Answer (Text/LaTeX math format supported):
         </label>
         <textarea
           value={textVal}

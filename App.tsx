@@ -99,7 +99,12 @@ const App: React.FC = () => {
         }
         setState(prev => ({ ...prev, assignment: json, submissionData: {} }));
       } catch (err) {
-        alert("Error loading assignment: Invalid JSON format. Make sure the file was exported from Assignment Maker.");
+        alert(
+          "Invalid Assignment File\n\n" +
+          "This file doesn't appear to be a valid assignment.\n\n" +
+          "Please use the assignment JSON file provided by your course/instructor.\n\n" +
+          "If you're trying to restore your previous work, use \"Load Work\" instead."
+        );
       }
     };
     reader.readAsText(file);
