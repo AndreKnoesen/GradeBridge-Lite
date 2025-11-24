@@ -448,9 +448,9 @@ const App: React.FC = () => {
                      <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto">
                        <button
                          onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
-                         className="py-3 px-5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all"
+                         className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
                        >
-                         <ChevronLeft className="w-5 h-5" />
+                         <ChevronLeft className="w-4 h-4" />
                          Back to Edit
                        </button>
                        <p className="text-amber-300 text-sm font-medium px-3 text-center">
