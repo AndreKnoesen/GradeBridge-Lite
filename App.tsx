@@ -405,8 +405,8 @@ const App: React.FC = () => {
                  </div>
 
                  {/* Floating Bottom Bar - consistent with preview bar */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 p-4 shadow-2xl z-40">
-                   <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto">
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
+                   <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto w-full px-4">
                      <p className="hidden sm:block text-slate-400 text-sm">
                        ← Save backup from sidebar
                      </p>
@@ -444,8 +444,8 @@ const App: React.FC = () => {
                    </div>
 
                    {/* Fixed Download Bar - Always visible at bottom */}
-                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 p-4 shadow-2xl z-40">
-                     <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto">
+                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
+                     <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto w-full px-4">
                        <button
                          onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
                          className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
