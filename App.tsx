@@ -459,17 +459,17 @@ const App: React.FC = () => {
                          <ChevronLeft className="w-5 h-5" />
                          Back to Edit
                        </button>
+                       <p className="text-amber-300 text-sm font-medium px-3 text-center">
+                         PDF format is optimized for Gradescope - don't modify it!
+                       </p>
                        <button
                          onClick={handleDownloadPDF}
                          className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
                        >
                          <Download className="w-6 h-6" />
-                         Download Submission PDF
+                         Download PDF
                        </button>
                      </div>
-                     <p className="text-slate-400 text-xs text-center mt-2">
-                       Don't worry about the PDF format - it's optimized for Gradescope grading
-                     </p>
                    </div>
                </>
            )}
