@@ -475,9 +475,9 @@ const App: React.FC = () => {
                        </p>
                        <button
                          onClick={handleExportWork}
-                         className="py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
+                         className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
                        >
-                         <FileJson className="w-4 h-4" />
+                         <FileJson className="w-5 h-5" />
                          Download JSON
                        </button>
                        <button
