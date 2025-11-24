@@ -480,13 +480,19 @@ const App: React.FC = () => {
                          <FileJson className="w-5 h-5" />
                          Download JSON
                        </button>
-                       <button
-                         onClick={handleDownloadPDF}
-                         className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
-                       >
-                         <Download className="w-5 h-5" />
-                         Download PDF
-                       </button>
+                       <div className="relative group">
+                         <button
+                           onClick={handleDownloadPDF}
+                           className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
+                         >
+                           <Download className="w-5 h-5" />
+                           Download PDF
+                         </button>
+                         <div className="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-slate-700 text-white text-xs rounded-lg shadow-xl z-50">
+                           <p className="font-semibold text-blue-300 mb-1">Why does the PDF look different?</p>
+                           <p>The format is optimized for Gradescope grading. Submit it directly - don't modify!</p>
+                         </div>
+                       </div>
                      </div>
                    </div>
                </>
