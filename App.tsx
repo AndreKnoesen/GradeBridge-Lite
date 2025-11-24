@@ -435,7 +435,7 @@ const App: React.FC = () => {
                        className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
                      >
                        <Download className="w-6 h-6" />
-                       Preview & Download PDF
+                       Preview and Downloads
                      </button>
                    </div>
                  </div>
