@@ -241,7 +241,11 @@ This file doesn't appear to be a valid assignment.
 
 Please use the assignment JSON file provided by your course/instructor.
 
-If you're trying to restore your previous work, use "Load Work" instead.`)}},Z.readAsText(M)},U=()=>{A(M=>({...M,assignment:Ty,submissionData:{}})),D(Ay),setTimeout(()=>D(""),5e3)},K=()=>{if(!o.assignment)return;const M={student_name:o.studentName,student_id:o.studentId,submission_data:o.submissionData,assignment_title:o.assignment.title,course_code:o.assignment.courseCode,exported_at:new Date().toISOString(),version:Zd},Z=new Blob([JSON.stringify(M,null,2)],{type:"application/json"}),X=URL.createObjectURL(Z),oe=document.createElement("a");oe.href=X,oe.download=`${o.assignment.courseCode}_${o.assignment.title}_backup.json`,oe.click(),URL.revokeObjectURL(X)},ie=M=>{const Z=new FileReader;Z.onload=X=>{var oe;try{const he=JSON.parse((oe=X.target)==null?void 0:oe.result);if(he.problems&&he.courseCode&&!he.submission_data){alert(`Wrong file type!
+If you're trying to restore your previous work, use "Load Work" instead.`)}},Z.readAsText(M)},U=()=>{A(M=>({...M,assignment:Ty,submissionData:{}})),D(Ay),setTimeout(()=>D(""),5e3)},K=()=>{if(!o.assignment)return;const M={student_name:o.studentName,student_id:o.studentId,submission_data:o.submissionData,assignment_title:o.assignment.title,course_code:o.assignment.courseCode,exported_at:new Date().toISOString(),version:Zd},Z=new Blob([JSON.stringify(M,null,2)],{type:"application/json"}),X=URL.createObjectURL(Z),oe=document.createElement("a");oe.href=X,oe.download=`${o.studentId}_${o.studentName}_${o.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi,"_"),oe.click(),URL.revokeObjectURL(X),alert(`Backup Saved Successfully!
+
+You can upload this JSON file to your LMS (Canvas, etc.) as a backup of your work.
+
+The file is in your Downloads folder.`)},ie=M=>{const Z=new FileReader;Z.onload=X=>{var oe;try{const he=JSON.parse((oe=X.target)==null?void 0:oe.result);if(he.problems&&he.courseCode&&!he.submission_data){alert(`Wrong file type!
 
 You selected an ASSIGNMENT file (used to define problems).
 
