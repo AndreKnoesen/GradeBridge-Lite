@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { SUBMISSION_TYPES } from '../constants';
 import { SubmissionData } from '../types';
-import { Image as ImageIcon, Trash2, X, Lightbulb } from 'lucide-react';
+import { Image as ImageIcon, Trash2, X, Lightbulb, HelpCircle } from 'lucide-react';
 import { LatexContent } from './KatexRenderer';
 
 interface SubmissionWidgetProps {
@@ -82,8 +82,14 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     const textVal = data?.textAnswer || '';
     return (
       <div className="space-y-2 w-full">
-        <label className="block text-sm font-medium text-gray-700">
-          Your Answer (Text/LaTeX math format supported):
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <span>Your Answer (math equations supported):</span>
+          <span className="group relative">
+            <HelpCircle className="w-4 h-4 text-blue-500 cursor-help" />
+            <span className="invisible group-hover:visible absolute left-0 bottom-full mb-1 w-48 p-2 bg-slate-800 text-white text-xs rounded shadow-lg z-10">
+              Use $...$ for inline math. See "Math Equation Format Help" in sidebar for examples.
+            </span>
+          </span>
         </label>
         <textarea
           value={textVal}

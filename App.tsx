@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -381,15 +381,28 @@ const App: React.FC = () => {
                  </div>
 
                  {/* Floating Download Reminder - appears at bottom when scrolled */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-center gap-4">
-                   <span className="text-sm font-medium">Ready to submit?</span>
-                   <button
-                     onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
-                     className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-50 transition-colors shadow"
-                   >
-                     <Download className="w-4 h-4" />
-                     Preview & Download PDF
-                   </button>
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-between px-6">
+                   <div className="hidden sm:flex items-center gap-2 text-green-100 text-sm">
+                     <span className="text-lg">←</span>
+                     <span>Save a backup anytime from the sidebar</span>
+                   </div>
+                   <div className="flex items-center gap-4 mx-auto sm:mx-0">
+                     <span className="text-sm font-medium hidden sm:inline">Ready to submit?</span>
+                     <button
+                       onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
+                       className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-50 transition-colors shadow"
+                     >
+                       <Download className="w-4 h-4" />
+                       Preview & Download PDF
+                     </button>
+                     <div className="group relative">
+                       <Info className="w-5 h-5 text-green-200 cursor-help" />
+                       <div className="invisible group-hover:visible absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl z-50">
+                         <p className="font-semibold text-blue-300 mb-1">About the PDF format</p>
+                         <p>Optimized for Gradescope grading. Submit directly without modifications.</p>
+                       </div>
+                     </div>
+                   </div>
                  </div>
               </>
             )}
@@ -429,6 +442,13 @@ const App: React.FC = () => {
                          <Download className="w-6 h-6" />
                          Download Submission PDF
                        </button>
+                       <div className="group relative">
+                         <Info className="w-5 h-5 text-slate-400 cursor-help" />
+                         <div className="invisible group-hover:visible absolute bottom-full right-0 mb-2 w-56 p-3 bg-slate-700 text-white text-xs rounded-lg shadow-xl z-50">
+                           <p className="font-semibold text-blue-300 mb-1">About the PDF format</p>
+                           <p>Optimized for Gradescope grading. Submit directly without modifications.</p>
+                         </div>
+                       </div>
                      </div>
                      <p className="text-slate-400 text-xs text-center mt-2">
                        Scroll up to review your submission
