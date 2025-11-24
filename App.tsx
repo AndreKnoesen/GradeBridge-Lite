@@ -400,15 +400,38 @@ const App: React.FC = () => {
         )}
 
         {/* Print Preview Mode */}
-        <div className={`${state.viewMode === 'print' ? 'block' : 'hidden'} bg-gray-500 p-8 min-h-full flex justify-center`}>
+        <div className={`${state.viewMode === 'print' ? 'block' : 'hidden'} bg-gray-500 p-8 pb-32 min-h-full`}>
            {state.assignment && (
-               <div className="shadow-2xl">
-                   <PrintView 
-                     assignment={state.assignment}
-                     submissionData={state.submissionData}
-                     studentName={state.studentName}
-                     studentId={state.studentId}
-                   />
+               <div className="flex flex-col items-center">
+                   <div className="shadow-2xl">
+                       <PrintView
+                         assignment={state.assignment}
+                         submissionData={state.submissionData}
+                         studentName={state.studentName}
+                         studentId={state.studentId}
+                       />
+                   </div>
+
+                   {/* Download Actions - At bottom of preview */}
+                   <div className="mt-8 mb-4 flex flex-col items-center gap-4 w-full max-w-md">
+                     <button
+                       onClick={handleDownloadPDF}
+                       className="w-full py-4 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
+                     >
+                       <Download className="w-6 h-6" />
+                       Download Submission PDF
+                     </button>
+                     <button
+                       onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
+                       className="w-full py-3 px-6 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all"
+                     >
+                       <ChevronLeft className="w-5 h-5" />
+                       Back to Edit
+                     </button>
+                     <p className="text-white/70 text-sm text-center">
+                       Review your submission above, then click Download to generate your PDF for Gradescope.
+                     </p>
+                   </div>
                </div>
            )}
         </div>

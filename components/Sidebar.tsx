@@ -230,34 +230,13 @@ const Sidebar: React.FC<SidebarProps> = ({
              </div>
            ) : (
              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleDownloadClick}
-                    className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium flex items-center justify-center gap-2 transition-all shadow-lg animate-pulse hover:animate-none"
-                  >
-                    <Download className="w-4 h-4" /> Download Submission
-                  </button>
-                  <div className="relative">
-                    <button
-                      onMouseEnter={() => setShowPdfTooltip(true)}
-                      onMouseLeave={() => setShowPdfTooltip(false)}
-                      onClick={() => setShowPdfTooltip(!showPdfTooltip)}
-                      className="p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
-                      title="About PDF format"
-                    >
-                      <Info className="w-4 h-4" />
-                    </button>
-                    {showPdfTooltip && (
-                      <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50">
-                        <div className="text-xs text-slate-200 space-y-2">
-                          <p className="font-semibold text-blue-400">Why does the PDF look different?</p>
-                          <p>The PDF format is <strong>optimized for Gradescope</strong> to enable efficient grading.</p>
-                          <p className="text-slate-400">Do not modify the PDF after download.</p>
-                        </div>
-                        <div className="absolute bottom-0 right-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-slate-800 border-r border-b border-slate-600"></div>
-                      </div>
-                    )}
-                  </div>
+                <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
+                  <p className="text-sm text-green-300 text-center">
+                    <strong>Preview Mode</strong>
+                  </p>
+                  <p className="text-xs text-green-400/80 text-center mt-1">
+                    Scroll down in the preview to find the Download button
+                  </p>
                 </div>
                 <button
                   onClick={onToggleView}
