@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -261,7 +261,13 @@ const App: React.FC = () => {
         try {
             const worker = (window as any).html2pdf().set(opt).from(element);
             await worker.save(); // Waits for the PDF download to trigger
-            setStatusMessage("PDF Downloaded Successfully!");
+            setStatusMessage("PDF Downloaded!");
+            // Show LMS upload reminder
+            alert(
+              "PDF Downloaded Successfully!\n\n" +
+              "NEXT STEP: Upload this PDF to your LMS (Canvas, Gradescope, etc.) as instructed by your course.\n\n" +
+              "The PDF file is in your Downloads folder."
+            );
             setTimeout(() => setStatusMessage(''), 5000);
         } catch (error) {
             console.error("PDF Generation Error:", error);
@@ -407,9 +413,13 @@ const App: React.FC = () => {
                  {/* Floating Bottom Bar - consistent with preview bar */}
                  <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
                    <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto w-full px-4">
-                     <p className="hidden sm:block text-slate-400 text-sm">
-                       ← Save backup from sidebar
-                     </p>
+                     <button
+                       onClick={handleExportWork}
+                       className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
+                     >
+                       <Save className="w-4 h-4" />
+                       Save Backup
+                     </button>
                      <p className="text-amber-300 text-sm font-medium px-3 text-center">
                        Ready to submit?
                      </p>
