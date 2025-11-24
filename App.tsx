@@ -378,7 +378,7 @@ const App: React.FC = () => {
                  <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-green-600 to-green-500 text-white p-4 shadow-2xl z-40 flex items-center justify-between px-6">
                    <div className="hidden sm:flex items-center gap-2 text-green-100 text-sm">
                      <span className="text-lg">←</span>
-                     <span>Save a backup anytime from the sidebar</span>
+                     <span>Download a backup file from the sidebar to keep your work safe</span>
                    </div>
                    <div className="flex items-center gap-4 mx-auto sm:mx-0">
                      <span className="text-sm font-medium hidden sm:inline">Ready to submit?</span>
