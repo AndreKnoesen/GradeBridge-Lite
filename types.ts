@@ -6,6 +6,7 @@ export enum SubmissionType {
   TEXT = 'Text',
   IMAGE = 'Image',
   AI_REFLECTIVE = 'AI Reflective',
+  TRUE_FALSE = 'True/False',
   MATLAB_GRADER = 'MatlabGrader',
   CODE = 'Code',
   FILE_UPLOAD = 'File Upload'
@@ -19,6 +20,7 @@ export interface Subsection {
   submissionType: SubmissionType | string;
   maxImages?: number;
   config?: string;
+  minWords?: number;
 }
 
 export interface Problem {
@@ -45,6 +47,7 @@ export interface SubmissionData {
     textAnswer?: string;
     imageAnswers?: string[]; // Array of base64 strings
     aiReflective?: string;
+    trueFalseAnswer?: string;
   };
 }
 

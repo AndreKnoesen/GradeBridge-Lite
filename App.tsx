@@ -307,6 +307,8 @@ const App: React.FC = () => {
 
         if (sub.submissionType === 'AI Reflective' && subData.aiReflective) {
           convertedData[autograderKey] = { 'AI Reflective': subData.aiReflective };
+        } else if (sub.submissionType === 'True/False' && subData.trueFalseAnswer) {
+          convertedData[autograderKey] = { 'True/False': subData.trueFalseAnswer };
         } else if (subData.textAnswer) {
           convertedData[autograderKey] = { 'Answer as text': subData.textAnswer };
         }

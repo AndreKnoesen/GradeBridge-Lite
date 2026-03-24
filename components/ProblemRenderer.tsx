@@ -92,6 +92,7 @@ const ProblemRenderer: React.FC<ProblemRendererProps> = ({ problem, problemIndex
                       type={widgetType}
                       id={subId}
                       maxImages={sub.maxImages}
+                      minWords={sub.minWords}
                       data={submissionData[subId] || {}}
                       onChange={onSubmissionChange}
                     />

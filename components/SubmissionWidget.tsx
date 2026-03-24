@@ -8,11 +8,12 @@ interface SubmissionWidgetProps {
   type: string;
   id: string;
   maxImages?: number;
+  minWords?: number;
   data: SubmissionData['key'];
   onChange: (id: string, data: SubmissionData['key']) => void;
 }
 
-const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages = 1, data, onChange }) => {
+const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages = 1, minWords = 250, data, onChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -28,9 +29,15 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
 
   const processFiles = (files: File[]) => {
     const currentImages = data?.imageAnswers || [];
-    
+
     if (currentImages.length + files.length > maxImages) {
       alert(`Maximum ${maxImages} images allowed for this problem.`);
+      return;
+    }
+
+    const oversized = files.filter(f => f.size > 4 * 1024 * 1024);
+    if (oversized.length > 0) {
+      alert(`File too large. Maximum image size is 3 MB. Please reduce the image size and try again.`);
       return;
     }
 
@@ -151,7 +158,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
               </button>
               <span className="mx-1">or drag and drop</span>
             </div>
-            <p className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
+            <p className="text-xs text-gray-500">PNG, JPG, GIF up to 3 MB</p>
           </div>
         </div>
 
@@ -187,6 +194,19 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
 
   // Render AI Reflective
   if (type === SUBMISSION_TYPES.AI) {
+    const aiText = data?.aiReflective || '';
+    const wordCount = aiText.trim() === '' ? 0 : aiText.trim().split(/\s+/).length;
+    const wordCountColor = wordCount < 100
+      ? 'text-red-600'
+      : wordCount < minWords
+        ? 'text-amber-600'
+        : 'text-green-600';
+    const wordCountLabel = wordCount < 100
+      ? `${wordCount} / ${minWords} words (minimum not met)`
+      : wordCount < minWords
+        ? `${wordCount} / ${minWords} words (below minimum)`
+        : `${wordCount} / ${minWords} words`;
+
     return (
       <div className="space-y-2 w-full">
          <label className="block text-sm font-medium text-purple-700 flex items-center gap-2">
@@ -194,22 +214,51 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           AI Tool Usage Documentation:
         </label>
         <textarea
-          value={data?.aiReflective || ''}
+          value={aiText}
           onChange={(e) => handleTextChange(e, 'aiReflective')}
           className="w-full p-3 border border-purple-200 bg-purple-50 text-gray-900 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm placeholder-purple-300"
           placeholder="Write your reflective response here... Use $...$ for inline math and $$...$$ for display math."
         />
-        {(data?.aiReflective || '').length > 0 && ((data?.aiReflective || '').includes('$') || (data?.aiReflective || '').includes('\\')) && (
+        <div className={`text-xs font-medium ${wordCountColor}`}>
+          {wordCountLabel}
+        </div>
+        {aiText.length > 0 && (aiText.includes('$') || aiText.includes('\\')) && (
           <div className="mt-2 p-3 bg-white border border-purple-200 rounded-md">
             <p className="text-xs text-purple-400 mb-1 font-bold uppercase">Preview:</p>
             <div className="prose prose-sm max-w-none">
-              <LatexContent content={data?.aiReflective || ''} />
+              <LatexContent content={aiText} />
             </div>
           </div>
         )}
         <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-1">
           <Lightbulb className="w-3 h-3" />
           <span>Document your process - formatting is handled automatically.</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === SUBMISSION_TYPES.TRUE_FALSE || type === 'True/False') {
+    const selected = data?.trueFalseAnswer || '';
+    return (
+      <div className="space-y-3 w-full">
+        <label className="block text-sm font-medium text-gray-700">Your Answer:</label>
+        <div className="flex gap-4">
+          {['true', 'false'].map(val => (
+            <button
+              key={val}
+              onClick={() => onChange(id, { ...data, trueFalseAnswer: val })}
+              className={`flex-1 py-3 px-6 rounded-lg border-2 font-bold text-sm transition-all ${
+                selected === val
+                  ? val === 'true'
+                    ? 'bg-green-600 border-green-600 text-white'
+                    : 'bg-red-600 border-red-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+              }`}
+            >
+              {val === 'true' ? 'True' : 'False'}
+            </button>
+          ))}
         </div>
       </div>
     );

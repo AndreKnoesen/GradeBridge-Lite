@@ -6,7 +6,8 @@ export const VERSION = 'v3.0.0';
 export const SUBMISSION_TYPES = {
   TEXT: 'Answer as text',
   IMAGE: 'Answer as image',
-  AI: 'AI Reflective'
+  AI: 'AI Reflective',
+  TRUE_FALSE: 'True/False'
 };
 
 export const COLORS = {
