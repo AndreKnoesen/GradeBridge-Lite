@@ -197,8 +197,16 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           value={data?.aiReflective || ''}
           onChange={(e) => handleTextChange(e, 'aiReflective')}
           className="w-full p-3 border border-purple-200 bg-purple-50 text-gray-900 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm placeholder-purple-300"
-          placeholder="Describe how you used AI tools for this problem (prompts used, validation steps, etc.)..."
+          placeholder="Write your reflective response here... Use $...$ for inline math and $$...$$ for display math."
         />
+        {(data?.aiReflective || '').length > 0 && ((data?.aiReflective || '').includes('$') || (data?.aiReflective || '').includes('\\')) && (
+          <div className="mt-2 p-3 bg-white border border-purple-200 rounded-md">
+            <p className="text-xs text-purple-400 mb-1 font-bold uppercase">Preview:</p>
+            <div className="prose prose-sm max-w-none">
+              <LatexContent content={data?.aiReflective || ''} />
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-1">
           <Lightbulb className="w-3 h-3" />
           <span>Document your process - formatting is handled automatically.</span>

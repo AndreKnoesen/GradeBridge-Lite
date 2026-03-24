@@ -14,6 +14,7 @@ interface SidebarProps {
   onClearWork: () => void;
   onToggleView: () => void;
   onDownloadPDF: () => void;
+  onDownloadSubmissionJson: () => void;
   statusMessage: string;
 }
 
@@ -27,6 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onClearWork,
   onToggleView,
   onDownloadPDF,
+  onDownloadSubmissionJson,
   statusMessage
 }) => {
   const assignmentInputRef = useRef<HTMLInputElement>(null);

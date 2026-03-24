@@ -287,6 +287,57 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDownloadSubmissionJson = () => {
+    if (!state.assignment) return;
+    if (!state.studentName.trim() || !state.studentId.trim()) {
+      alert("Please enter your Student Name and Student ID before exporting.");
+      return;
+    }
+
+    // Convert internal submission data to autograder-expected format
+    const convertedData: Record<string, Record<string, string>> = {};
+
+    state.assignment.problems.forEach((problem, pIdx) => {
+      problem.subsections.forEach((sub, sIdx) => {
+        const internalKey = `p${pIdx}_s${sIdx}`;
+        const autograderKey = `p${pIdx}s${sIdx}`;
+        const subData = state.submissionData[internalKey];
+
+        if (!subData) return;
+
+        if (sub.submissionType === 'AI Reflective' && subData.aiReflective) {
+          convertedData[autograderKey] = { 'AI Reflective': subData.aiReflective };
+        } else if (subData.textAnswer) {
+          convertedData[autograderKey] = { 'Answer as text': subData.textAnswer };
+        }
+        // Images are excluded — autograder handles text only
+      });
+    });
+
+    const submissionJson = {
+      student_name: state.studentName,
+      student_id: state.studentId,
+      submission_data: convertedData,
+      last_saved: new Date().toISOString()
+    };
+
+    const blob = new Blob([JSON.stringify(submissionJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const filename = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}_submission.json`
+      .replace(/[^a-z0-9_\-\.]/gi, '_');
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    alert(
+      `Submission file downloaded as:\n${filename}\n\n` +
+      "Upload this file to Gradescope when submitting your assignment.\n\n" +
+      "The file is in your Downloads folder."
+    );
+  };
+
   const acceptPrivacy = () => {
     localStorage.setItem(PRIVACY_KEY, 'true');
     setState(s => ({ ...s, privacyAcknowledged: true }));
@@ -327,6 +378,7 @@ const App: React.FC = () => {
         onClearWork={handleClearWork}
         onToggleView={() => setState(s => ({ ...s, viewMode: s.viewMode === 'edit' ? 'print' : 'edit' }))}
         onDownloadPDF={handleDownloadPDF}
+        onDownloadSubmissionJson={handleDownloadSubmissionJson}
         statusMessage={statusMessage}
       />
 
@@ -417,25 +469,39 @@ const App: React.FC = () => {
                    ))}
                  </div>
 
-                 {/* Floating Bottom Bar - consistent with preview bar */}
+                 {/* Floating Bottom Bar */}
                  <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                   <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto w-full px-4">
+                   <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
                      <button
                        onClick={handleExportWork}
-                       className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
+                       className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
                      >
                        <Save className="w-4 h-4" />
                        Save Backup
                      </button>
-                     <p className="text-amber-300 text-sm font-medium px-3 text-center">
+                     <p className="hidden sm:block text-amber-300 text-xs font-medium px-1 text-center">
                        Ready to submit?
                      </p>
                      <button
-                       onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
-                       className="py-3 px-6 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl"
+                       onClick={handleDownloadSubmissionJson}
+                       className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
                      >
-                       <Download className="w-6 h-6" />
-                       Preview and Downloads
+                       <FileJson className="w-5 h-5" />
+                       Download for Gradescope
+                     </button>
+                     <button
+                       onClick={handleDownloadPDF}
+                       className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
+                     >
+                       <Download className="w-5 h-5" />
+                       Download PDF
+                     </button>
+                     <button
+                       onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
+                       className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
+                     >
+                       <ChevronLeft className="w-4 h-4 rotate-180" />
+                       Preview
                      </button>
                    </div>
                  </div>
@@ -471,14 +537,14 @@ const App: React.FC = () => {
                          Back
                        </button>
                        <p className="hidden sm:block text-amber-300 text-xs font-medium px-2 text-center">
-                         Upload to LMS as instructed
+                         Download both files and upload to Gradescope
                        </p>
                        <button
-                         onClick={handleExportWork}
+                         onClick={handleDownloadSubmissionJson}
                          className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
                        >
                          <FileJson className="w-5 h-5" />
-                         Download JSON
+                         Download for Gradescope
                        </button>
                        <div className="relative group">
                          <button
