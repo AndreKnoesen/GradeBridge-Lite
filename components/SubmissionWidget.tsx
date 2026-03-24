@@ -25,6 +25,8 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     processFiles(files);
+    // Reset input so the same file can be re-selected after removal
+    e.target.value = '';
   };
 
   const processFiles = (files: File[]) => {
