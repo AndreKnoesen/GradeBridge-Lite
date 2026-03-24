@@ -295,7 +295,7 @@ const App: React.FC = () => {
     }
 
     // Convert internal submission data to autograder-expected format
-    const convertedData: Record<string, Record<string, string>> = {};
+    const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
 
     state.assignment.problems.forEach((problem, pIdx) => {
       problem.subsections.forEach((sub, sIdx) => {
@@ -303,22 +303,41 @@ const App: React.FC = () => {
         const autograderKey = `p${pIdx}s${sIdx}`;
         const subData = state.submissionData[internalKey];
 
-        if (!subData) return;
-
-        if (sub.submissionType === 'AI Reflective' && subData.aiReflective) {
-          convertedData[autograderKey] = { 'AI Reflective': subData.aiReflective };
-        } else if (sub.submissionType === 'True/False' && subData.trueFalseAnswer) {
-          convertedData[autograderKey] = { 'True/False': subData.trueFalseAnswer };
-        } else if (subData.textAnswer) {
-          convertedData[autograderKey] = { 'Answer as text': subData.textAnswer };
+        if (sub.submissionType === 'Image') {
+          // Images are embedded in the PDF — record count so autograder can verify submission
+          convertedData[autograderKey] = {
+            answer: null,
+            images_submitted: subData?.imageAnswers?.length ?? 0
+          };
+        } else if (sub.submissionType === 'AI Reflective') {
+          convertedData[autograderKey] = {
+            answer: subData?.aiReflective ?? null,
+            images_submitted: 0
+          };
+        } else if (sub.submissionType === 'True/False') {
+          convertedData[autograderKey] = {
+            answer: subData?.trueFalseAnswer ?? null,
+            images_submitted: 0
+          };
+        } else {
+          convertedData[autograderKey] = {
+            answer: subData?.textAnswer ?? null,
+            images_submitted: 0
+          };
         }
-        // Images are excluded — autograder handles text only
       });
     });
+
+    const assignmentId = `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`;
+    const pdfFilename = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.pdf`
+      .replace(/[^a-z0-9_\-\.]/gi, '_');
 
     const submissionJson = {
       student_name: state.studentName,
       student_id: state.studentId,
+      course_code: state.assignment.courseCode,
+      assignment_id: assignmentId,
+      pdf_filename: pdfFilename,
       submission_data: convertedData,
       last_saved: new Date().toISOString()
     };
