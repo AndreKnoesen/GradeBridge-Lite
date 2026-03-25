@@ -7,7 +7,6 @@ interface PrintViewProps {
   assignment: Assignment;
   submissionData: SubmissionData;
   studentName: string;
-  studentId: string;
 }
 
 // Helper to convert submissionType to widget type string
@@ -38,7 +37,7 @@ const calculateProblemPoints = (problem: Problem): number => {
   return problem.subsections.reduce((sum, sub) => sum + sub.points, 0);
 };
 
-const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, studentName, studentId }) => {
+const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, studentName }) => {
   const totalPoints = calculateTotalPoints(assignment.problems);
 
   // --- Internal Components ---
@@ -71,8 +70,7 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
       {!isTitlePage && title && subtitle && (
         <div className="border-b-4 border-gray-900 pb-4 mb-6 flex justify-between items-end w-full flex-none">
           <div className="flex flex-col">
-            <span className="text-xl font-bold text-black uppercase tracking-tight">ID: {studentId}</span>
-            <span className="text-base font-medium text-gray-700">{studentName}</span>
+            <span className="text-xl font-bold text-black uppercase tracking-tight">{studentName}</span>
           </div>
           <div className="text-right">
             <div className="text-lg font-bold text-black uppercase">{title}</div>
@@ -155,10 +153,6 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
             <div className="grid grid-cols-[180px_1fr] gap-4 items-baseline">
                <span className="font-bold text-gray-600 uppercase text-lg">Student Name</span>
                <span className="font-bold text-black border-b-2 border-gray-300 pb-1">{studentName}</span>
-            </div>
-            <div className="grid grid-cols-[180px_1fr] gap-4 items-baseline">
-               <span className="font-bold text-gray-600 uppercase text-lg">Student ID</span>
-               <span className="font-bold text-black border-b-2 border-gray-300 pb-1">{studentId}</span>
             </div>
             <div className="grid grid-cols-[180px_1fr] gap-4 items-baseline">
                <span className="font-bold text-gray-600 uppercase text-lg">Total Points</span>

@@ -11,7 +11,6 @@ import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save, FileJson 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     studentName: '',
-    studentId: '',
     assignment: null,
     submissionData: {},
     viewMode: 'edit',
@@ -50,7 +49,6 @@ const App: React.FC = () => {
            setState(prev => ({
              ...prev,
              studentName: parsed.studentName || '',
-             studentId: parsed.studentId || '',
              assignment: parsed.assignment || null,
              submissionData: parsed.submissionData || {},
              lastSaved: parsed.lastSaved || null,
@@ -66,10 +64,9 @@ const App: React.FC = () => {
   // Auto Save Debounced
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (state.studentName || state.studentId || Object.keys(state.submissionData).length > 0) {
+      if (state.studentName || Object.keys(state.submissionData).length > 0) {
         const toSave = {
           studentName: state.studentName,
-          studentId: state.studentId,
           assignment: state.assignment,
           submissionData: state.submissionData,
           lastSaved: new Date().toISOString()
@@ -80,7 +77,7 @@ const App: React.FC = () => {
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [state.studentName, state.studentId, state.submissionData, state.assignment]);
+  }, [state.studentName, state.submissionData, state.assignment]);
 
   // Handlers
   const handleUpdateStudent = (field: string, value: string) => {
@@ -131,7 +128,6 @@ const App: React.FC = () => {
     if (!state.assignment) return;
     const backup: BackupData = {
       student_name: state.studentName,
-      student_id: state.studentId,
       submission_data: state.submissionData,
       assignment_title: state.assignment.title,
       course_code: state.assignment.courseCode,
@@ -142,8 +138,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    // Same naming pattern as PDF: studentId_studentName_courseCode
-    a.download = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
+    a.download = `${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
     a.click();
     URL.revokeObjectURL(url);
     // Show LMS upload reminder (same as PDF)
@@ -209,7 +204,6 @@ const App: React.FC = () => {
         setState(prev => ({
           ...prev,
           studentName: backupData.student_name,
-          studentId: backupData.student_id,
           submissionData: backupData.submission_data,
           lastSaved: new Date().toISOString()
         }));
@@ -231,7 +225,6 @@ const App: React.FC = () => {
          localStorage.removeItem(STORAGE_KEY);
          setState({
             studentName: '',
-            studentId: '',
             assignment: null,
             submissionData: {},
             viewMode: 'edit',
@@ -256,7 +249,7 @@ const App: React.FC = () => {
     // 3. HTML2PDF Options
     const opt = {
       margin: 0, // Critical: margin 0 to prevent offset issues with our full-page divs
-      filename: `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
+      filename: `${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -289,8 +282,8 @@ const App: React.FC = () => {
 
   const handleDownloadSubmissionJson = () => {
     if (!state.assignment) return;
-    if (!state.studentName.trim() || !state.studentId.trim()) {
-      alert("Please enter your Student Name and Student ID before exporting.");
+    if (!state.studentName.trim()) {
+      alert("Please enter your name before exporting.");
       return;
     }
 
@@ -329,12 +322,11 @@ const App: React.FC = () => {
     });
 
     const assignmentId = `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`;
-    const pdfFilename = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}.pdf`
+    const pdfFilename = `${state.studentName}_${state.assignment.courseCode}.pdf`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
 
     const submissionJson = {
       student_name: state.studentName,
-      student_id: state.studentId,
       course_code: state.assignment.courseCode,
       assignment_id: assignmentId,
       pdf_filename: pdfFilename,
@@ -346,7 +338,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const filename = `${state.studentId}_${state.studentName}_${state.assignment.courseCode}_submission.json`
+    const filename = `${state.studentName}_${state.assignment.courseCode}_submission.json`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
     a.download = filename;
     a.click();
@@ -412,7 +404,7 @@ const App: React.FC = () => {
             {!state.assignment ? (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center text-gray-400 py-8">
                 <h2 className="text-xl font-semibold text-gray-600 mb-6">
-                  {!state.studentName.trim() || !state.studentId.trim()
+                  {!state.studentName.trim()
                     ? "Welcome! Let's Get Started"
                     : "Ready to Load Your Assignment"}
                 </h2>
@@ -421,12 +413,12 @@ const App: React.FC = () => {
                 <div className="max-w-lg mb-8 text-left bg-blue-50 border border-blue-200 rounded-lg p-5 shadow-sm">
                   <h3 className="font-bold text-blue-800 mb-3 text-center">How to Submit Your Assignment</h3>
                   <ol className="space-y-3 text-sm text-blue-900">
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.studentName.trim() && state.studentId.trim() ? 'bg-green-50' : 'bg-blue-100'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.studentName.trim() && state.studentId.trim() ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
-                      <span><strong>Enter your info</strong> - Type your Full Name and Student ID in the sidebar (left panel)</span>
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.studentName.trim() ? 'bg-green-50' : 'bg-blue-100'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.studentName.trim() ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
+                      <span><strong>Enter your name</strong> - Type your Full Name in the sidebar (left panel)</span>
                     </li>
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() && state.studentId.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() && state.studentId.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
                       <span><strong>Load assignment</strong> - Upload the JSON file your instructor provided (or try demo)</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
@@ -443,7 +435,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {state.studentName.trim() && state.studentId.trim() ? (
+                {state.studentName.trim() ? (
                   <div className="flex flex-col items-center gap-3">
                     <p className="text-sm text-gray-600 font-medium">Upload an assignment JSON from the sidebar, or try the demo:</p>
                     <button
@@ -461,7 +453,7 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-amber-700 font-medium">Please enter your Name and Student ID first</p>
+                    <p className="text-amber-700 font-medium">Please enter your name first</p>
                     <p className="text-sm text-amber-600">Complete Step 1 in the sidebar (left panel) to continue</p>
                   </div>
                 )}
@@ -542,7 +534,6 @@ const App: React.FC = () => {
                              assignment={state.assignment}
                              submissionData={state.submissionData}
                              studentName={state.studentName}
-                             studentId={state.studentId}
                            />
                        </div>
                    </div>

@@ -53,7 +53,6 @@ export interface SubmissionData {
 
 export interface AppState {
   studentName: string;
-  studentId: string;
   assignment: Assignment | null;
   submissionData: SubmissionData;
   viewMode: 'edit' | 'print';
@@ -63,7 +62,6 @@ export interface AppState {
 
 export interface BackupData {
   student_name: string;
-  student_id: string;
   submission_data: SubmissionData;
   assignment_title: string;
   course_code: string;

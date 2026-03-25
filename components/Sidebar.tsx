@@ -38,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleAssignmentClick = () => assignmentInputRef.current?.click();
   const handleWorkClick = () => workInputRef.current?.click();
 
-  const hasStudentInfo = state.studentName.trim() && state.studentId.trim();
+  const hasStudentInfo = state.studentName.trim();
 
   return (
     <div className="w-full lg:w-[320px] bg-slate-900 text-slate-100 flex flex-col h-full shadow-2xl overflow-y-auto z-20">
@@ -72,19 +72,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full bg-white border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-black placeholder-gray-400 transition-all font-medium shadow-sm"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1 text-slate-300">Student ID *</label>
-              <input
-                type="text"
-                value={state.studentId}
-                onChange={(e) => onUpdateStudent('studentId', e.target.value)}
-                placeholder="A12345678"
-                className="w-full bg-white border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-black placeholder-gray-400 transition-all font-medium shadow-sm"
-              />
-            </div>
           </div>
           {!hasStudentInfo && (
-            <p className="text-xs text-amber-400">Enter your name and ID to continue</p>
+            <p className="text-xs text-amber-400">Enter your name to continue</p>
           )}
         </div>
 
