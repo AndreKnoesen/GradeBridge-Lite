@@ -7,6 +7,7 @@ import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save, FileJson } from 'lucide-react';
+import { isEncoded, decryptJson, encryptJson } from './cryptoService';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -96,10 +97,14 @@ const App: React.FC = () => {
 
   const handleLoadAssignment = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
-        const json = JSON.parse(e.target?.result as string) as Assignment;
-        // Basic validation - Assignment Maker format uses courseCode, title, problems
+        const raw = (e.target?.result as string).trim();
+        // Decode if encoded by Assignment Maker (gb1:…), otherwise parse plain JSON
+        const json = (isEncoded(raw)
+          ? await decryptJson(raw)
+          : JSON.parse(raw)) as Assignment;
+        // Basic validation
         if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
         }
@@ -280,7 +285,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadSubmissionJson = () => {
+  const handleDownloadSubmissionJson = async () => {
     if (!state.assignment) return;
     if (!state.studentName.trim()) {
       alert("Please enter your name before exporting.");
@@ -334,7 +339,11 @@ const App: React.FC = () => {
       last_saved: new Date().toISOString()
     };
 
-    const blob = new Blob([JSON.stringify(submissionJson, null, 2)], { type: 'application/json' });
+    // Encode before download — Docker autograder decodes with the same key.
+    // This prevents casual text-editor tampering between download and submission.
+    const encoded = await encryptJson(submissionJson);
+
+    const blob = new Blob([encoded], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
