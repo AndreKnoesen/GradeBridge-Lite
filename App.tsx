@@ -6,7 +6,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save, FileJson } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson } from './cryptoService';
 
 const App: React.FC = () => {
@@ -301,20 +301,17 @@ const App: React.FC = () => {
         const autograderKey = `p${pIdx}s${sIdx}`;
         const subData = state.submissionData[internalKey];
 
+        const isAiGraded = typeof sub.submissionType === 'string' && sub.submissionType.startsWith('AI Graded:');
+
         if (sub.submissionType === 'Image') {
           // Images are embedded in the PDF — record count so autograder can verify submission
           convertedData[autograderKey] = {
             answer: null,
             images_submitted: subData?.imageAnswers?.length ?? 0
           };
-        } else if (sub.submissionType === 'AI Reflective') {
+        } else if (isAiGraded) {
           convertedData[autograderKey] = {
-            answer: subData?.aiReflective ?? null,
-            images_submitted: 0
-          };
-        } else if (sub.submissionType === 'True/False') {
-          convertedData[autograderKey] = {
-            answer: subData?.trueFalseAnswer ?? null,
+            answer: subData?.aiAnswer ?? null,
             images_submitted: 0
           };
         } else {
@@ -360,6 +357,11 @@ const App: React.FC = () => {
     );
   };
 
+  const handleDownloadForGradescope = async () => {
+    await handleDownloadSubmissionJson();
+    await handleDownloadPDF();
+  };
+
   const acceptPrivacy = () => {
     localStorage.setItem(PRIVACY_KEY, 'true');
     setState(s => ({ ...s, privacyAcknowledged: true }));
@@ -399,8 +401,7 @@ const App: React.FC = () => {
         onExportWork={handleExportWork}
         onClearWork={handleClearWork}
         onToggleView={() => setState(s => ({ ...s, viewMode: s.viewMode === 'edit' ? 'print' : 'edit' }))}
-        onDownloadPDF={handleDownloadPDF}
-        onDownloadSubmissionJson={handleDownloadSubmissionJson}
+        onDownloadForGradescope={handleDownloadForGradescope}
         statusMessage={statusMessage}
       />
 
@@ -505,18 +506,11 @@ const App: React.FC = () => {
                        Ready to submit?
                      </p>
                      <button
-                       onClick={handleDownloadSubmissionJson}
+                       onClick={handleDownloadForGradescope}
                        className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
                      >
-                       <FileJson className="w-5 h-5" />
-                       Download for Gradescope
-                     </button>
-                     <button
-                       onClick={handleDownloadPDF}
-                       className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
-                     >
                        <Download className="w-5 h-5" />
-                       Download PDF
+                       Download for Gradescope
                      </button>
                      <button
                        onClick={() => setState(s => ({ ...s, viewMode: 'print' }))}
@@ -557,29 +551,13 @@ const App: React.FC = () => {
                          <ChevronLeft className="w-4 h-4" />
                          Back
                        </button>
-                       <p className="hidden sm:block text-amber-300 text-xs font-medium px-2 text-center">
-                         Download both files and upload to Gradescope
-                       </p>
                        <button
-                         onClick={handleDownloadSubmissionJson}
-                         className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
+                         onClick={handleDownloadForGradescope}
+                         className="py-3 px-5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
                        >
-                         <FileJson className="w-5 h-5" />
+                         <Download className="w-5 h-5" />
                          Download for Gradescope
                        </button>
-                       <div className="relative group">
-                         <button
-                           onClick={handleDownloadPDF}
-                           className="py-3 px-5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-xl"
-                         >
-                           <Download className="w-5 h-5" />
-                           Download PDF
-                         </button>
-                         <div className="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-slate-700 text-white text-xs rounded-lg shadow-xl z-50">
-                           <p className="font-semibold text-blue-300 mb-1">Why does the PDF look different?</p>
-                           <p>The format is optimized for Gradescope grading. Submit it directly - don't modify!</p>
-                         </div>
-                       </div>
                      </div>
                    </div>
                </>

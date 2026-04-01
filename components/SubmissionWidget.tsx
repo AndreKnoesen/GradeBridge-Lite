@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { SUBMISSION_TYPES } from '../constants';
+import { SUBMISSION_TYPES, AI_GRADED_TYPES, AI_GRADED_WORD_RANGES } from '../constants';
 import { SubmissionData } from '../types';
 import { Image as ImageIcon, Trash2, X, Lightbulb, HelpCircle } from 'lucide-react';
 import { LatexContent } from './KatexRenderer';
@@ -8,16 +8,16 @@ interface SubmissionWidgetProps {
   type: string;
   id: string;
   maxImages?: number;
-  minWords?: number;
+  minWords?: number; // unused in UI — word range derived from type; kept for compat
   data: SubmissionData['key'];
   onChange: (id: string, data: SubmissionData['key']) => void;
 }
 
-const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages = 1, minWords = 250, data, onChange }) => {
+const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages = 1, data, onChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>, field: 'textAnswer' | 'aiReflective') => {
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>, field: 'textAnswer' | 'aiAnswer') => {
     onChange(id, { ...data, [field]: e.target.value });
   };
 
@@ -25,7 +25,6 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     processFiles(files);
-    // Reset input so the same file can be re-selected after removal
     e.target.value = '';
   };
 
@@ -52,9 +51,9 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     });
 
     Promise.all(promises).then(base64Images => {
-      onChange(id, { 
-        ...data, 
-        imageAnswers: [...currentImages, ...base64Images] 
+      onChange(id, {
+        ...data,
+        imageAnswers: [...currentImages, ...base64Images]
       });
     });
   };
@@ -69,9 +68,9 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     e.preventDefault();
     e.stopPropagation();
     if (type === SUBMISSION_TYPES.IMAGE) {
-      if (e.type === "dragenter" || e.type === "dragover") {
+      if (e.type === 'dragenter' || e.type === 'dragover') {
         setDragActive(true);
-      } else if (e.type === "dragleave") {
+      } else if (e.type === 'dragleave') {
         setDragActive(false);
       }
     }
@@ -86,7 +85,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     }
   };
 
-  // Render Answer as Text
+  // --- Text ---
   if (type === SUBMISSION_TYPES.TEXT) {
     const textVal = data?.textAnswer || '';
     return (
@@ -122,17 +121,17 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     );
   }
 
-  // Render Answer as Image
+  // --- Image ---
   if (type === SUBMISSION_TYPES.IMAGE) {
     const images = data?.imageAnswers || [];
-    
+
     return (
       <div className="space-y-3 w-full">
         <label className="block text-sm font-medium text-gray-700">
           Your Answer (Images - Max {maxImages}):
         </label>
-        
-        <div 
+
+        <div
           className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
             dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
           }`}
@@ -152,7 +151,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           <div className="flex flex-col items-center justify-center space-y-2">
             <ImageIcon className="w-8 h-8 text-gray-400" />
             <div className="text-sm text-gray-600">
-              <button 
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 className="font-medium text-blue-600 hover:text-blue-500"
               >
@@ -194,32 +193,37 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     );
   }
 
-  // Render AI Reflective
-  if (type === SUBMISSION_TYPES.AI) {
-    const aiText = data?.aiReflective || '';
+  // --- AI Graded (all four categories) ---
+  if (AI_GRADED_TYPES.has(type)) {
+    const range = AI_GRADED_WORD_RANGES[type];
+    const aiText = data?.aiAnswer || '';
     const wordCount = aiText.trim() === '' ? 0 : aiText.trim().split(/\s+/).length;
-    const wordCountColor = wordCount < 100
-      ? 'text-red-600'
-      : wordCount < minWords
-        ? 'text-amber-600'
-        : 'text-green-600';
-    const wordCountLabel = wordCount < 100
-      ? `${wordCount} / ${minWords} words (minimum not met)`
-      : wordCount < minWords
-        ? `${wordCount} / ${minWords} words (below minimum)`
-        : `${wordCount} / ${minWords} words`;
+
+    const belowMin = wordCount < range.min;
+    const wordCountColor = belowMin ? 'text-red-600' : 'text-green-600';
+    const wordCountLabel = belowMin
+      ? `${wordCount} words — minimum ${range.min} not yet reached`
+      : `${wordCount} words`;
+
+    const isBinary = type === 'AI Graded: Binary';
+    const placeholder = isBinary
+      ? 'State your answer (yes/no/true/false) and give a brief justification...'
+      : 'Write your response here... Use $...$ for inline math and $$...$$ for display math.';
 
     return (
       <div className="space-y-2 w-full">
-         <label className="block text-sm font-medium text-purple-700 flex items-center gap-2">
-          <span className="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded-full border border-purple-200">Reflective</span>
-          AI Tool Usage Documentation:
+        <label className="block text-sm font-medium text-purple-700 flex items-center gap-2">
+          <span className="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded-full border border-purple-200">
+            AI Graded · {range.label}
+          </span>
+          <span className="text-gray-500 font-normal">Aim for {range.min}–{range.max} words</span>
         </label>
         <textarea
           value={aiText}
-          onChange={(e) => handleTextChange(e, 'aiReflective')}
-          className="w-full p-3 border border-purple-200 bg-purple-50 text-gray-900 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm placeholder-purple-300"
-          placeholder="Write your reflective response here... Use $...$ for inline math and $$...$$ for display math."
+          onChange={(e) => handleTextChange(e, 'aiAnswer')}
+          className="w-full p-3 border border-purple-200 bg-purple-50 text-gray-900 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 font-mono text-sm placeholder-purple-300"
+          style={{ minHeight: isBinary ? '80px' : '120px' }}
+          placeholder={placeholder}
         />
         <div className={`text-xs font-medium ${wordCountColor}`}>
           {wordCountLabel}
@@ -234,33 +238,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
         )}
         <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-1">
           <Lightbulb className="w-3 h-3" />
-          <span>Document your process - formatting is handled automatically.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (type === SUBMISSION_TYPES.TRUE_FALSE || type === 'True/False') {
-    const selected = data?.trueFalseAnswer || '';
-    return (
-      <div className="space-y-3 w-full">
-        <label className="block text-sm font-medium text-gray-700">Your Answer:</label>
-        <div className="flex gap-4">
-          {['true', 'false'].map(val => (
-            <button
-              key={val}
-              onClick={() => onChange(id, { ...data, trueFalseAnswer: val })}
-              className={`flex-1 py-3 px-6 rounded-lg border-2 font-bold text-sm transition-all ${
-                selected === val
-                  ? val === 'true'
-                    ? 'bg-green-600 border-green-600 text-white'
-                    : 'bg-red-600 border-red-600 text-white'
-                  : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
-              }`}
-            >
-              {val === 'true' ? 'True' : 'False'}
-            </button>
-          ))}
+          <span>Writing more than {range.max} words is fine — focus on quality over length.</span>
         </div>
       </div>
     );

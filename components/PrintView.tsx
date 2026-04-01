@@ -9,6 +9,17 @@ interface PrintViewProps {
   studentName: string;
 }
 
+const AI_GRADED_STRINGS = new Set([
+  'AI Graded: Binary',
+  'AI Graded: Short',
+  'AI Graded: Medium',
+  'AI Graded: Long',
+  SubmissionType.AI_GRADED_BINARY,
+  SubmissionType.AI_GRADED_SHORT,
+  SubmissionType.AI_GRADED_MEDIUM,
+  SubmissionType.AI_GRADED_LONG,
+]);
+
 // Helper to convert submissionType to widget type string
 const getSubmissionElements = (submissionType: SubmissionType | string): string[] => {
   switch (submissionType) {
@@ -18,10 +29,8 @@ const getSubmissionElements = (submissionType: SubmissionType | string): string[
     case SubmissionType.IMAGE:
     case 'Image':
       return [SUBMISSION_TYPES.IMAGE];
-    case SubmissionType.AI_REFLECTIVE:
-    case 'AI Reflective':
-      return [SUBMISSION_TYPES.AI];
     default:
+      if (AI_GRADED_STRINGS.has(submissionType)) return [submissionType as string];
       return [SUBMISSION_TYPES.TEXT];
   }
 };
@@ -124,11 +133,11 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
               </div>
             );
           }
-          if (type === SUBMISSION_TYPES.AI && data.aiReflective) {
+          if (AI_GRADED_STRINGS.has(type) && data.aiAnswer) {
             return (
               <div key={idx} className="text-sm text-gray-900">
-                <strong className="block text-gray-700 text-base mb-2 uppercase tracking-wide">AI Reflection & Tools Used:</strong>
-                <div className="whitespace-pre-wrap"><LatexContent content={data.aiReflective} /></div>
+                <strong className="block text-gray-700 text-base mb-2 uppercase tracking-wide">Answer:</strong>
+                <div className="whitespace-pre-wrap"><LatexContent content={data.aiAnswer} /></div>
               </div>
             );
           }

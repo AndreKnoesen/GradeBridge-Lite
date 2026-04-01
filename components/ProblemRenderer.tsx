@@ -10,6 +10,17 @@ interface ProblemRendererProps {
   onSubmissionChange: (id: string, data: SubmissionData['key']) => void;
 }
 
+const AI_GRADED_STRINGS = new Set([
+  'AI Graded: Binary',
+  'AI Graded: Short',
+  'AI Graded: Medium',
+  'AI Graded: Long',
+  SubmissionType.AI_GRADED_BINARY,
+  SubmissionType.AI_GRADED_SHORT,
+  SubmissionType.AI_GRADED_MEDIUM,
+  SubmissionType.AI_GRADED_LONG,
+]);
+
 // Convert submissionType to widget type string
 const getWidgetType = (submissionType: SubmissionType | string): string => {
   switch (submissionType) {
@@ -19,10 +30,8 @@ const getWidgetType = (submissionType: SubmissionType | string): string => {
     case SubmissionType.IMAGE:
     case 'Image':
       return 'Answer as image';
-    case SubmissionType.AI_REFLECTIVE:
-    case 'AI Reflective':
-      return 'AI Reflective';
     default:
+      if (AI_GRADED_STRINGS.has(submissionType)) return submissionType as string;
       return 'Answer as text';
   }
 };

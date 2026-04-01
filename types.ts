@@ -5,8 +5,10 @@
 export enum SubmissionType {
   TEXT = 'Text',
   IMAGE = 'Image',
-  AI_REFLECTIVE = 'AI Reflective',
-  TRUE_FALSE = 'True/False',
+  AI_GRADED_BINARY = 'AI Graded: Binary',
+  AI_GRADED_SHORT = 'AI Graded: Short',
+  AI_GRADED_MEDIUM = 'AI Graded: Medium',
+  AI_GRADED_LONG = 'AI Graded: Long',
   MATLAB_GRADER = 'MatlabGrader',
   CODE = 'Code',
   FILE_UPLOAD = 'File Upload'
@@ -46,8 +48,7 @@ export interface SubmissionData {
   [key: string]: {
     textAnswer?: string;
     imageAnswers?: string[]; // Array of base64 strings
-    aiReflective?: string;
-    trueFalseAnswer?: string;
+    aiAnswer?: string;
   };
 }
 
