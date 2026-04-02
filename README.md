@@ -45,10 +45,10 @@ Complete academic assignments with LaTeX support and generate professional PDFs 
 ### Complete an Assignment
 1. Get assignment JSON from instructor
 2. Click **"Upload JSON"** in sidebar
-3. Enter your name and student ID
-4. Complete each problem (text/images/AI reflection)
-5. Click **"Preview & Download PDF"**
-6. Upload PDF to Gradescope
+3. Enter your full name
+4. Complete each problem (text/images/AI-graded response)
+5. Click **"Download for Gradescope"** — downloads both the submission JSON and PDF
+6. Upload both files to Gradescope
 
 ### Local Development
 ```bash
@@ -66,43 +66,41 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 
 ```json
 {
-  "id": "unique-id",
   "courseCode": "ECE416",
   "title": "Mini-Project 1",
-  "dueDate": "2024-12-01",
-  "dueTime": "23:59",
   "preamble": "Instructions for the entire assignment...",
   "problems": [
     {
-      "id": "prob-1",
       "name": "System Analysis",
       "description": "Analyze the following system...",
       "subsections": [
         {
-          "id": "prob-1-a",
           "name": "Transfer Function",
           "description": "Derive the transfer function",
-          "points": 5,
-          "submissionType": "Text",
-          "maxImages": 0
+          "points": 50,
+          "submissionType": "Text"
         },
         {
-          "id": "prob-1-b",
           "name": "Step Response",
           "description": "Plot the step response",
-          "points": 5,
+          "points": 30,
           "submissionType": "Image",
           "maxImages": 2
+        },
+        {
+          "name": "Reflection",
+          "description": "Explain your approach",
+          "points": 20,
+          "submissionType": "AI Graded: Short",
+          "aiGradingConfig": { "gradingPrompt": "..." }
         }
       ]
     }
-  ],
-  "createdAt": 1700000000000,
-  "updatedAt": 1700000000000
+  ]
 }
 ```
 
-**Submission Types:** `Text`, `Image`, `AI Reflective`
+**Submission Types:** `Text`, `Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`
 
 ---
 
@@ -119,11 +117,12 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 
 | Issue | Solution |
 |-------|----------|
-| Assignment won't load | Verify JSON was exported from Assignment Maker |
+| Assignment won't load | Verify JSON was exported from Assignment Maker (encrypted `.json` file) |
 | LaTeX not rendering | Refresh page; KaTeX loads from CDN |
-| PDF generation fails | Check internet; html2pdf loads from CDN |
-| Lost work | Always export JSON backups regularly |
-| Images too large | Compress images; use JPG instead of PNG |
+| PDF generation fails | Check internet connection; html2pdf loads from CDN |
+| Lost work | Use "Save Backup" regularly; restore with "Load Work" |
+| Images too large | Files over 4 MB are rejected; compress or use JPG instead of PNG |
+| Word count shows red | Minimum not yet met; keep writing — upper bound is guidance only |
 
 ---
 
