@@ -251,7 +251,28 @@ const App: React.FC = () => {
         return;
     }
 
-    // 3. HTML2PDF Options
+    // html2canvas cannot capture display:none elements (e.g. when called from edit mode
+    // while the print view container is hidden). Walk up to find the hidden ancestor and
+    // temporarily move it off-screen so the browser lays it out before capturing.
+    let hiddenAncestor: HTMLElement | null = null;
+    let el: HTMLElement | null = element.parentElement;
+    while (el && el !== document.body) {
+        if (getComputedStyle(el).display === 'none') {
+            hiddenAncestor = el;
+            break;
+        }
+        el = el.parentElement;
+    }
+    if (hiddenAncestor) {
+        hiddenAncestor.style.display = 'block';
+        hiddenAncestor.style.position = 'fixed';
+        hiddenAncestor.style.left = '-99999px';
+        hiddenAncestor.style.top = '0';
+        hiddenAncestor.style.pointerEvents = 'none';
+        hiddenAncestor.style.zIndex = '-9999';
+    }
+
+    // HTML2PDF Options
     const opt = {
       margin: 0, // Critical: margin 0 to prevent offset issues with our full-page divs
       filename: `${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
@@ -261,7 +282,7 @@ const App: React.FC = () => {
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
-    // 4. Execute PDF Generation
+    // Execute PDF Generation
     if ((window as any).html2pdf) {
         try {
             const worker = (window as any).html2pdf().set(opt).from(element);
@@ -278,8 +299,25 @@ const App: React.FC = () => {
             console.error("PDF Generation Error:", error);
             setStatusMessage("Error generating PDF. See console for details.");
             alert("There was an error generating the PDF. Please check the console or try reducing the number of images.");
+        } finally {
+            if (hiddenAncestor) {
+                hiddenAncestor.style.display = '';
+                hiddenAncestor.style.position = '';
+                hiddenAncestor.style.left = '';
+                hiddenAncestor.style.top = '';
+                hiddenAncestor.style.pointerEvents = '';
+                hiddenAncestor.style.zIndex = '';
+            }
         }
     } else {
+        if (hiddenAncestor) {
+            hiddenAncestor.style.display = '';
+            hiddenAncestor.style.position = '';
+            hiddenAncestor.style.left = '';
+            hiddenAncestor.style.top = '';
+            hiddenAncestor.style.pointerEvents = '';
+            hiddenAncestor.style.zIndex = '';
+        }
         alert("PDF library not loaded. Please check your internet connection and refresh.");
         setStatusMessage("");
     }
