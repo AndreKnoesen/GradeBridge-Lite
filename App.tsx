@@ -251,27 +251,6 @@ const App: React.FC = () => {
         return;
     }
 
-    // html2canvas cannot capture display:none elements (e.g. when called from edit mode
-    // while the print view container is hidden). Walk up to find the hidden ancestor and
-    // temporarily move it off-screen so the browser lays it out before capturing.
-    let hiddenAncestor: HTMLElement | null = null;
-    let el: HTMLElement | null = element.parentElement;
-    while (el && el !== document.body) {
-        if (getComputedStyle(el).display === 'none') {
-            hiddenAncestor = el;
-            break;
-        }
-        el = el.parentElement;
-    }
-    if (hiddenAncestor) {
-        hiddenAncestor.style.display = 'block';
-        hiddenAncestor.style.position = 'fixed';
-        hiddenAncestor.style.left = '-99999px';
-        hiddenAncestor.style.top = '0';
-        hiddenAncestor.style.pointerEvents = 'none';
-        hiddenAncestor.style.zIndex = '-9999';
-    }
-
     // HTML2PDF Options
     const opt = {
       margin: 0, // Critical: margin 0 to prevent offset issues with our full-page divs
@@ -299,25 +278,8 @@ const App: React.FC = () => {
             console.error("PDF Generation Error:", error);
             setStatusMessage("Error generating PDF. See console for details.");
             alert("There was an error generating the PDF. Please check the console or try reducing the number of images.");
-        } finally {
-            if (hiddenAncestor) {
-                hiddenAncestor.style.display = '';
-                hiddenAncestor.style.position = '';
-                hiddenAncestor.style.left = '';
-                hiddenAncestor.style.top = '';
-                hiddenAncestor.style.pointerEvents = '';
-                hiddenAncestor.style.zIndex = '';
-            }
         }
     } else {
-        if (hiddenAncestor) {
-            hiddenAncestor.style.display = '';
-            hiddenAncestor.style.position = '';
-            hiddenAncestor.style.left = '';
-            hiddenAncestor.style.top = '';
-            hiddenAncestor.style.pointerEvents = '';
-            hiddenAncestor.style.zIndex = '';
-        }
         alert("PDF library not loaded. Please check your internet connection and refresh.");
         setStatusMessage("");
     }
@@ -564,8 +526,13 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Print Preview Mode */}
-        <div className={`${state.viewMode === 'print' ? 'flex flex-col' : 'hidden'} bg-gray-500 min-h-full`}>
+        {/* Print Preview Mode — always rendered so html2canvas can capture #pdf-content
+            from edit mode. When not in print mode, fixed off-screen so it is invisible
+            and non-interactive but still laid out by the browser. */}
+        <div
+          className="flex flex-col bg-gray-500 min-h-full"
+          style={state.viewMode !== 'print' ? { position: 'fixed', left: '-99999px', top: 0, width: '210mm', pointerEvents: 'none', zIndex: -1 } : {}}
+        >
            {state.assignment && (
                <>
                    {/* Scrollable Preview Area */}
