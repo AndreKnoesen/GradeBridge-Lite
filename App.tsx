@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
@@ -254,36 +255,40 @@ const App: React.FC = () => {
         return;
     }
 
-    const pdfContent = document.getElementById('pdf-content');
-    if (!pdfContent) {
-        setStatusMessage("Error: PDF Content not found. Try refreshing.");
-        return;
-    }
-
-    // Capture each page individually to avoid browser canvas height limits.
-    // A large assignment (e.g. 34 pages) would need a ~76,000px tall canvas at
-    // scale=2, which exceeds browser maximums (~32,767px) and produces blank PDFs.
-    const pageElements = Array.from(pdfContent.querySelectorAll('.pdf-page'));
-    if (pageElements.length === 0) {
-        setStatusMessage("Error: No pages found in PDF content.");
-        return;
+    // Elements inside the off-screen position:fixed container return zero-size
+    // BoundingClientRects in some browsers, causing html2canvas to produce a
+    // zero-dimension canvas and jsPDF to throw "Invalid argument".
+    // Fix: synchronously switch to print mode so #pdf-content is in normal
+    // document flow with reliable layout metrics, then switch back when done.
+    const wasInEditMode = state.viewMode === 'edit';
+    if (wasInEditMode) {
+        flushSync(() => setState(s => ({ ...s, viewMode: 'print' })));
+        // Wait one animation frame for the browser to paint the new layout.
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     }
 
     try {
+        const pdfContent = document.getElementById('pdf-content');
+        if (!pdfContent) throw new Error('PDF content element not found');
+
+        const pageElements = Array.from(pdfContent.querySelectorAll('.pdf-page')) as HTMLElement[];
+        if (pageElements.length === 0) throw new Error('No pages found in PDF content');
+
         let pdf: any = null;
 
         for (let i = 0; i < pageElements.length; i++) {
             setStatusMessage(`Generating PDF... Page ${i + 1} of ${pageElements.length}`);
-            const pageEl = pageElements[i] as HTMLElement;
+            const pageEl = pageElements[i];
             const rect = pageEl.getBoundingClientRect();
 
-            // Always render #pdf-content (not the individual page div).
-            // Passing a child element that lives inside a position:fixed off-screen
-            // container causes html2canvas to throw "Unable to find element in clone
-            // iframe". Using the parent and providing x/y/width/height crop coordinates
-            // (in viewport space, which equals page space because window scroll is always
-            // 0 in this app) extracts exactly one page per call without that error, and
-            // keeps each canvas well within browser size limits.
+            if (rect.width === 0 || rect.height === 0) {
+                throw new Error(`Page ${i + 1} has zero dimensions — please try again.`);
+            }
+
+            // Capture #pdf-content cropped to this page's viewport rect.
+            // Using the parent element avoids the "Unable to find element in
+            // clone iframe" error; x/y/width/height isolate one page per call
+            // and keep each canvas well within browser size limits.
             const canvas = await html2canvasLib(pdfContent, {
                 scale: 2,
                 useCORS: true,
@@ -296,8 +301,14 @@ const App: React.FC = () => {
                 height: rect.height,
             });
 
-            const pdfPageWidth = 210; // A4 width in mm
-            const pdfPageHeight = (canvas.height / canvas.width) * pdfPageWidth;
+            const pdfPageWidth = 210;
+            const pdfPageHeight = canvas.width > 0
+                ? (canvas.height / canvas.width) * pdfPageWidth
+                : 297;
+
+            if (!isFinite(pdfPageHeight) || pdfPageHeight <= 0) {
+                throw new Error(`Page ${i + 1}: invalid canvas size ${canvas.width}×${canvas.height}`);
+            }
 
             if (i === 0) {
                 pdf = new jsPDFLib({ unit: 'mm', format: [pdfPageWidth, pdfPageHeight], orientation: 'portrait' });
@@ -309,7 +320,8 @@ const App: React.FC = () => {
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
         }
 
-        const filename = `${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_');
+        const filename = `${state.studentName}_${state.assignment.courseCode}.pdf`
+            .replace(/[^a-z0-9_\-\.]/gi, '_');
         pdf.save(filename);
 
         setStatusMessage("PDF Downloaded!");
@@ -323,7 +335,12 @@ const App: React.FC = () => {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("PDF Generation Error:", error);
         setStatusMessage("Error generating PDF.");
-        alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again. If the problem persists, contact your instructor.`);
+        alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again.`);
+    } finally {
+        // Always restore edit mode regardless of success or failure.
+        if (wasInEditMode) {
+            setState(s => ({ ...s, viewMode: 'edit' }));
+        }
     }
   };
 
