@@ -275,26 +275,25 @@ const App: React.FC = () => {
         for (let i = 0; i < pageElements.length; i++) {
             setStatusMessage(`Generating PDF... Page ${i + 1} of ${pageElements.length}`);
             const pageEl = pageElements[i] as HTMLElement;
+            const rect = pageEl.getBoundingClientRect();
 
-            const canvas = await html2canvasLib(pageEl, {
+            // Always render #pdf-content (not the individual page div).
+            // Passing a child element that lives inside a position:fixed off-screen
+            // container causes html2canvas to throw "Unable to find element in clone
+            // iframe". Using the parent and providing x/y/width/height crop coordinates
+            // (in viewport space, which equals page space because window scroll is always
+            // 0 in this app) extracts exactly one page per call without that error, and
+            // keeps each canvas well within browser size limits.
+            const canvas = await html2canvasLib(pdfContent, {
                 scale: 2,
                 useCORS: true,
                 letterRendering: true,
                 scrollX: 0,
                 scrollY: 0,
-                onclone: (clonedDoc: Document) => {
-                    // The off-screen container lives at position:fixed; left:-99999px.
-                    // html2canvas renders from the viewport, so elements that far off-screen
-                    // produce a blank/missing canvas.  Move the container to (0,0) in the
-                    // clone so every page element is within the renderable area.
-                    const container = clonedDoc.querySelector('[data-pdfcontainer]') as HTMLElement | null;
-                    if (container) {
-                        container.style.position = 'absolute';
-                        container.style.left = '0';
-                        container.style.top = '0';
-                        container.style.zIndex = 'auto';
-                    }
-                },
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height,
             });
 
             const pdfPageWidth = 210; // A4 width in mm
@@ -573,7 +572,6 @@ const App: React.FC = () => {
             from edit mode. When not in print mode, fixed off-screen so it is invisible
             and non-interactive but still laid out by the browser. */}
         <div
-          data-pdfcontainer="true"
           className="flex flex-col bg-gray-500 min-h-full"
           style={state.viewMode !== 'print' ? { position: 'fixed', left: '-99999px', top: 0, width: '210mm', pointerEvents: 'none', zIndex: -1 } : {}}
         >
