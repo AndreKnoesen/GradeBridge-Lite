@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobileBanner, setShowMobileBanner] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
 
   // Mobile detection
   useEffect(() => {
@@ -244,6 +245,7 @@ const App: React.FC = () => {
     if (!state.assignment) return;
 
     setStatusMessage("Generating PDF... Please wait.");
+    setPdfProgress({ active: true, current: 0, total: 0 });
 
     const html2canvasLib = (window as any).html2canvas;
     const jsPDFLib = (window as any).jspdf?.jsPDF;
@@ -279,6 +281,8 @@ const App: React.FC = () => {
         const clonePages = Array.from(clone.querySelectorAll('.pdf-page')) as HTMLElement[];
         if (clonePages.length === 0) throw new Error('No pages found in PDF content');
 
+        setPdfProgress({ active: true, current: 0, total: clonePages.length });
+
         // With no overflow ancestors, getBoundingClientRect is reliable for all pages.
         const containerRect = clone.getBoundingClientRect();
 
@@ -286,6 +290,7 @@ const App: React.FC = () => {
 
         for (let i = 0; i < clonePages.length; i++) {
             setStatusMessage(`Generating PDF... Page ${i + 1} of ${clonePages.length}`);
+            setPdfProgress({ active: true, current: i + 1, total: clonePages.length });
             const pageEl = clonePages[i];
             const pageRect = pageEl.getBoundingClientRect();
 
@@ -352,6 +357,7 @@ const App: React.FC = () => {
         alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again.`);
     } finally {
         document.body.removeChild(captureWrapper);
+        setPdfProgress({ active: false, current: 0, total: 0 });
     }
   };
 
@@ -440,6 +446,37 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
+
+      {/* PDF Generation Overlay */}
+      {pdfProgress.active && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/75 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-5 w-72 text-center">
+            {/* Spinner */}
+            <svg className="animate-spin w-12 h-12 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+            </svg>
+            <div>
+              <p className="text-gray-900 font-semibold text-lg">Generating PDF</p>
+              <p className="text-gray-500 text-sm mt-1">Please wait — do not close this tab</p>
+            </div>
+            {pdfProgress.total > 0 && (
+              <>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.round((pdfProgress.current / pdfProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-gray-600 text-sm font-medium">
+                  Page {pdfProgress.current} of {pdfProgress.total}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mobile Warning Banner */}
       {showMobileBanner && (
         <div className="fixed top-0 left-0 right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
