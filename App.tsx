@@ -280,7 +280,21 @@ const App: React.FC = () => {
                 scale: 2,
                 useCORS: true,
                 letterRendering: true,
+                scrollX: 0,
                 scrollY: 0,
+                onclone: (clonedDoc: Document) => {
+                    // The off-screen container lives at position:fixed; left:-99999px.
+                    // html2canvas renders from the viewport, so elements that far off-screen
+                    // produce a blank/missing canvas.  Move the container to (0,0) in the
+                    // clone so every page element is within the renderable area.
+                    const container = clonedDoc.querySelector('[data-pdfcontainer]') as HTMLElement | null;
+                    if (container) {
+                        container.style.position = 'absolute';
+                        container.style.left = '0';
+                        container.style.top = '0';
+                        container.style.zIndex = 'auto';
+                    }
+                },
             });
 
             const pdfPageWidth = 210; // A4 width in mm
@@ -307,9 +321,10 @@ const App: React.FC = () => {
         );
         setTimeout(() => setStatusMessage(''), 5000);
     } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
         console.error("PDF Generation Error:", error);
-        setStatusMessage("Error generating PDF. See console for details.");
-        alert("There was an error generating the PDF. Please check the console or try reducing the number of images.");
+        setStatusMessage("Error generating PDF.");
+        alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again. If the problem persists, contact your instructor.`);
     }
   };
 
@@ -558,6 +573,7 @@ const App: React.FC = () => {
             from edit mode. When not in print mode, fixed off-screen so it is invisible
             and non-interactive but still laid out by the browser. */}
         <div
+          data-pdfcontainer="true"
           className="flex flex-col bg-gray-500 min-h-full"
           style={state.viewMode !== 'print' ? { position: 'fixed', left: '-99999px', top: 0, width: '210mm', pointerEvents: 'none', zIndex: -1 } : {}}
         >
