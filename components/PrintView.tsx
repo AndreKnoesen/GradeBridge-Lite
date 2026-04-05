@@ -66,7 +66,7 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
     noBreak?: boolean;
   }) => (
     <div
-      className={`bg-white mx-auto text-black font-sans relative box-border flex flex-col ${!noBreak ? 'html2pdf__page-break' : ''}`}
+      className={`pdf-page bg-white mx-auto text-black font-sans relative box-border flex flex-col`}
       style={{
         width: '210mm',
         minHeight: isTitlePage ? '280mm' : '260mm',

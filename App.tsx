@@ -245,43 +245,71 @@ const App: React.FC = () => {
 
     setStatusMessage("Generating PDF... Please wait.");
 
-    const element = document.getElementById('pdf-content');
-    if (!element) {
+    const html2canvasLib = (window as any).html2canvas;
+    const jsPDFLib = (window as any).jspdf?.jsPDF;
+
+    if (!html2canvasLib || !jsPDFLib) {
+        alert("PDF library not loaded. Please check your internet connection and refresh.");
+        setStatusMessage("");
+        return;
+    }
+
+    const pdfContent = document.getElementById('pdf-content');
+    if (!pdfContent) {
         setStatusMessage("Error: PDF Content not found. Try refreshing.");
         return;
     }
 
-    // HTML2PDF Options
-    const opt = {
-      margin: 0, // Critical: margin 0 to prevent offset issues with our full-page divs
-      filename: `${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_'),
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-    };
+    // Capture each page individually to avoid browser canvas height limits.
+    // A large assignment (e.g. 34 pages) would need a ~76,000px tall canvas at
+    // scale=2, which exceeds browser maximums (~32,767px) and produces blank PDFs.
+    const pageElements = Array.from(pdfContent.querySelectorAll('.pdf-page'));
+    if (pageElements.length === 0) {
+        setStatusMessage("Error: No pages found in PDF content.");
+        return;
+    }
 
-    // Execute PDF Generation
-    if ((window as any).html2pdf) {
-        try {
-            const worker = (window as any).html2pdf().set(opt).from(element);
-            await worker.save(); // Waits for the PDF download to trigger
-            setStatusMessage("PDF Downloaded!");
-            // Show LMS upload reminder
-            alert(
-              "PDF Downloaded Successfully!\n\n" +
-              "NEXT STEP: Upload this PDF to your LMS (Canvas, Gradescope, etc.) as instructed by your course.\n\n" +
-              "The PDF file is in your Downloads folder."
-            );
-            setTimeout(() => setStatusMessage(''), 5000);
-        } catch (error) {
-            console.error("PDF Generation Error:", error);
-            setStatusMessage("Error generating PDF. See console for details.");
-            alert("There was an error generating the PDF. Please check the console or try reducing the number of images.");
+    try {
+        let pdf: any = null;
+
+        for (let i = 0; i < pageElements.length; i++) {
+            setStatusMessage(`Generating PDF... Page ${i + 1} of ${pageElements.length}`);
+            const pageEl = pageElements[i] as HTMLElement;
+
+            const canvas = await html2canvasLib(pageEl, {
+                scale: 2,
+                useCORS: true,
+                letterRendering: true,
+                scrollY: 0,
+            });
+
+            const pdfPageWidth = 210; // A4 width in mm
+            const pdfPageHeight = (canvas.height / canvas.width) * pdfPageWidth;
+
+            if (i === 0) {
+                pdf = new jsPDFLib({ unit: 'mm', format: [pdfPageWidth, pdfPageHeight], orientation: 'portrait' });
+            } else {
+                pdf.addPage([pdfPageWidth, pdfPageHeight]);
+            }
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.98);
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
         }
-    } else {
-        alert("PDF library not loaded. Please check your internet connection and refresh.");
-        setStatusMessage("");
+
+        const filename = `${state.studentName}_${state.assignment.courseCode}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_');
+        pdf.save(filename);
+
+        setStatusMessage("PDF Downloaded!");
+        alert(
+          "PDF Downloaded Successfully!\n\n" +
+          "NEXT STEP: Upload this PDF to your LMS (Canvas, Gradescope, etc.) as instructed by your course.\n\n" +
+          "The PDF file is in your Downloads folder."
+        );
+        setTimeout(() => setStatusMessage(''), 5000);
+    } catch (error) {
+        console.error("PDF Generation Error:", error);
+        setStatusMessage("Error generating PDF. See console for details.");
+        alert("There was an error generating the PDF. Please check the console or try reducing the number of images.");
     }
   };
 
