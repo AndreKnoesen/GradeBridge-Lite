@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
@@ -255,50 +254,65 @@ const App: React.FC = () => {
         return;
     }
 
-    // Elements inside the off-screen position:fixed container return zero-size
-    // BoundingClientRects in some browsers, causing html2canvas to produce a
-    // zero-dimension canvas and jsPDF to throw "Invalid argument".
-    // Fix: synchronously switch to print mode so #pdf-content is in normal
-    // document flow with reliable layout metrics, then switch back when done.
-    const wasInEditMode = state.viewMode === 'edit';
-    if (wasInEditMode) {
-        flushSync(() => setState(s => ({ ...s, viewMode: 'print' })));
-        // Wait one animation frame for the browser to paint the new layout.
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    // Strategy: clone #pdf-content into a body-level position:fixed off-screen
+    // wrapper with NO overflow-clipping ancestors. This gives all pages correct
+    // getBoundingClientRect values regardless of how many pages there are or
+    // what view mode the app is in. The original DOM and React state are untouched.
+    const pdfContent = document.getElementById('pdf-content');
+    if (!pdfContent) {
+        alert("PDF content element not found. Please refresh and try again.");
+        setStatusMessage("");
+        return;
     }
 
-    try {
-        const pdfContent = document.getElementById('pdf-content');
-        if (!pdfContent) throw new Error('PDF content element not found');
+    const captureWrapper = document.createElement('div');
+    captureWrapper.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;z-index:-9999;';
+    const clone = pdfContent.cloneNode(true) as HTMLElement;
+    captureWrapper.appendChild(clone);
+    document.body.appendChild(captureWrapper);
 
-        const pageElements = Array.from(pdfContent.querySelectorAll('.pdf-page')) as HTMLElement[];
-        if (pageElements.length === 0) throw new Error('No pages found in PDF content');
+    // Two frames: first for layout, second to ensure images are decoded.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+    try {
+        const clonePages = Array.from(clone.querySelectorAll('.pdf-page')) as HTMLElement[];
+        if (clonePages.length === 0) throw new Error('No pages found in PDF content');
+
+        // With no overflow ancestors, getBoundingClientRect is reliable for all pages.
+        const containerRect = clone.getBoundingClientRect();
 
         let pdf: any = null;
 
-        for (let i = 0; i < pageElements.length; i++) {
-            setStatusMessage(`Generating PDF... Page ${i + 1} of ${pageElements.length}`);
-            const pageEl = pageElements[i];
-            const rect = pageEl.getBoundingClientRect();
+        for (let i = 0; i < clonePages.length; i++) {
+            setStatusMessage(`Generating PDF... Page ${i + 1} of ${clonePages.length}`);
+            const pageEl = clonePages[i];
+            const pageRect = pageEl.getBoundingClientRect();
 
-            if (rect.width === 0 || rect.height === 0) {
-                throw new Error(`Page ${i + 1} has zero dimensions — please try again.`);
+            // Crop coordinates relative to clone's own top-left corner.
+            const cropX = pageRect.left - containerRect.left;
+            const cropY = pageRect.top - containerRect.top;
+            const cropW = pageRect.width;
+            const cropH = pageRect.height;
+
+            if (cropW === 0 || cropH === 0) {
+                throw new Error(`Page ${i + 1} has zero dimensions (${cropW}×${cropH})`);
             }
 
-            // Capture #pdf-content cropped to this page's viewport rect.
-            // Using the parent element avoids the "Unable to find element in
-            // clone iframe" error; x/y/width/height isolate one page per call
-            // and keep each canvas well within browser size limits.
-            const canvas = await html2canvasLib(pdfContent, {
+            // Pass the clone element (not individual pages) to avoid the
+            // "Unable to find element in clone iframe" error. The x/y/width/height
+            // crop options limit each capture to one page, keeping canvas sizes
+            // well within browser limits even for 30+ page documents.
+            const canvas = await html2canvasLib(clone, {
                 scale: 2,
                 useCORS: true,
                 letterRendering: true,
                 scrollX: 0,
                 scrollY: 0,
-                x: rect.left,
-                y: rect.top,
-                width: rect.width,
-                height: rect.height,
+                x: cropX,
+                y: cropY,
+                width: cropW,
+                height: cropH,
             });
 
             const pdfPageWidth = 210;
@@ -320,7 +334,7 @@ const App: React.FC = () => {
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
         }
 
-        const filename = `${state.studentName}_${state.assignment.courseCode}.pdf`
+        const filename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
             .replace(/[^a-z0-9_\-\.]/gi, '_');
         pdf.save(filename);
 
@@ -337,10 +351,7 @@ const App: React.FC = () => {
         setStatusMessage("Error generating PDF.");
         alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again.`);
     } finally {
-        // Always restore edit mode regardless of success or failure.
-        if (wasInEditMode) {
-            setState(s => ({ ...s, viewMode: 'edit' }));
-        }
+        document.body.removeChild(captureWrapper);
     }
   };
 
@@ -383,7 +394,7 @@ const App: React.FC = () => {
     });
 
     const assignmentId = `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`;
-    const pdfFilename = `${state.studentName}_${state.assignment.courseCode}.pdf`
+    const pdfFilename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
 
     const submissionJson = {
