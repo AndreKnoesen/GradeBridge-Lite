@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import JSZip from 'jszip';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
@@ -21,7 +22,7 @@ const App: React.FC = () => {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobileBanner, setShowMobileBanner] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
+  const [pdfProgress, setPdfProgress] = useState<{ active: boolean; phase: 'pdf' | 'packaging'; current: number; total: number }>({ active: false, phase: 'pdf', current: 0, total: 0 });
 
   // Mobile detection
   useEffect(() => {
@@ -241,30 +242,22 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadPDF = async () => {
-    if (!state.assignment) return;
-
-    setStatusMessage("Generating PDF... Please wait.");
-    setPdfProgress({ active: true, current: 0, total: 0 });
-
+  // Returns the raw PDF bytes, or null on error (caller handles overlay/cleanup).
+  const buildPdfBytes = async (
+    onPageProgress: (current: number, total: number) => void
+  ): Promise<Uint8Array | null> => {
     const html2canvasLib = (window as any).html2canvas;
     const jsPDFLib = (window as any).jspdf?.jsPDF;
 
     if (!html2canvasLib || !jsPDFLib) {
-        alert("PDF library not loaded. Please check your internet connection and refresh.");
-        setStatusMessage("");
-        return;
+      alert("PDF library not loaded. Please check your internet connection and refresh.");
+      return null;
     }
 
-    // Strategy: clone #pdf-content into a body-level position:fixed off-screen
-    // wrapper with NO overflow-clipping ancestors. This gives all pages correct
-    // getBoundingClientRect values regardless of how many pages there are or
-    // what view mode the app is in. The original DOM and React state are untouched.
     const pdfContent = document.getElementById('pdf-content');
     if (!pdfContent) {
-        alert("PDF content element not found. Please refresh and try again.");
-        setStatusMessage("");
-        return;
+      alert("PDF content element not found. Please refresh and try again.");
+      return null;
     }
 
     const captureWrapper = document.createElement('div');
@@ -273,102 +266,75 @@ const App: React.FC = () => {
     captureWrapper.appendChild(clone);
     document.body.appendChild(captureWrapper);
 
-    // Two frames: first for layout, second to ensure images are decoded.
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
     try {
-        const clonePages = Array.from(clone.querySelectorAll('.pdf-page')) as HTMLElement[];
-        if (clonePages.length === 0) throw new Error('No pages found in PDF content');
+      const clonePages = Array.from(clone.querySelectorAll('.pdf-page')) as HTMLElement[];
+      if (clonePages.length === 0) throw new Error('No pages found in PDF content');
 
-        setPdfProgress({ active: true, current: 0, total: clonePages.length });
+      onPageProgress(0, clonePages.length);
+      const containerRect = clone.getBoundingClientRect();
+      let pdf: any = null;
 
-        // With no overflow ancestors, getBoundingClientRect is reliable for all pages.
-        const containerRect = clone.getBoundingClientRect();
+      for (let i = 0; i < clonePages.length; i++) {
+        onPageProgress(i + 1, clonePages.length);
+        const pageEl = clonePages[i];
+        const pageRect = pageEl.getBoundingClientRect();
+        const cropX = pageRect.left - containerRect.left;
+        const cropY = pageRect.top - containerRect.top;
+        const cropW = pageRect.width;
+        const cropH = pageRect.height;
 
-        let pdf: any = null;
-
-        for (let i = 0; i < clonePages.length; i++) {
-            setStatusMessage(`Generating PDF... Page ${i + 1} of ${clonePages.length}`);
-            setPdfProgress({ active: true, current: i + 1, total: clonePages.length });
-            const pageEl = clonePages[i];
-            const pageRect = pageEl.getBoundingClientRect();
-
-            // Crop coordinates relative to clone's own top-left corner.
-            const cropX = pageRect.left - containerRect.left;
-            const cropY = pageRect.top - containerRect.top;
-            const cropW = pageRect.width;
-            const cropH = pageRect.height;
-
-            if (cropW === 0 || cropH === 0) {
-                throw new Error(`Page ${i + 1} has zero dimensions (${cropW}×${cropH})`);
-            }
-
-            // Pass the clone element (not individual pages) to avoid the
-            // "Unable to find element in clone iframe" error. The x/y/width/height
-            // crop options limit each capture to one page, keeping canvas sizes
-            // well within browser limits even for 30+ page documents.
-            const canvas = await html2canvasLib(clone, {
-                scale: 2,
-                useCORS: true,
-                letterRendering: true,
-                scrollX: 0,
-                scrollY: 0,
-                x: cropX,
-                y: cropY,
-                width: cropW,
-                height: cropH,
-            });
-
-            const pdfPageWidth = 210;
-            const pdfPageHeight = canvas.width > 0
-                ? (canvas.height / canvas.width) * pdfPageWidth
-                : 297;
-
-            if (!isFinite(pdfPageHeight) || pdfPageHeight <= 0) {
-                throw new Error(`Page ${i + 1}: invalid canvas size ${canvas.width}×${canvas.height}`);
-            }
-
-            if (i === 0) {
-                pdf = new jsPDFLib({ unit: 'mm', format: [pdfPageWidth, pdfPageHeight], orientation: 'portrait' });
-            } else {
-                pdf.addPage([pdfPageWidth, pdfPageHeight]);
-            }
-
-            const imgData = canvas.toDataURL('image/jpeg', 0.98);
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
+        if (cropW === 0 || cropH === 0) {
+          throw new Error(`Page ${i + 1} has zero dimensions (${cropW}×${cropH})`);
         }
 
-        const filename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
-            .replace(/[^a-z0-9_\-\.]/gi, '_');
-        pdf.save(filename);
+        const canvas = await html2canvasLib(clone, {
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          scrollX: 0,
+          scrollY: 0,
+          x: cropX,
+          y: cropY,
+          width: cropW,
+          height: cropH,
+        });
 
-        setStatusMessage("PDF Downloaded!");
-        alert(
-          "PDF Downloaded Successfully!\n\n" +
-          "NEXT STEP: Upload this PDF to your LMS (Canvas, Gradescope, etc.) as instructed by your course.\n\n" +
-          "The PDF file is in your Downloads folder."
-        );
-        setTimeout(() => setStatusMessage(''), 5000);
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error("PDF Generation Error:", error);
-        setStatusMessage("Error generating PDF.");
-        alert(`There was an error generating the PDF:\n\n${msg}\n\nPlease refresh the page and try again.`);
+        const pdfPageWidth = 210;
+        const pdfPageHeight = canvas.width > 0
+          ? (canvas.height / canvas.width) * pdfPageWidth
+          : 297;
+
+        if (!isFinite(pdfPageHeight) || pdfPageHeight <= 0) {
+          throw new Error(`Page ${i + 1}: invalid canvas size ${canvas.width}×${canvas.height}`);
+        }
+
+        if (i === 0) {
+          pdf = new jsPDFLib({ unit: 'mm', format: [pdfPageWidth, pdfPageHeight], orientation: 'portrait' });
+        } else {
+          pdf.addPage([pdfPageWidth, pdfPageHeight]);
+        }
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
+      }
+
+      return pdf.output('arraybuffer') as Uint8Array;
     } finally {
-        document.body.removeChild(captureWrapper);
-        setPdfProgress({ active: false, current: 0, total: 0 });
+      document.body.removeChild(captureWrapper);
     }
   };
 
-  const handleDownloadSubmissionJson = async () => {
-    if (!state.assignment) return;
+  // Returns the encrypted JSON bytes, or null if validation fails.
+  const buildSubmissionJsonBytes = async (): Promise<{ bytes: Uint8Array; filename: string } | null> => {
+    if (!state.assignment) return null;
     if (!state.studentName.trim()) {
-      alert("Please enter your name before exporting.");
-      return;
+      alert("Please enter your name before submitting.");
+      return null;
     }
 
-    // Convert internal submission data to autograder-expected format
     const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
 
     state.assignment.problems.forEach((problem, pIdx) => {
@@ -376,11 +342,9 @@ const App: React.FC = () => {
         const internalKey = `p${pIdx}_s${sIdx}`;
         const autograderKey = `p${pIdx}s${sIdx}`;
         const subData = state.submissionData[internalKey];
-
         const isAiGraded = typeof sub.submissionType === 'string' && sub.submissionType.startsWith('AI Graded:');
 
         if (sub.submissionType === 'Image') {
-          // Images are embedded in the PDF — record count so autograder can verify submission
           convertedData[autograderKey] = {
             answer: null,
             images_submitted: subData?.imageAnswers?.length ?? 0
@@ -412,30 +376,73 @@ const App: React.FC = () => {
       last_saved: new Date().toISOString()
     };
 
-    // Encode before download — Docker autograder decodes with the same key.
-    // This prevents casual text-editor tampering between download and submission.
     const encoded = await encryptJson(submissionJson);
-
-    const blob = new Blob([encoded], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const bytes = new TextEncoder().encode(encoded);
     const filename = `${state.studentName}_${state.assignment.courseCode}_submission.json`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
 
-    alert(
-      `Submission file downloaded as:\n${filename}\n\n` +
-      "Upload this file to Gradescope when submitting your assignment.\n\n" +
-      "The file is in your Downloads folder."
-    );
+    return { bytes, filename };
   };
 
   const handleDownloadForGradescope = async () => {
-    await handleDownloadSubmissionJson();
-    await handleDownloadPDF();
+    if (!state.assignment) return;
+    if (!state.studentName.trim()) {
+      alert("Please enter your name before submitting.");
+      return;
+    }
+
+    setPdfProgress({ active: true, phase: 'pdf', current: 0, total: 0 });
+    setStatusMessage("Generating submission package...");
+
+    try {
+      // Phase 1: build PDF
+      const pdfBytes = await buildPdfBytes((current, total) => {
+        setPdfProgress({ active: true, phase: 'pdf', current, total });
+        setStatusMessage(`Generating PDF... Page ${current} of ${total}`);
+      });
+      if (!pdfBytes) return;
+
+      // Phase 2: build JSON
+      setPdfProgress({ active: true, phase: 'packaging', current: 0, total: 0 });
+      setStatusMessage("Packaging submission...");
+
+      const jsonResult = await buildSubmissionJsonBytes();
+      if (!jsonResult) return;
+
+      // Phase 3: zip both files
+      const zip = new JSZip();
+      const baseName = `${state.studentName}_${state.assignment.courseCode}_submission`
+        .replace(/[^a-z0-9_\-]/gi, '_');
+
+      zip.file(`${baseName}.json`, jsonResult.bytes);
+      zip.file(`${baseName}.pdf`, pdfBytes);
+
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseName}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setStatusMessage("Submission package downloaded!");
+      alert(
+        `Submission package downloaded!\n\n` +
+        `File: ${baseName}.zip\n\n` +
+        `This ZIP contains your PDF and submission data.\n` +
+        `Upload the ZIP file to Gradescope to submit your assignment.\n\n` +
+        `The file is in your Downloads folder.`
+      );
+      setTimeout(() => setStatusMessage(''), 6000);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Submission package error:", error);
+      setStatusMessage("Error generating submission.");
+      alert(`There was an error generating your submission:\n\n${msg}\n\nPlease refresh the page and try again.`);
+    } finally {
+      setPdfProgress({ active: false, phase: 'pdf', current: 0, total: 0 });
+    }
   };
 
   const acceptPrivacy = () => {
@@ -447,20 +454,34 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
 
-      {/* PDF Generation Overlay */}
+      {/* Submission Generation Overlay */}
       {pdfProgress.active && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/75 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-5 w-72 text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-5 w-80 text-center">
             {/* Spinner */}
             <svg className="animate-spin w-12 h-12 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
             </svg>
             <div>
-              <p className="text-gray-900 font-semibold text-lg">Generating PDF</p>
+              <p className="text-gray-900 font-semibold text-lg">
+                {pdfProgress.phase === 'packaging' ? 'Packaging Submission' : 'Generating PDF'}
+              </p>
               <p className="text-gray-500 text-sm mt-1">Please wait — do not close this tab</p>
             </div>
-            {pdfProgress.total > 0 && (
+            {/* Step indicators */}
+            <div className="w-full flex items-center gap-2 text-xs">
+              <div className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded ${pdfProgress.phase === 'pdf' ? 'bg-blue-50 text-blue-700 font-semibold' : 'bg-green-50 text-green-700'}`}>
+                <span>{pdfProgress.phase === 'pdf' ? '⏳' : '✓'}</span>
+                <span>Rendering PDF</span>
+              </div>
+              <div className="text-gray-300">→</div>
+              <div className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded ${pdfProgress.phase === 'packaging' ? 'bg-blue-50 text-blue-700 font-semibold' : 'bg-gray-50 text-gray-400'}`}>
+                <span>{pdfProgress.phase === 'packaging' ? '⏳' : '○'}</span>
+                <span>Building ZIP</span>
+              </div>
+            </div>
+            {pdfProgress.phase === 'pdf' && pdfProgress.total > 0 && (
               <>
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                   <div
@@ -544,7 +565,7 @@ const App: React.FC = () => {
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
                       <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
-                      <span><strong>Download PDF</strong> - Click the green "Preview & Download PDF" button in the sidebar</span>
+                      <span><strong>Download &amp; Submit</strong> - Click <em>Download for Gradescope</em> to get a single ZIP file, then upload that ZIP to Gradescope</span>
                     </li>
                   </ol>
                   <div className="mt-4 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">

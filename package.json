@@ -8,9 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist --dotfiles"
+    "deploy": "gh-pages -d dist --dotfiles",
+    "build:beta": "vite build --base=/GradeBridge-Student-Submission-Beta/",
+    "deploy:beta": "npm run build:beta && gh-pages -d dist --dotfiles -r git@github.com:aknoesen/GradeBridge-Student-Submission-Beta.git"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "lucide-react": "^0.554.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
