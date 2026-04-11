@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import heic2any from 'heic2any';
 import { SUBMISSION_TYPES, AI_GRADED_TYPES, AI_GRADED_WORD_RANGES } from '../constants';
 import { SubmissionData } from '../types';
 import { Image as ImageIcon, Trash2, X, Lightbulb, HelpCircle } from 'lucide-react';
@@ -16,6 +17,7 @@ interface SubmissionWidgetProps {
 const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages = 1, data, onChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>, field: 'textAnswer' | 'aiAnswer') => {
     onChange(id, { ...data, [field]: e.target.value });
@@ -28,7 +30,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     e.target.value = '';
   };
 
-  const processFiles = (files: File[]) => {
+  const processFiles = async (files: File[]) => {
     const currentImages = data?.imageAnswers || [];
 
     if (currentImages.length + files.length > maxImages) {
@@ -42,20 +44,38 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
       return;
     }
 
-    const promises = files.map(file => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      });
-    });
+    const isHeic = (f: File) =>
+      f.type === 'image/heic' || f.type === 'image/heif' ||
+      /\.heic$/i.test(f.name) || /\.heif$/i.test(f.name);
 
-    Promise.all(promises).then(base64Images => {
-      onChange(id, {
-        ...data,
-        imageAnswers: [...currentImages, ...base64Images]
-      });
-    });
+    const hasHeic = files.some(isHeic);
+    if (hasHeic) setConverting(true);
+
+    try {
+      const processedBlobs: Blob[] = await Promise.all(
+        files.map(async (file) => {
+          if (!isHeic(file)) return file;
+          const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+          return Array.isArray(result) ? result[0] : result;
+        })
+      );
+
+      const base64Images = await Promise.all(
+        processedBlobs.map(blob =>
+          new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.readAsDataURL(blob);
+          })
+        )
+      );
+
+      onChange(id, { ...data, imageAnswers: [...currentImages, ...base64Images] });
+    } catch {
+      alert('Could not convert HEIC image. Please convert to JPEG or PNG and try again.');
+    } finally {
+      if (hasHeic) setConverting(false);
+    }
   };
 
   const removeImage = (index: number) => {
@@ -143,7 +163,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             multiple
             onChange={handleImageUpload}
             className="hidden"
@@ -159,7 +179,9 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
               </button>
               <span className="mx-1">or drag and drop</span>
             </div>
-            <p className="text-xs text-gray-500">PNG, JPG, GIF up to 3 MB</p>
+            <p className="text-xs text-gray-500">
+              {converting ? 'Converting HEIC image...' : 'PNG, JPG, HEIC up to 3 MB'}
+            </p>
           </div>
         </div>
 
