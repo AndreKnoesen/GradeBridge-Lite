@@ -122,7 +122,7 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 | PDF generation fails | Check internet connection; html2pdf loads from CDN |
 | Lost work | Use "Save Backup" regularly; restore with "Load Work" |
 | Images too large | Files over 4 MB are rejected; compress or use JPG instead of PNG |
-| Word count shows red | Minimum not yet met; keep writing — upper bound is guidance only |
+| Word count displayed | Shows current word count as guidance — no minimum or maximum is enforced |
 
 ---
 

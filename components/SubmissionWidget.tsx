@@ -221,11 +221,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     const aiText = data?.aiAnswer || '';
     const wordCount = aiText.trim() === '' ? 0 : aiText.trim().split(/\s+/).length;
 
-    const belowMin = wordCount < range.min;
-    const wordCountColor = belowMin ? 'text-red-600' : 'text-green-600';
-    const wordCountLabel = belowMin
-      ? `${wordCount} words — minimum ${range.min} not yet reached`
-      : `${wordCount} words`;
+    const wordCountLabel = `${wordCount} words`;
 
     const isBinary = type === 'AI Graded: Binary';
     const placeholder = isBinary
@@ -247,7 +243,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
           style={{ minHeight: isBinary ? '80px' : '120px' }}
           placeholder={placeholder}
         />
-        <div className={`text-xs font-medium ${wordCountColor}`}>
+        <div className="text-xs font-medium text-gray-400">
           {wordCountLabel}
         </div>
         {aiText.length > 0 && (aiText.includes('$') || aiText.includes('\\')) && (
