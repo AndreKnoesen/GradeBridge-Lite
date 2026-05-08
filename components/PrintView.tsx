@@ -176,25 +176,11 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
       {assignment.problems.map((problem, pIdx) => {
          const problemId = `p${pIdx}`;
          const problemPoints = calculateProblemPoints(problem);
-         const problemStatement = problem.description || problem.name;
 
          // Problems always have subsections in the new format
          return (
            <React.Fragment key={pIdx}>
-              {/* 1. Problem Statement Page (No Answer) */}
-              <Page title={assignment.courseCode} subtitle={`Problem ${pIdx + 1}`}>
-                 <div className="flex justify-between items-baseline mb-6 border-b-2 border-gray-100 pb-4 flex-none">
-                    <h3 className="text-3xl font-bold text-black">Problem {pIdx + 1}{problem.name ? `: ${problem.name}` : ''}</h3>
-                    <span className="text-xl font-bold text-gray-600 bg-gray-100 px-4 py-1 rounded">{problemPoints} Points</span>
-                 </div>
-                 {problem.description && (
-                   <div className="font-serif text-xl leading-relaxed text-gray-800 text-justify flex-none">
-                      <LatexContent content={problem.description} />
-                   </div>
-                 )}
-              </Page>
-
-              {/* 2. Subsection Pages */}
+              {/* Subsection Pages — one per subsection, matching Assignment Maker template structure */}
               {problem.subsections.map((sub, sIdx) => {
                  const subId = `${problemId}_s${sIdx}`;
                  const submission = submissionData[subId];
@@ -202,11 +188,24 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
                  const uploadedImages = submission?.imageAnswers || [];
                  const hasExtraPages = maxImages > 1;
                  const submissionElements = getSubmissionElements(sub.submissionType);
-                 const subStatement = sub.description || sub.name;
+                 const isFirstSub = sIdx === 0;
 
                  return (
                    <React.Fragment key={sIdx}>
                       <Page title={assignment.courseCode} subtitle={`Problem ${pIdx + 1} - Part (${String.fromCharCode(97 + sIdx)})`}>
+                         {/* Problem header — only on first subsection page */}
+                         {isFirstSub && (
+                           <div className="flex justify-between items-baseline mb-4 border-b-2 border-gray-100 pb-3 flex-none">
+                             <h3 className="text-2xl font-bold text-black">Problem {pIdx + 1}{problem.name ? `: ${problem.name}` : ''}</h3>
+                             <span className="text-base font-bold text-gray-600 bg-gray-100 px-3 py-1 rounded">{problemPoints} pts</span>
+                           </div>
+                         )}
+                         {isFirstSub && problem.description && (
+                           <div className="font-serif text-base leading-relaxed text-gray-700 mb-4 flex-none">
+                             <LatexContent content={problem.description} />
+                           </div>
+                         )}
+
                          <div className="text-2xl font-bold mb-4 text-gray-900 flex items-center gap-3 flex-none">
                             <span className="bg-gray-900 text-white w-10 h-10 flex items-center justify-center rounded-full text-xl">
                               {String.fromCharCode(97 + sIdx)}
