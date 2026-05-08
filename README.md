@@ -15,9 +15,17 @@ Complete academic assignments with LaTeX support and generate professional PDFs 
 
 **GradeBridge workflow:** Guided, structured submission forms that auto-generate perfectly formatted PDFs.
 
-**The two-app workflow:**
+**The GradeBridge AI ecosystem (two parallel pipelines):**
+
+This app is part of the **lab pipeline**, for lab reports, mini-projects, and homework:
 1. **[Assignment Maker](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker)** - Instructors create structured assignments
 2. **Student Submission** (this app) - Students complete work and generate grading-ready PDFs
+
+A **second pipeline** handles timed multiple-choice quizzes drawn from a SQLite question bank (useful for pre-lecture reading checks):
+- **[MQ Assignment Maker](https://github.com/BridgeSuite/GradeBridge-MQ-Assignment-Maker)** - Instructor filters question bank, sets time limit, exports encrypted assignment
+- **[MQ Student Submission](https://github.com/BridgeSuite/GradeBridge-MQ-Student-Submission)** - Student takes a timed quiz, signs the honor pledge, downloads encrypted ZIP for Gradescope
+
+If you accidentally load an MQ quiz file in this app (or vice versa), each app detects the mismatch and offers a one-click redirect to the correct app.
 
 **Result:** No more "my formatting broke" excuses. Consistent submissions that make grading 50% faster.
 
