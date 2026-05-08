@@ -103,9 +103,33 @@ const App: React.FC = () => {
       try {
         const raw = (e.target?.result as string).trim();
         // Decode if encoded by Assignment Maker (gb1:…), otherwise parse plain JSON
-        const json = (isEncoded(raw)
+        const decoded = (isEncoded(raw)
           ? await decryptJson(raw)
-          : JSON.parse(raw)) as Assignment;
+          : JSON.parse(raw)) as unknown;
+
+        // Path-3 wrong-app detection: if this looks like an MQ assignment
+        // (has questionPool[]), redirect the student to the MQ app instead
+        // of failing with a confusing parse error.
+        const obj = decoded as { questionPool?: unknown; problems?: unknown };
+        if (Array.isArray(obj?.questionPool) && !Array.isArray(obj?.problems)) {
+          if (window.confirm(
+            "Wrong app for this file.\n\n" +
+            "The file you loaded is an MQ (multiple-choice quiz) assignment, " +
+            "not a lab/homework assignment. This app handles lab and homework " +
+            "submissions.\n\n" +
+            "Click OK to open the MQ Student Submission app in a new tab.\n" +
+            "Click Cancel to stay here and try a different file."
+          )) {
+            window.open(
+              'https://bridgesuite.github.io/GradeBridge-MQ-Student-Submission/',
+              '_blank',
+              'noopener'
+            );
+          }
+          return;
+        }
+
+        const json = decoded as Assignment;
         // Basic validation
         if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
