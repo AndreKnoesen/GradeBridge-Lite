@@ -5,7 +5,7 @@ import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, SubmissionData, BackupData } from './types';
-import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
+import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson } from './cryptoService';
@@ -366,7 +366,7 @@ const App: React.FC = () => {
         const internalKey = `p${pIdx}_s${sIdx}`;
         const autograderKey = `p${pIdx}s${sIdx}`;
         const subData = state.submissionData[internalKey];
-        const isAiGraded = typeof sub.submissionType === 'string' && sub.submissionType.startsWith('AI Graded:');
+        const isAiGraded = typeof sub.submissionType === 'string' && AI_GRADED_TYPES.has(sub.submissionType);
 
         if (sub.submissionType === 'Image') {
           convertedData[autograderKey] = {

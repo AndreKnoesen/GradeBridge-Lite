@@ -14,10 +14,12 @@ const AI_GRADED_STRINGS = new Set([
   'AI Graded: Short',
   'AI Graded: Medium',
   'AI Graded: Long',
+  'AI Formative',
   SubmissionType.AI_GRADED_BINARY,
   SubmissionType.AI_GRADED_SHORT,
   SubmissionType.AI_GRADED_MEDIUM,
   SubmissionType.AI_GRADED_LONG,
+  SubmissionType.AI_FORMATIVE,
 ]);
 
 // Helper to convert submissionType to widget type string
