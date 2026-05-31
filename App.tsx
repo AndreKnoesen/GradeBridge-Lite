@@ -373,6 +373,11 @@ const App: React.FC = () => {
             answer: null,
             images_submitted: subData?.imageAnswers?.length ?? 0
           };
+        } else if (sub.submissionType === 'Text and Image') {
+          convertedData[autograderKey] = {
+            answer: subData?.textAnswer ?? null,
+            images_submitted: subData?.imageAnswers?.length ?? 0
+          };
         } else if (isAiGraded) {
           convertedData[autograderKey] = {
             answer: subData?.aiAnswer ?? null,

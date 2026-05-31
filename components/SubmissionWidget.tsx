@@ -87,7 +87,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (type === SUBMISSION_TYPES.IMAGE) {
+    if (type === SUBMISSION_TYPES.IMAGE || type === SUBMISSION_TYPES.TEXT_AND_IMAGE) {
       if (e.type === 'dragenter' || e.type === 'dragover') {
         setDragActive(true);
       } else if (e.type === 'dragleave') {
@@ -100,7 +100,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (type === SUBMISSION_TYPES.IMAGE && e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if ((type === SUBMISSION_TYPES.IMAGE || type === SUBMISSION_TYPES.TEXT_AND_IMAGE) && e.dataTransfer.files && e.dataTransfer.files[0]) {
       processFiles(Array.from(e.dataTransfer.files));
     }
   };
@@ -210,6 +210,109 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
             <span>Upload clear images - PDF layout is optimized for Gradescope.</span>
           </div>
           <span>{images.length} / {maxImages} images uploaded</span>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Text + Image ---
+  if (type === SUBMISSION_TYPES.TEXT_AND_IMAGE) {
+    const textVal = data?.textAnswer || '';
+    const images = data?.imageAnswers || [];
+
+    return (
+      <div className="space-y-5 w-full">
+        {/* Text part */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <span>Text Answer (math equations supported):</span>
+            <span className="group relative">
+              <HelpCircle className="w-4 h-4 text-blue-500 cursor-help" />
+              <span className="invisible group-hover:visible absolute left-0 bottom-full mb-1 w-48 p-2 bg-slate-800 text-white text-xs rounded shadow-lg z-10">
+                Use $...$ for inline math. See "Math Equation Format Help" in sidebar for examples.
+              </span>
+            </span>
+          </label>
+          <textarea
+            value={textVal}
+            onChange={(e) => handleTextChange(e, 'textAnswer')}
+            className="w-full p-3 border border-gray-300 bg-white text-gray-900 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 min-h-[120px] font-mono text-sm placeholder-gray-500"
+            placeholder="Type your answer here... Use $...$ for inline math and $$...$$ for display math."
+          />
+          {textVal && (textVal.includes('$') || textVal.includes('\\')) && (
+            <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <p className="text-xs text-gray-500 mb-1 font-bold uppercase">Preview:</p>
+              <div className="prose prose-sm max-w-none">
+                <LatexContent content={textVal} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Image part */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-gray-700">
+            Supporting Image(s) — Max {maxImages}:
+          </label>
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+              dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.heic,.heif"
+              multiple
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <div className="flex flex-col items-center justify-center space-y-2">
+              <ImageIcon className="w-8 h-8 text-gray-400" />
+              <div className="text-sm text-gray-600">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="font-medium text-blue-600 hover:text-blue-500"
+                >
+                  Upload images
+                </button>
+                <span className="mx-1">or drag and drop</span>
+              </div>
+              <p className="text-xs text-gray-500">
+                {converting ? 'Converting HEIC image...' : 'PNG, JPG, HEIC up to 3 MB'}
+              </p>
+            </div>
+          </div>
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative group aspect-w-4 aspect-h-3 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
+                  <img src={img} alt={`Uploaded ${idx + 1}`} className="object-cover w-full h-full" />
+                  <button
+                    onClick={() => removeImage(idx)}
+                    className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove image"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 text-center">
+                    Image {idx + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <Lightbulb className="w-3 h-3" />
+              <span>Upload clear images — PDF layout is optimized for Gradescope.</span>
+            </div>
+            <span>{images.length} / {maxImages} images uploaded</span>
+          </div>
         </div>
       </div>
     );

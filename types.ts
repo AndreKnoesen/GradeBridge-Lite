@@ -5,6 +5,7 @@
 export enum SubmissionType {
   TEXT = 'Text',
   IMAGE = 'Image',
+  TEXT_AND_IMAGE = 'Text and Image',
   AI_GRADED_BINARY = 'AI Graded: Binary',
   AI_GRADED_SHORT = 'AI Graded: Short',
   AI_GRADED_MEDIUM = 'AI Graded: Medium',

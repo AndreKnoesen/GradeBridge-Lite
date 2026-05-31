@@ -31,6 +31,9 @@ const getSubmissionElements = (submissionType: SubmissionType | string): string[
     case SubmissionType.IMAGE:
     case 'Image':
       return [SUBMISSION_TYPES.IMAGE];
+    case SubmissionType.TEXT_AND_IMAGE:
+    case 'Text and Image':
+      return [SUBMISSION_TYPES.TEXT, SUBMISSION_TYPES.IMAGE];
     default:
       if (AI_GRADED_STRINGS.has(submissionType)) return [submissionType as string];
       return [SUBMISSION_TYPES.TEXT];

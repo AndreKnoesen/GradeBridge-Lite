@@ -32,6 +32,9 @@ const getWidgetType = (submissionType: SubmissionType | string): string => {
     case SubmissionType.IMAGE:
     case 'Image':
       return 'Answer as image';
+    case SubmissionType.TEXT_AND_IMAGE:
+    case 'Text and Image':
+      return 'Text and Image';
     default:
       if (AI_GRADED_STRINGS.has(submissionType)) return submissionType as string;
       return 'Answer as text';

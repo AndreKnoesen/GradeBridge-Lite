@@ -1,11 +1,12 @@
 export const STORAGE_KEY = 'gradebridge_submission';
 export const PRIVACY_KEY = 'gradebridge_privacy_acknowledged';
 export const PDF_NOTICE_KEY = 'gradebridge_pdf_notice_shown';
-export const VERSION = 'v3.3.0';
+export const VERSION = 'v3.4.0';
 
 export const SUBMISSION_TYPES = {
   TEXT: 'Answer as text',
   IMAGE: 'Answer as image',
+  TEXT_AND_IMAGE: 'Text and Image',
   AI_BINARY:    'AI Graded: Binary',
   AI_SHORT:     'AI Graded: Short',
   AI_MEDIUM:    'AI Graded: Medium',
