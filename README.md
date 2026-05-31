@@ -2,7 +2,7 @@
 
 Complete academic assignments with LaTeX support and generate professional PDFs for Gradescope - entirely in your browser.
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** 
@@ -54,9 +54,9 @@ If you accidentally load an MQ quiz file in this app (or vice versa), each app d
 1. Get assignment JSON from instructor
 2. Click **"Upload JSON"** in sidebar
 3. Enter your full name
-4. Complete each problem (text/images/AI-graded response)
-5. Click **"Download for Gradescope"** — downloads both the submission JSON and PDF
-6. Upload both files to Gradescope
+4. Complete each problem (text / images / text+image / AI-graded response)
+5. Click **"Download for Gradescope"** — downloads a single ZIP containing the submission JSON and PDF
+6. Upload the ZIP file to Gradescope
 
 ### Local Development
 ```bash
@@ -108,7 +108,7 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 }
 ```
 
-**Submission Types:** `Text`, `Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`
+**Submission Types:** `Text`, `Image`, `Text and Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`, `AI Formative`
 
 ---
 
@@ -141,7 +141,7 @@ PDFs are designed to match Assignment Maker templates:
 - Consistent headers on all pages
 - Image answers get dedicated pages
 
-See [GRADESCOPE_COORDINATION.md](./GRADESCOPE_COORDINATION.md) for technical details.
+See the [Assignment Maker README](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker#readme) for technical details on the grading rubric format.
 
 ---
 
