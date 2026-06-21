@@ -2,7 +2,7 @@
 
 Complete academic assignments with LaTeX support and generate professional PDFs for Gradescope - entirely in your browser.
 
-![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** 
@@ -36,8 +36,9 @@ If you accidentally load an MQ quiz file in this app (or vice versa), each app d
 - **100% Browser-Based** - No server, no account, no data transmission. Everything stays on your computer.
 - **Auto-Save** - Work saved every second to browser storage
 - **LaTeX Math Support** - Live preview with built-in cheatsheet (fractions, integrals, Greek letters, matrices)
-- **Multiple Answer Types** - Text with LaTeX, image uploads, AI reflective documentation
+- **Multiple Answer Types** - Text with LaTeX, image uploads, text + image combined, AI-graded responses, AI formative feedback
 - **Professional PDF Generation** - Gradescope-compatible output matching instructor templates
+- **Images in ZIP** - Uploaded images are included as individual files in the submission ZIP so graders can see them without opening the PDF
 - **Try Demo** - One-click sample assignment to explore features instantly
 - **Backup & Restore** - Export/import work as JSON
 
@@ -136,7 +137,12 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 
 ## Gradescope Integration
 
-PDFs are designed to match Assignment Maker templates:
+The **"Download for Gradescope"** button produces a single ZIP containing:
+- `*_submission.json` — encrypted answer data (text responses, image counts)
+- `*_submission.pdf` — formatted PDF matching the instructor template (one page per subsection)
+- `p{N}s{N}_image_{N}.jpg` — one file per uploaded image, downsampled for fast loading
+
+The PDF is designed to match Assignment Maker templates:
 - One page per subsection
 - Consistent headers on all pages
 - Image answers get dedicated pages
@@ -148,7 +154,7 @@ See the [Assignment Maker README](https://github.com/BridgeSuite/GradeBridge-Ass
 ## Development
 
 ### Tech Stack
-React 19 + TypeScript + Vite + Tailwind CSS + KaTeX (CDN) + html2pdf.js (CDN)
+React 19 + TypeScript + Vite + Tailwind CSS + KaTeX (CDN) + html2canvas (CDN) + jsPDF (CDN) + JSZip
 
 ### Build & Deploy
 ```bash
@@ -160,7 +166,7 @@ npm run deploy     # Deploy to GitHub Pages
 
 ## Known Limitations
 
-- **CDN Dependencies** - KaTeX and html2pdf.js load from CDN; internet required for LaTeX rendering and PDF generation
+- **CDN Dependencies** - KaTeX, html2canvas, and jsPDF load from CDN; internet required for LaTeX rendering and PDF generation
 - **Long Text Answers** - Very long answers that exceed one page may have imperfect breaks (html2pdf limitation)
 - **Mobile Experience** - Optimized for desktop; functional but not ideal on phones
 
@@ -193,6 +199,6 @@ MIT License - Free for personal and commercial use.
 
 ---
 
-Built with React, TypeScript, [KaTeX](https://katex.org/), [html2pdf.js](https://github.com/eKoopmans/html2pdf.js), and [Lucide](https://lucide.dev/).
+Built with React, TypeScript, [KaTeX](https://katex.org/), [html2canvas](https://html2canvas.hertzen.com/), [jsPDF](https://github.com/parallax/jsPDF), [JSZip](https://stuk.github.io/jszip/), and [Lucide](https://lucide.dev/).
 
 Provided free by **[BridgeSuite](https://github.com/BridgeSuite)**.
