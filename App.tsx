@@ -10,6 +10,26 @@ import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson } from './cryptoService';
 
+function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        const scale = maxPx / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUri;
+  });
+}
+
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     studentName: '',
@@ -445,6 +465,21 @@ const App: React.FC = () => {
 
       zip.file(`${baseName}.json`, jsonResult.bytes);
       zip.file(`${baseName}.pdf`, pdfBytes);
+
+      for (let pIdx = 0; pIdx < state.assignment.problems.length; pIdx++) {
+        const problem = state.assignment.problems[pIdx];
+        for (let sIdx = 0; sIdx < problem.subsections.length; sIdx++) {
+          const sub = problem.subsections[sIdx];
+          if (sub.submissionType === 'Image' || sub.submissionType === 'Text and Image') {
+            const autograderKey = `p${pIdx}s${sIdx}`;
+            const images = state.submissionData[`p${pIdx}_s${sIdx}`]?.imageAnswers ?? [];
+            for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
+              const downsampled = await downsampleImage(images[imgIdx]);
+              zip.file(`${autograderKey}_image_${imgIdx}.jpg`, downsampled.replace(/^data:[^;]+;base64,/, ''), { base64: true });
+            }
+          }
+        }
+      }
 
       const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 
