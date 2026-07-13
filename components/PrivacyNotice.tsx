@@ -65,7 +65,8 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
             <p className="text-gray-600 text-sm">
               This software is provided "as is", without warranty of any kind, express or implied,
               including but not limited to the warranties of merchantability, fitness for a particular
-              purpose and noninfringement. This application is made available under the MIT License.
+              purpose and noninfringement. Copyright © 2026 The Regents of the University of
+              California. This application is made available under the Apache License, Version 2.0.
             </p>
           </div>
 
