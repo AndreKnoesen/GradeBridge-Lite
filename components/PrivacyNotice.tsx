@@ -13,7 +13,7 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-8 h-8" />
             <div>
-              <h2 className="text-2xl font-bold">Welcome to BridgeSuite Student Submission</h2>
+              <h2 className="text-2xl font-bold">Welcome to GradeBridge Student Submission</h2>
               <p className="text-blue-200 text-sm mt-1">Privacy & Data Notice</p>
             </div>
           </div>
@@ -66,13 +66,13 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
               This software is provided "as is", without warranty of any kind, express or implied,
               including but not limited to the warranties of merchantability, fitness for a particular
               purpose and noninfringement. Copyright © 2026 The Regents of the University of
-              California. This application is made available under the Apache License, Version 2.0.
+              California. This application is made available under the MIT License.
             </p>
           </div>
 
           <div className="border-t border-gray-200 pt-4">
             <p className="text-gray-500 text-xs text-center">
-              Provided free of charge by <span className="font-bold text-[#00A4E4]">BridgeSuite</span>
+              Provided free of charge by <span className="font-bold text-[#00A4E4]">UC Davis</span>
             </p>
           </div>
         </div>

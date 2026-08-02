@@ -16,7 +16,7 @@ Thank you for your interest in contributing to GradeBridge Student Submission! T
 
 ## Code of Conduct
 
-This project is maintained by BridgeSuite for the educational community. We are committed to providing a welcoming and inclusive environment for all contributors. Please be respectful, constructive, and professional in all interactions.
+This project is maintained by UC Davis for the educational community. We are committed to providing a welcoming and inclusive environment for all contributors. Please be respectful, constructive, and professional in all interactions.
 
 ## How Can I Contribute?
 
@@ -296,7 +296,7 @@ Remember that this tool is used in academic settings:
 
 ## Response Times
 
-This is a community edition tool maintained by BridgeSuite as time permits. Please be patient:
+This is a community edition tool maintained by UC Davis as time permits. Please be patient:
 
 - **Bug reports**: We aim to respond within 1 week
 - **Feature requests**: May take longer to evaluate and implement
@@ -321,7 +321,7 @@ Contributors will be:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License, Version 2.0.
+By contributing, you agree that your contributions will be licensed under the MIT License.
 
 ---
 
