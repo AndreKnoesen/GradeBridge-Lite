@@ -26,7 +26,7 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
               <h3 className="font-bold text-green-900 mb-2">100% Local Execution</h3>
               <p className="text-green-800 text-sm">
                 This application runs entirely in your browser. No student data, answers, images, or files are ever sent to a server.
-                Your submissions remain completely private and under your control until you export the final PDF.
+                Your submissions remain completely private and under your control until you download your submission package.
               </p>
             </div>
           </div>
@@ -36,7 +36,7 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
             <div>
               <h3 className="font-bold text-blue-900 mb-2">FERPA Compliance & Data Persistence</h3>
               <p className="text-blue-800 text-sm mb-2">
-                Because data never leaves your device until you submit the final PDF to your instructor,
+                Because data never leaves your device until you download your submission package and upload it to Gradescope,
                 your educational records remain in your control and FERPA-compliant.
               </p>
               <p className="text-blue-800 text-sm">
@@ -55,7 +55,7 @@ export const PrivacyNotice: React.FC<PrivacyNoticeProps> = ({ onAccept }) => {
                 <li>Export your work regularly using the "Backup" feature</li>
                 <li>Use the same browser and device for consistent access to your data</li>
                 <li>Avoid using private/incognito mode as it may clear your data when closed</li>
-                <li>Download your PDF submission before the deadline</li>
+                <li>Download your submission package and upload it to Gradescope before the deadline</li>
               </ul>
             </div>
           </div>
