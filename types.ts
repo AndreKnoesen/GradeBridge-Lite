@@ -44,6 +44,12 @@ export interface Assignment {
   problems: Problem[];
   createdAt: number;
   updatedAt: number;
+  /**
+   * RSA public key (SPKI PEM) for the course/term, set by the instructor in
+   * the Assignment Maker. When present, the submission JSON is encoded as a
+   * de-identified gb2: envelope instead of gb1:. Never a private key.
+   */
+  coursePublicKey?: string;
 }
 
 export interface SubmissionData {

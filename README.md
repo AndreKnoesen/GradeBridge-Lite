@@ -2,7 +2,7 @@
 
 Complete academic assignments with LaTeX support and generate professional PDFs for Gradescope - entirely in your browser.
 
-![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** 
@@ -136,6 +136,19 @@ The **"Download for Gradescope"** button produces a single ZIP containing:
 - `*_submission.pdf` — formatted PDF matching the instructor template (one page per subsection)
 - `p{N}s{N}_image_{N}.jpg` — one file per uploaded image, downsampled for fast loading
 
+### Submission encoding: gb1 and gb2
+
+The submission JSON is encoded in one of two formats. The autograder detects which by prefix; the choice is driven entirely by the assignment file:
+
+| Spec field | Format | Payload |
+|---|---|---|
+| no `coursePublicKey` | `gb1:` — shared-key AES-256-GCM | includes `student_name` |
+| `coursePublicKey` present | `gb2:` — public-key envelope | **de-identified**: `student_name`, `email`, `sid`, `student_id` removed |
+
+`gb2:` wraps a per-submission random AES-256-GCM content key with the course RSA public key (RSA-OAEP, SHA-256/MGF1-SHA256, empty label) and lays out the envelope as `wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag`, standard-base64 encoded. Only the course private key — held by the autograder, never by this app — can open it.
+
+The PDF and all filenames are identical in both cases and still carry the student's name; de-identification applies to the JSON payload only. Identity is taken from Gradescope's authenticated submitter metadata. If a spec carries a `coursePublicKey` that cannot be read, the submission fails with an error rather than downgrading to `gb1:`.
+
 The PDF is designed to match Assignment Maker templates:
 - One page per subsection
 - Consistent headers on all pages
@@ -155,6 +168,35 @@ React 19 + TypeScript + Vite + Tailwind CSS + KaTeX (CDN) + html2canvas (CDN) + 
 npm run build      # Production build
 npm run deploy     # Deploy to GitHub Pages
 ```
+
+### Tests
+```bash
+npm test           # cryptoService gb1 / gb2 suite
+```
+The gb2 round-trip checks need the verified test fixture (test keypair + plaintext + a known-good `gb2:` string). It is deliberately **not** committed — it contains a private key. The runner looks for `../Encryption/gb2_test_fixture.json` relative to the repo, or wherever `GB2_FIXTURE` points:
+```bash
+GB2_FIXTURE=/path/to/gb2_test_fixture.json npm test
+```
+Without it the suite still runs everything using an ephemeral keypair and marks the fixture-bound checks SKIPPED.
+
+---
+
+## Changelog
+
+### v3.6.0
+- **`gb2:` hardened submission encoding.** When the loaded assignment spec carries a `coursePublicKey` (SPKI PEM), the submission JSON is encoded as a public-key envelope and de-identified — `student_name`, `email`, `sid`, and `student_id` are stripped from the payload. Specs without that field are unaffected and still produce `gb1:`. See [Gradescope Integration](#submission-encoding-gb1-and-gb2).
+- A spec whose `coursePublicKey` cannot be imported now fails the download with a clear message instead of silently falling back to `gb1:`.
+- PDF, ZIP filename, and image files are unchanged in both paths.
+- Added `npm test` — a dependency-free `cryptoService` suite covering the gb2 round trip, envelope layout, de-identification, key-failure handling, and gb1 regression.
+
+### v3.5.0
+- Uploaded images are written into the submission ZIP as individual downsampled JPEGs (`p{N}s{N}_image_{n}.jpg`) so human graders can see them inline.
+
+### v3.2.0
+- HEIC image support — iPhone photos are converted on upload.
+
+### v3.1.0
+- "Download for Gradescope" produces a single ZIP containing both the submission JSON and the PDF.
 
 ---
 

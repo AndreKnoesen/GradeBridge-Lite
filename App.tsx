@@ -8,7 +8,7 @@ import { AppState, Assignment, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
-import { isEncoded, decryptJson, encryptJson } from './cryptoService';
+import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
@@ -425,7 +425,19 @@ const App: React.FC = () => {
       last_saved: new Date().toISOString()
     };
 
-    const encoded = await encryptJson(submissionJson);
+    // Format selection: a spec carrying a course public key gets the hardened
+    // gb2 envelope with a de-identified payload; everything else stays on gb1.
+    // A spec that asked for gb2 must never silently downgrade to gb1, so any
+    // gb2 failure propagates out of here rather than being caught.
+    const coursePublicKey = state.assignment.coursePublicKey?.trim();
+    let encoded: string;
+    if (coursePublicKey) {
+      // Identity comes from Gradescope's authenticated submitter metadata, not
+      // the payload. The PDF and all filenames keep the student's name.
+      encoded = await encryptJsonGb2(deidentifyForGb2(submissionJson), coursePublicKey);
+    } else {
+      encoded = await encryptJson(submissionJson);
+    }
     const bytes = new TextEncoder().encode(encoded);
     const filename = `${state.studentName}_${state.assignment.courseCode}_submission.json`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
@@ -502,8 +514,15 @@ const App: React.FC = () => {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error("Submission package error:", error);
-      setStatusMessage("Error generating submission.");
-      alert(`There was an error generating your submission:\n\n${msg}\n\nPlease refresh the page and try again.`);
+      // A bad course encryption key is not something the student can retry
+      // their way out of — show the instruction on its own.
+      if (error instanceof Error && error.name === GB2_KEY_ERROR) {
+        setStatusMessage("Assignment file problem — submission not created.");
+        alert(msg);
+      } else {
+        setStatusMessage("Error generating submission.");
+        alert(`There was an error generating your submission:\n\n${msg}\n\nPlease refresh the page and try again.`);
+      }
     } finally {
       setPdfProgress({ active: false, phase: 'pdf', current: 0, total: 0 });
     }
