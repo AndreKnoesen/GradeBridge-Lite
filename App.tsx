@@ -334,7 +334,6 @@ const App: React.FC = () => {
         const canvas = await html2canvasLib(clone, {
           scale: 2,
           useCORS: true,
-          letterRendering: true,
           scrollX: 0,
           scrollY: 0,
           x: cropX,
