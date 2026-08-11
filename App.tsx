@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PrintView from './components/PrintView';
@@ -290,13 +292,8 @@ const App: React.FC = () => {
   const buildPdfBytes = async (
     onPageProgress: (current: number, total: number) => void
   ): Promise<Uint8Array | null> => {
-    const html2canvasLib = (window as any).html2canvas;
-    const jsPDFLib = (window as any).jspdf?.jsPDF;
-
-    if (!html2canvasLib || !jsPDFLib) {
-      alert("PDF library not loaded. Please check your internet connection and refresh.");
-      return null;
-    }
+    const html2canvasLib = html2canvas;
+    const jsPDFLib = jsPDF;
 
     const pdfContent = document.getElementById('pdf-content');
     if (!pdfContent) {
