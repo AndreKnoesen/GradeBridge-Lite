@@ -57,18 +57,18 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
   // --- Internal Components ---
 
   // A reusable Page wrapper that handles dimensions, padding, and the Header.
-  const Page = ({
-    children,
-    title,
-    subtitle,
-    isTitlePage = false,
-    noBreak = false
-  }: {
+  const Page: React.FC<{
     children: React.ReactNode;
     title?: string;
     subtitle?: string;
     isTitlePage?: boolean;
     noBreak?: boolean;
+  }> = ({
+    children,
+    title,
+    subtitle,
+    isTitlePage = false,
+    noBreak = false
   }) => (
     <div
       className={`pdf-page bg-white mx-auto text-black font-sans relative box-border flex flex-col`}

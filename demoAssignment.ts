@@ -17,7 +17,7 @@ export const DEMO_ASSIGNMENT: Assignment = {
 You can:
 - Enter text answers with LaTeX math formatting (use $...$ for inline math, $$...$$ for display math)
 - Upload images of handwritten work or diagrams
-- Document your AI tool usage in the AI Reflective sections
+- Document your AI tool usage in the AI Formative sections
 - Preview and download your submission as a PDF
 
 Try filling out each question to see how the app works. Your work is automatically saved to your browser.`,
@@ -177,11 +177,11 @@ $$\\frac{dy}{dx} = 2xy$$
 
 with initial condition $y(0) = 1$.
 
-You may use AI tools (ChatGPT, Wolfram Alpha, etc.) to help you, but you MUST document your process in the AI Reflective section below.
+You may use AI tools (ChatGPT, Wolfram Alpha, etc.) to help you, but you MUST document your process in the AI Formative section below.
 
-This demonstrates the AI Reflective documentation feature.`,
+This demonstrates the AI Formative documentation feature.`,
           points: 10,
-          submissionType: SubmissionType.AI_REFLECTIVE,
+          submissionType: SubmissionType.AI_FORMATIVE,
           maxImages: 0
         },
         {
