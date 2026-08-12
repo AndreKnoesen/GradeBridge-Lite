@@ -38,8 +38,11 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const hasStudentInfo = state.studentName.trim();
 
+  // `h-full` and the internal scroll only apply once the sidebar is a
+  // viewport-height column beside the content (lg and up). Stacked above the
+  // content on a phone it sizes to its own content and scrolls with the page.
   return (
-    <div className="w-full lg:w-[320px] bg-slate-900 text-slate-100 flex flex-col h-full shadow-2xl overflow-y-auto z-20">
+    <div className="w-full lg:w-[320px] lg:flex-shrink-0 bg-slate-900 text-slate-100 flex flex-col lg:h-full lg:overflow-y-auto shadow-2xl z-20">
       <div className="p-6 border-b border-slate-700 bg-slate-950">
         <div className="flex items-center gap-3 mb-2">
           <div>

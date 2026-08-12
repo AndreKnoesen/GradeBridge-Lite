@@ -719,8 +719,13 @@ const App: React.FC = () => {
     setShowPrivacyModal(false);
   };
 
+  // Below lg the shell is one long document scroll: the sidebar stacks on top
+  // and the content follows it. Pinning the shell to the viewport height at
+  // every width (as `h-screen overflow-hidden` used to) let the sidebar's
+  // `h-full` claim the whole screen, squeezing the content pane — and with it
+  // the page uploader — to zero height on phones.
   return (
-    <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
+    <div className="flex min-h-screen flex-col bg-gray-50 font-sans lg:h-screen lg:flex-row lg:overflow-hidden">
 
       {/* Submission Generation Overlay */}
       {pdfProgress.active && (
@@ -766,9 +771,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Warning Banner */}
+      {/* Mobile Warning Banner — in flow on a phone, where a fixed banner
+          would sit on top of the sidebar header and hide the version line.
+          Fixed from lg up, where it is one line and the header clears it. */}
       {showMobileBanner && (
-        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
+        <div className="w-full lg:fixed lg:top-0 lg:left-0 lg:right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
           <div className="flex items-center justify-between gap-3 max-w-4xl mx-auto">
             <div className="flex items-center gap-3">
               <Monitor className="w-5 h-5 flex-shrink-0" />
@@ -802,11 +809,11 @@ const App: React.FC = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto relative scroll-smooth" id="main-scroll">
+      <div className="flex-1 lg:overflow-y-auto relative scroll-smooth" id="main-scroll">
         
         {/* Edit Mode View */}
         {state.viewMode === 'edit' && (
-          <div className="max-w-4xl mx-auto p-6 lg:p-12 pb-32">
+          <div className="max-w-4xl mx-auto p-6 lg:p-12 pb-action-bar">
             {!state.assignment ? (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center text-gray-400 py-8">
                 <h2 className="text-xl font-semibold text-gray-600 mb-6">
@@ -902,9 +909,10 @@ const App: React.FC = () => {
                    ))}
                  </div>
 
-                 {/* Floating Bottom Bar */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                   <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
+                 {/* Floating Bottom Bar — wraps to two rows on a phone rather
+                     than letting the buttons spill outside the bar. */}
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 min-h-[5rem] flex items-center pb-safe">
+                   <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-3xl mx-auto w-full px-4 py-3">
                      <button
                        onClick={handleExportWork}
                        className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
@@ -946,7 +954,7 @@ const App: React.FC = () => {
            {state.assignment && (
                <>
                    {/* Scrollable Preview Area */}
-                   <div className="flex-1 overflow-y-auto p-8 pb-40 flex justify-center">
+                   <div className="flex-1 overflow-y-auto p-8 pb-action-bar flex justify-center">
                        <div className="shadow-2xl">
                            <PrintView
                              assignment={state.assignment}
@@ -957,8 +965,8 @@ const App: React.FC = () => {
                    </div>
 
                    {/* Fixed Download Bar - Always visible at bottom */}
-                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                     <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
+                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 min-h-[5rem] flex items-center pb-safe">
+                     <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-3xl mx-auto w-full px-4 py-3">
                        <button
                          onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
                          className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
