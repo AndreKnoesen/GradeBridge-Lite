@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import heic2any from 'heic2any';
+import { convertHeicIfNeeded, isHeic } from '../imageIngest';
 import { SUBMISSION_TYPES, AI_GRADED_TYPES, AI_GRADED_WORD_RANGES } from '../constants';
 import { SubmissionData } from '../types';
 import { Image as ImageIcon, Trash2, X, Lightbulb, HelpCircle } from 'lucide-react';
@@ -44,21 +44,12 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
       return;
     }
 
-    const isHeic = (f: File) =>
-      f.type === 'image/heic' || f.type === 'image/heif' ||
-      /\.heic$/i.test(f.name) || /\.heif$/i.test(f.name);
-
     const hasHeic = files.some(isHeic);
     if (hasHeic) setConverting(true);
 
     try {
-      const processedBlobs: Blob[] = await Promise.all(
-        files.map(async (file) => {
-          if (!isHeic(file)) return file;
-          const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-          return Array.isArray(result) ? result[0] : result;
-        })
-      );
+      // Same conversion the handwritten page pool uses (imageIngest.ts).
+      const processedBlobs: Blob[] = await Promise.all(files.map(convertHeicIfNeeded));
 
       const base64Images = await Promise.all(
         processedBlobs.map(blob =>

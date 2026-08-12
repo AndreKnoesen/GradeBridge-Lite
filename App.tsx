@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
+import PageUploader from './components/PageUploader';
 import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
-import { AppState, Assignment, SubmissionData, BackupData } from './types';
+import { AppState, Assignment, PageRef, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
+import { IngestedPage, blobToDataUri, dataUriToBlob } from './imageIngest';
+import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
@@ -32,11 +35,21 @@ function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise
   });
 }
 
+// Page order drives the filenames inside the submission ZIP, so it is
+// recomputed on every add, removal and reorder. Regions bind to PageRef.id,
+// never to the filename, so reordering never invalidates a marking.
+const renumberPages = (pages: PageRef[]): PageRef[] =>
+  pages.map((page, idx) => ({ ...page, file: `page_${idx + 1}.jpg` }));
+
+const newPageId = (): string =>
+  `pg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     studentName: '',
     assignment: null,
     submissionData: {},
+    pages: [],
     viewMode: 'edit',
     lastSaved: null,
     privacyAcknowledged: false
@@ -45,6 +58,49 @@ const App: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobileBanner, setShowMobileBanner] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<{ active: boolean; phase: 'pdf' | 'packaging'; current: number; total: number }>({ active: false, phase: 'pdf', current: 0, total: 0 });
+
+  // Object URLs for the stored page bitmaps. A page with no entry here has
+  // metadata but no image — the uploader surfaces it as needing re-upload.
+  const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
+  const pageUrlsRef = useRef<Record<string, string>>({});
+
+  const isHandwritten = state.assignment?.inputMode === 'handwritten';
+
+  const setPageUrl = useCallback((id: string, blob: Blob) => {
+    const previous = pageUrlsRef.current[id];
+    if (previous) URL.revokeObjectURL(previous);
+    pageUrlsRef.current = { ...pageUrlsRef.current, [id]: URL.createObjectURL(blob) };
+    setPageUrls(pageUrlsRef.current);
+  }, []);
+
+  const dropPageUrl = useCallback((id: string) => {
+    const previous = pageUrlsRef.current[id];
+    if (!previous) return;
+    URL.revokeObjectURL(previous);
+    const { [id]: _removed, ...rest } = pageUrlsRef.current;
+    pageUrlsRef.current = rest;
+    setPageUrls(rest);
+  }, []);
+
+  const dropAllPageUrls = useCallback(() => {
+    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+    pageUrlsRef.current = {};
+    setPageUrls({});
+  }, []);
+
+  // Revoke on unmount so a long session does not leak page bitmaps.
+  useEffect(() => () => {
+    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+  }, []);
+
+  /** Pulls stored bitmaps for a page list; anything missing stays missing. */
+  const hydratePages = useCallback(async (pages: PageRef[]) => {
+    for (const page of pages) {
+      const blob = await getPageBlob(page.id);
+      if (blob) setPageUrl(page.id, blob);
+    }
+    await pruneExcept(pages.map((p) => p.id));
+  }, [setPageUrl]);
 
   // Mobile detection
   useEffect(() => {
@@ -71,14 +127,20 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         // Only restore if version matches or simple check passes
         if (parsed.submissionData) {
+           const pages: PageRef[] = Array.isArray(parsed.pages) ? parsed.pages : [];
            setState(prev => ({
              ...prev,
              studentName: parsed.studentName || '',
              assignment: parsed.assignment || null,
              submissionData: parsed.submissionData || {},
+             pages,
              lastSaved: parsed.lastSaved || null,
              privacyAcknowledged: true // If they have data, they likely ack'd privacy
            }));
+           // Page bitmaps live in IndexedDB, so they restore separately and may
+           // be gone (cleared cache, different browser). Regions are kept either
+           // way — re-uploading the same page in the same slot revalidates them.
+           if (pages.length > 0) void hydratePages(pages);
         }
       } catch (e) {
         console.error("Failed to restore session", e);
@@ -87,22 +149,33 @@ const App: React.FC = () => {
   }, []);
 
   // Auto Save Debounced
+  // Only the small data goes here. Page bitmaps are written to IndexedDB as
+  // they are ingested; localStorage keeps their metadata, which is a few
+  // hundred bytes a page instead of a few hundred kilobytes.
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (state.studentName || Object.keys(state.submissionData).length > 0) {
+      if (state.studentName || Object.keys(state.submissionData).length > 0 || state.pages.length > 0) {
         const toSave = {
           studentName: state.studentName,
           assignment: state.assignment,
           submissionData: state.submissionData,
+          pages: state.pages,
           lastSaved: new Date().toISOString()
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-        setState(s => ({ ...s, lastSaved: toSave.lastSaved }));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+          setState(s => ({ ...s, lastSaved: toSave.lastSaved }));
+        } catch (err) {
+          // A silent autosave failure is how drafts disappear. Say so, and
+          // point at the backup file, which does not use this quota.
+          console.error('Autosave failed', err);
+          setStatusMessage('Auto-save failed — this browser is out of storage. Use "Save Backup" to keep your work.');
+        }
       }
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [state.studentName, state.submissionData, state.assignment]);
+  }, [state.studentName, state.submissionData, state.assignment, state.pages]);
 
   // Handlers
   const handleUpdateStudent = (field: string, value: string) => {
@@ -117,6 +190,69 @@ const App: React.FC = () => {
         [id]: data
       }
     }));
+  };
+
+  // --- Handwritten page pool ---
+
+  const handleAddPage = async (ingested: IngestedPage) => {
+    const id = newPageId();
+    await putPageBlob(id, ingested.blob);
+    setPageUrl(id, ingested.blob);
+    setState(prev => ({
+      ...prev,
+      pages: renumberPages([
+        ...prev.pages,
+        {
+          id,
+          file: '',
+          width: ingested.width,
+          height: ingested.height,
+          bytes: ingested.bytes,
+          sourceName: ingested.sourceName,
+          warnings: ingested.warnings
+        }
+      ])
+    }));
+  };
+
+  // Keeps the id, so any regions already marked against this slot stay valid.
+  const handleReplacePage = async (id: string, ingested: IngestedPage) => {
+    await putPageBlob(id, ingested.blob);
+    setPageUrl(id, ingested.blob);
+    setState(prev => ({
+      ...prev,
+      pages: prev.pages.map(page => page.id === id
+        ? {
+            ...page,
+            width: ingested.width,
+            height: ingested.height,
+            bytes: ingested.bytes,
+            sourceName: ingested.sourceName,
+            warnings: ingested.warnings
+          }
+        : page)
+    }));
+  };
+
+  const handleRemovePage = (id: string) => {
+    if (!window.confirm("Remove this page? You can upload it again afterwards, but anything you have marked on it will be lost.")) {
+      return;
+    }
+    void deletePageBlob(id);
+    dropPageUrl(id);
+    setState(prev => ({ ...prev, pages: renumberPages(prev.pages.filter(page => page.id !== id)) }));
+  };
+
+  const handleMovePage = (id: string, delta: number) => {
+    setState(prev => {
+      const from = prev.pages.findIndex(page => page.id === id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= prev.pages.length) return prev;
+      const pages = [...prev.pages];
+      const [moved] = pages.splice(from, 1);
+      pages.splice(to, 0, moved);
+      return { ...prev, pages: renumberPages(pages) };
+    });
   };
 
   const handleLoadAssignment = (file: File) => {
@@ -156,7 +292,18 @@ const App: React.FC = () => {
         if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
         }
-        setState(prev => ({ ...prev, assignment: json, submissionData: {} }));
+        // Loading an assignment starts a fresh submission. Answers have always
+        // been cleared here; pages are photographs, so ask before dropping them.
+        if (state.pages.length > 0 && !window.confirm(
+          "Loading an assignment clears your current work, including the " +
+          `${state.pages.length} page image${state.pages.length === 1 ? '' : 's'} you uploaded.\n\n` +
+          "Continue?"
+        )) {
+          return;
+        }
+        void clearPageBlobs();
+        dropAllPageUrls();
+        setState(prev => ({ ...prev, assignment: json, submissionData: {}, pages: [] }));
       } catch (err) {
         alert(
           "Invalid Assignment File\n\n" +
@@ -171,13 +318,15 @@ const App: React.FC = () => {
 
   const handleLoadDemo = () => {
     // Load the demo assignment directly without file upload
-    setState(prev => ({ ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {} }));
+    void clearPageBlobs();
+    dropAllPageUrls();
+    setState(prev => ({ ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {}, pages: [] }));
     setStatusMessage(DEMO_LOADED_MESSAGE);
     // Clear the message after 5 seconds
     setTimeout(() => setStatusMessage(''), 5000);
   };
 
-  const handleExportWork = () => {
+  const handleExportWork = async () => {
     if (!state.assignment) return;
     const backup: BackupData = {
       student_name: state.studentName,
@@ -187,6 +336,21 @@ const App: React.FC = () => {
       exported_at: new Date().toISOString(),
       version: VERSION
     };
+
+    // A backup that omitted the pages would send a student who restores it
+    // back out to re-photograph everything, so carry the bitmaps too.
+    if (state.pages.length > 0) {
+      setStatusMessage('Packing your pages into the backup...');
+      const images: Record<string, string> = {};
+      for (const page of state.pages) {
+        const pageBlob = await getPageBlob(page.id);
+        if (pageBlob) images[page.id] = await blobToDataUri(pageBlob);
+      }
+      backup.pages = state.pages;
+      backup.page_images = images;
+      setStatusMessage('');
+    }
+
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -204,7 +368,7 @@ const App: React.FC = () => {
 
   const handleLoadWork = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const json = JSON.parse(e.target?.result as string);
 
@@ -254,10 +418,32 @@ const App: React.FC = () => {
           }
         }
 
+        // Pages, when the backup carries them. Written back into IndexedDB so
+        // they behave exactly like freshly uploaded pages from here on.
+        const restoredPages = Array.isArray(backupData.pages) ? backupData.pages : [];
+        if (restoredPages.length > 0) {
+          setStatusMessage('Restoring your pages...');
+          await clearPageBlobs();
+          dropAllPageUrls();
+          for (const page of restoredPages) {
+            const dataUri = backupData.page_images?.[page.id];
+            if (!dataUri) continue;
+            try {
+              const pageBlob = dataUriToBlob(dataUri);
+              await putPageBlob(page.id, pageBlob);
+              setPageUrl(page.id, pageBlob);
+            } catch (err) {
+              console.error(`Could not restore page ${page.id}`, err);
+            }
+          }
+          setStatusMessage('');
+        }
+
         setState(prev => ({
           ...prev,
           studentName: backupData.student_name,
           submissionData: backupData.submission_data,
+          pages: restoredPages.length > 0 ? renumberPages(restoredPages) : prev.pages,
           lastSaved: new Date().toISOString()
         }));
         alert("Work restored successfully!");
@@ -276,10 +462,13 @@ const App: React.FC = () => {
     if (window.confirm("Are you sure you want to clear all work? This cannot be undone.")) {
       if (window.confirm("Really delete everything? Type 'YES' to confirm if you are unsure, or just click OK.")) {
          localStorage.removeItem(STORAGE_KEY);
+         void clearPageBlobs();
+         dropAllPageUrls();
          setState({
             studentName: '',
             assignment: null,
             submissionData: {},
+            pages: [],
             viewMode: 'edit',
             lastSaved: null,
             privacyAcknowledged: true
@@ -686,6 +875,20 @@ const App: React.FC = () => {
                         </div>
                     )}
                  </div>
+
+                 {/* Handwritten assignments answer on paper: the pages are the
+                     submission, so the page pool leads. Electronic assignments
+                     never reach this branch and are untouched. */}
+                 {isHandwritten && (
+                   <PageUploader
+                     pages={state.pages}
+                     pageUrls={pageUrls}
+                     onAddPage={handleAddPage}
+                     onReplacePage={handleReplacePage}
+                     onRemovePage={handleRemovePage}
+                     onMovePage={handleMovePage}
+                   />
+                 )}
 
                  <div>
                    {state.assignment.problems.map((problem, idx) => (
