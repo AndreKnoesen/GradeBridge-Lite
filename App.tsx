@@ -12,7 +12,7 @@ import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants'
 import { IngestedPage, blobToDataUri, dataUriToBlob } from './imageIngest';
 import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
@@ -773,14 +773,21 @@ const App: React.FC = () => {
 
       {/* Mobile Warning Banner — in flow on a phone, where a fixed banner
           would sit on top of the sidebar header and hide the version line.
-          Fixed from lg up, where it is one line and the header clears it. */}
+          Fixed from lg up, where it is one line and the header clears it.
+          A handwritten assignment is photographed on the phone, so the
+          desktop advice is wrong there; anything else — including no
+          assignment loaded yet — keeps it. */}
       {showMobileBanner && (
         <div className="w-full lg:fixed lg:top-0 lg:left-0 lg:right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
           <div className="flex items-center justify-between gap-3 max-w-4xl mx-auto">
             <div className="flex items-center gap-3">
-              <Monitor className="w-5 h-5 flex-shrink-0" />
+              {isHandwritten
+                ? <Smartphone className="w-5 h-5 flex-shrink-0" />
+                : <Monitor className="w-5 h-5 flex-shrink-0" />}
               <p className="text-sm font-medium">
-                For the best experience, use a desktop or laptop. File downloads on mobile can be hard to find.
+                {isHandwritten
+                  ? 'Your phone is the right device for this. Photograph your handwritten pages right here. One note: files you save or download land in your Downloads or Files app, so that is where to look for them.'
+                  : 'For the best experience, use a desktop or laptop. Files you download can be hard to find on mobile.'}
               </p>
             </div>
             <button
