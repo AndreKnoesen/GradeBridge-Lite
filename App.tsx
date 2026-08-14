@@ -10,6 +10,7 @@ import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, PageRef, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
 import { IngestedPage, blobToDataUri, dataUriToBlob, rotatePageBlob } from './imageIngest';
+import { downloadBlob } from './downloadFile';
 import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
@@ -404,17 +405,17 @@ const App: React.FC = () => {
     }
 
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
-    a.click();
-    URL.revokeObjectURL(url);
-    // Show LMS upload reminder (same as PDF)
+    const fileName = `${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
+    downloadBlob(blob, fileName);
+    // Nothing here knows whether the file was written — on iOS the download is
+    // still behind a confirmation the student has not seen yet. Tell them what
+    // to do next instead of claiming it is done.
     alert(
-      "Backup Saved Successfully!\n\n" +
-      "You can upload this JSON file to your LMS (Canvas, etc.) as a backup of your work.\n\n" +
-      "The file is in your Downloads folder."
+      "Backup file created.\n\n" +
+      `File: ${fileName}\n\n` +
+      "If your browser asks whether to download it, confirm. It saves wherever your " +
+      "browser puts downloads — the Files app on a phone, the Downloads folder on a computer.\n\n" +
+      "You can also upload this JSON to your LMS (Canvas, etc.) as a backup of your work."
     );
   };
 
@@ -732,20 +733,17 @@ const App: React.FC = () => {
 
       const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${baseName}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(zipBlob, `${baseName}.zip`);
 
-      setStatusMessage("Submission package downloaded!");
+      setStatusMessage("Submission package created — confirm the download if your browser asks.");
       alert(
-        `Submission package downloaded!\n\n` +
+        `Submission package created.\n\n` +
         `File: ${baseName}.zip\n\n` +
+        `If your browser asks whether to download it, confirm. It saves wherever your ` +
+        `browser puts downloads — the Files app on a phone, the Downloads folder on a computer.\n\n` +
         `This ZIP contains your PDF and submission data.\n` +
         `Upload the ZIP file to Gradescope to submit your assignment.\n\n` +
-        `The file is in your Downloads folder.`
+        `Check you have the file before you close this page.`
       );
       setTimeout(() => setStatusMessage(''), 6000);
     } catch (error) {
