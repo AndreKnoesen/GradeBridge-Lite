@@ -106,8 +106,19 @@ export const readJpegInfo = (buffer: ArrayBuffer): JpegInfo | null => {
   let offset = 2;
   while (offset + 4 <= view.byteLength) {
     if (view.getUint8(offset) !== 0xff) { offset++; continue; }   // resync on padding
-    const marker = view.getUint8(offset + 1);
-    offset += 2;
+
+    // A marker may be preceded by any number of 0xFF fill bytes (ITU T.81
+    // B.1.1.3) and encoders do emit them — the probe image below carries three
+    // before its SOF. Reading the first 0xFF as the identifier turns the next
+    // two bytes into a bogus segment length, the walk jumps past the end of
+    // the file, and the frame dimensions come back 0. That is silent: nothing
+    // fails, the orientation cross-check just stops being available and every
+    // rotated page rests on the decoder probe alone.
+    let markerAt = offset + 1;
+    while (markerAt < view.byteLength && view.getUint8(markerAt) === 0xff) markerAt++;
+    if (markerAt >= view.byteLength) break;
+    const marker = view.getUint8(markerAt);
+    offset = markerAt + 1;
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
     if (marker === 0xda || marker === 0xd9) break;                // start of scan / end
     if (offset + 2 > view.byteLength) break;
@@ -137,7 +148,7 @@ export const readJpegInfo = (buffer: ArrayBuffer): JpegInfo | null => {
 
 // ---------- decode ----------
 
-interface Decoded {
+export interface Decoded {
   source: CanvasImageSource;
   width: number;
   height: number;
@@ -154,7 +165,11 @@ interface Decoded {
 // resolves the rotating flags 5–8 — for 3 (180°) and the mirrors the dimensions
 // are identical either way, and a wrong guess there means a page stored upside
 // down. So measure the engine once, on a known image, and trust the result.
-const ORIENTATION_PROBE_JPEG =
+//
+// Exported so the test suite can assert the probe still is what it claims to
+// be: an orientation-6, 16×8 JPEG. A probe that silently stopped carrying the
+// flag would measure every engine as "applies it" and break flags 2/3/4.
+export const ORIENTATION_PROBE_JPEG =
   '/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wBDAFA3PEY8MlBGQUZaVVBf' +
   'eMiCeG5uePWvuZHI////////////////////////////////////////////////////2wBDAVVaWnhpeOuCguv/////////////' +
   '////////////////////////////////////////////////////wAARCAAIABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAA' +
@@ -249,8 +264,10 @@ const decodeBlob = async (blob: Blob): Promise<Decoded> => {
  * cross-check for the rotating flags: if the image came back swapped relative
  * to its raw SOF dimensions, the decoder has already rotated it whatever the
  * probe said.
+ *
+ * Exported for the orientation test suite.
  */
-const pendingOrientation = async (info: JpegInfo | null, decoded: Decoded): Promise<number> => {
+export const pendingOrientation = async (info: JpegInfo | null, decoded: Decoded): Promise<number> => {
   if (!info || info.orientation === 1) return 1;
 
   if (info.orientation >= 5 && info.width > 0 && info.height > 0 && info.width !== info.height) {
@@ -261,8 +278,12 @@ const pendingOrientation = async (info: JpegInfo | null, decoded: Decoded): Prom
   return (await decoderAppliesExif(decoded.path)) ? 1 : info.orientation;
 };
 
-/** Canvas transform for an EXIF flag, expressed in RAW image coordinates. */
-const applyOrientation = (
+/**
+ * Canvas transform for an EXIF flag, expressed in RAW image coordinates.
+ * Exported for the orientation test suite, which checks the matrices by
+ * mapping the raw corners through them.
+ */
+export const applyOrientation = (
   ctx: CanvasRenderingContext2D, orientation: number, w: number, h: number
 ): void => {
   switch (orientation) {
@@ -471,6 +492,52 @@ export const ingestPage = async (file: File): Promise<IngestResult> => {
   } catch {
     try { decoded.release(); } catch { /* already released */ }
     return reject('This page could not be processed. Try retaking or re-saving it as a JPEG.');
+  }
+};
+
+// ---------- manual rotation ----------
+
+export interface RotatedPage {
+  blob: Blob;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+/**
+ * Turns a stored page a quarter turn clockwise and re-encodes it.
+ *
+ * This rewrites the stored bitmap rather than applying a CSS transform,
+ * because the stored frame is what regions are normalised against and what
+ * ships in the submission ZIP — a display-only rotation would leave the
+ * marked rectangles and the exported page disagreeing with what the student
+ * saw. Dimensions therefore swap, and the caller must swap PageRef.width /
+ * PageRef.height with them.
+ *
+ * EXIF flag 6 *is* "a quarter turn clockwise" written in raw image
+ * coordinates, so the ingest transform table already covers this case.
+ *
+ * Repeated rotation re-encodes JPEG each time. The pages are downsampled
+ * photographs of pen on paper and the quality is 0.85; four turns to get back
+ * where you started is not a path worth engineering around.
+ */
+export const rotatePageBlob = async (blob: Blob): Promise<RotatedPage> => {
+  const decoded = await decodeBlob(blob);
+  try {
+    const { width: w, height: h } = decoded;
+    if (!w || !h) throw new Error('image has no dimensions');
+
+    const [canvas, ctx] = makeCanvas(h, w);
+    applyOrientation(ctx, 6, w, h);
+    ctx.drawImage(decoded.source, 0, 0, w, h);
+    decoded.release();
+
+    const rotated = await canvasToBlob(canvas, PAGE_JPEG_QUALITY);
+    releaseCanvas(canvas);
+    return { blob: rotated, width: h, height: w, bytes: rotated.size };
+  } catch (err) {
+    try { decoded.release(); } catch { /* already released */ }
+    throw err;
   }
 };
 

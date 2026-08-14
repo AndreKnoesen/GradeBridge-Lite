@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Camera, Upload, X, ArrowLeft, ArrowRight, AlertTriangle, RefreshCw, FileImage,
+  Camera, Upload, X, ArrowLeft, ArrowRight, AlertTriangle, RefreshCw, FileImage, RotateCw,
 } from 'lucide-react';
 import { PageRef } from '../types';
 import { PAGE_TOTAL_SIZE_TARGET } from '../constants';
@@ -14,6 +14,8 @@ interface PageUploaderProps {
   onReplacePage: (id: string, page: IngestedPage) => Promise<void>;
   onRemovePage: (id: string) => void;
   onMovePage: (id: string, delta: number) => void;
+  /** Rewrites the stored bitmap a quarter turn clockwise. */
+  onRotatePage: (id: string) => Promise<void>;
 }
 
 interface Rejection {
@@ -22,17 +24,19 @@ interface Rejection {
 }
 
 const PageUploader: React.FC<PageUploaderProps> = ({
-  pages, pageUrls, onAddPage, onReplacePage, onRemovePage, onMovePage,
+  pages, pageUrls, onAddPage, onReplacePage, onRemovePage, onMovePage, onRotatePage,
 }) => {
   const chooseRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
+  const retakeRef = useRef<HTMLInputElement>(null);
   const replaceTargetRef = useRef<string | null>(null);
 
   const [busy, setBusy] = useState<{ current: number; total: number; name: string } | null>(null);
   const [rejections, setRejections] = useState<Rejection[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [hasCamera, setHasCamera] = useState(false);
+  const [rotatingId, setRotatingId] = useState<string | null>(null);
 
   // A camera-capture input on a desktop just opens the file picker again, so
   // only offer it where it does something different.
@@ -92,9 +96,25 @@ const PageUploader: React.FC<PageUploaderProps> = ({
     if (target && files.length > 0) void processFiles([files[0]], target);
   };
 
-  const startReplace = (id: string) => {
+  /**
+   * `source: 'camera'` reopens the rear camera so a bad page can actually be
+   * re-shot; 'file' stays the fallback for a denied or absent camera, and is
+   * the only option on a desktop.
+   */
+  const startReplace = (id: string, source: 'camera' | 'file' = 'file') => {
     replaceTargetRef.current = id;
-    replaceRef.current?.click();
+    const input = source === 'camera' ? retakeRef.current : replaceRef.current;
+    input?.click();
+  };
+
+  const handleRotate = async (id: string) => {
+    if (rotatingId) return;
+    setRotatingId(id);
+    try {
+      await onRotatePage(id);
+    } finally {
+      setRotatingId(null);
+    }
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -164,6 +184,17 @@ const PageUploader: React.FC<PageUploaderProps> = ({
             ref={replaceRef}
             type="file"
             accept="image/*,.heic,.heif"
+            onChange={handleReplace}
+            className="hidden"
+          />
+          {/* Same handler as the picker above — only `capture` differs, so a
+              browser that ignores it (or has no camera) still opens a picker
+              and the retake completes anyway. */}
+          <input
+            ref={retakeRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
             onChange={handleReplace}
             className="hidden"
           />
@@ -352,13 +383,50 @@ const PageUploader: React.FC<PageUploaderProps> = ({
                     </div>
 
                     {url && (
-                      <button
-                        type="button"
-                        onClick={() => startReplace(page.id)}
-                        className="w-full text-[11px] text-gray-600 hover:text-blue-700 underline"
-                      >
-                        Retake this page
-                      </button>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {/* Rotation is the catch-all for a misoriented page:
+                            it fixes paper turned the wrong way round, which no
+                            amount of EXIF handling can detect. */}
+                        <button
+                          type="button"
+                          onClick={() => void handleRotate(page.id)}
+                          disabled={rotatingId !== null || busy !== null}
+                          className="min-h-[44px] flex items-center justify-center gap-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40 text-[11px] font-medium"
+                          aria-label={`Rotate page ${idx + 1}`}
+                          title="Rotate 90° clockwise"
+                        >
+                          {rotatingId === page.id
+                            ? <RefreshCw className="w-4 h-4 animate-spin" />
+                            : <RotateCw className="w-4 h-4" />}
+                          Rotate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startReplace(page.id, hasCamera ? 'camera' : 'file')}
+                          disabled={rotatingId !== null || busy !== null}
+                          className="min-h-[44px] flex items-center justify-center gap-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40 text-[11px] font-medium"
+                          aria-label={`${hasCamera ? 'Retake' : 'Replace'} page ${idx + 1}`}
+                          title={hasCamera ? 'Retake this page with the camera' : 'Replace this page with another file'}
+                        >
+                          {hasCamera ? <Camera className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                          {hasCamera ? 'Retake' : 'Replace'}
+                        </button>
+                        {/* Fallback when the camera is denied or unavailable —
+                            the retake must never become a dead end. */}
+                        {hasCamera && (
+                          <button
+                            type="button"
+                            onClick={() => startReplace(page.id, 'file')}
+                            disabled={rotatingId !== null || busy !== null}
+                            className="col-span-2 min-h-[44px] flex items-center justify-center gap-1 rounded border border-gray-200 bg-slate-50 text-gray-600 hover:bg-slate-100 disabled:opacity-40 text-[11px]"
+                            aria-label={`Replace page ${idx + 1} with a file`}
+                            title="Choose a file instead"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            Choose file instead
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     {warnings.length > 0 && (

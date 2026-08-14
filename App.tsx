@@ -9,7 +9,7 @@ import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
 import { AppState, Assignment, PageRef, SubmissionData, BackupData } from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
-import { IngestedPage, blobToDataUri, dataUriToBlob } from './imageIngest';
+import { IngestedPage, blobToDataUri, dataUriToBlob, rotatePageBlob } from './imageIngest';
 import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
@@ -43,6 +43,32 @@ const renumberPages = (pages: PageRef[]): PageRef[] =>
 
 const newPageId = (): string =>
   `pg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+// A quarter turn clockwise carries anything marked on the page with it:
+// in the normalized frame (x, y, w, h) → (1 − y − h, x, h, w).
+// Nothing writes regions yet — the marker is stage 2b — but rotation and
+// marking are independent controls on the same page, so a student will
+// eventually do them in either order, and a stale rectangle would crop the
+// wrong part of the page with nothing on screen to show it went wrong.
+const rotateRegionsClockwise = (data: SubmissionData, pageId: string): SubmissionData => {
+  let changed = false;
+  const next: SubmissionData = {};
+  for (const [key, entry] of Object.entries(data)) {
+    const regions = entry.regions;
+    if (!regions?.some(r => r.page === pageId)) {
+      next[key] = entry;
+      continue;
+    }
+    changed = true;
+    next[key] = {
+      ...entry,
+      regions: regions.map(r => r.page === pageId
+        ? { page: r.page, x: 1 - r.y - r.h, y: r.x, w: r.h, h: r.w }
+        : r)
+    };
+  }
+  return changed ? next : data;
+};
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -232,6 +258,32 @@ const App: React.FC = () => {
           }
         : page)
     }));
+  };
+
+  // Rotation rewrites the stored bitmap, so width/height swap with it and the
+  // autosave picks the new metadata up on the next tick. The blob itself is
+  // already in IndexedDB by the time this returns.
+  const handleRotatePage = async (id: string) => {
+    const blob = await getPageBlob(id);
+    if (!blob) {
+      setStatusMessage('That page image is no longer stored in this browser — upload it again to rotate it.');
+      return;
+    }
+    try {
+      const rotated = await rotatePageBlob(blob);
+      await putPageBlob(id, rotated.blob);
+      setPageUrl(id, rotated.blob);
+      setState(prev => ({
+        ...prev,
+        submissionData: rotateRegionsClockwise(prev.submissionData, id),
+        pages: prev.pages.map(page => page.id === id
+          ? { ...page, width: rotated.width, height: rotated.height, bytes: rotated.bytes }
+          : page)
+      }));
+    } catch (err) {
+      console.error('Rotate failed', err);
+      setStatusMessage('This page could not be rotated. Try retaking it.');
+    }
   };
 
   const handleRemovePage = (id: string) => {
@@ -901,6 +953,7 @@ const App: React.FC = () => {
                      onReplacePage={handleReplacePage}
                      onRemovePage={handleRemovePage}
                      onMovePage={handleMovePage}
+                     onRotatePage={handleRotatePage}
                    />
                  )}
 

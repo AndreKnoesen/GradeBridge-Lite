@@ -1,7 +1,7 @@
 export const STORAGE_KEY = 'gradebridge_submission';
 export const PRIVACY_KEY = 'gradebridge_privacy_acknowledged';
 export const PDF_NOTICE_KEY = 'gradebridge_pdf_notice_shown';
-export const VERSION = 'v3.7.2';
+export const VERSION = 'v3.7.3';
 
 // =====================================================
 // Handwritten page pool (HANDWRITTEN_REGIONS_SPEC.md §5.2.1)
