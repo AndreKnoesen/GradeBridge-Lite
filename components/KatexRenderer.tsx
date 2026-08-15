@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import katex from 'katex';
+import { splitMath, segToSource } from '../services/mathDelimiters';
 
 interface KatexRendererProps {
   expression: string; // Expects full string WITH delimiters (e.g. "$\sin(x)$")
@@ -52,30 +53,24 @@ const KatexRenderer: React.FC<KatexRendererProps> = ({ expression, block = false
 
 export const LatexContent: React.FC<{ content: string }> = ({ content }) => {
     if (!content) return null;
-    
-    // Improved Regex:
-    // 1. $$ ... $$ (Block)
-    // 2. $ ... $ (Inline)
-    const parts = content.split(/(\$\$[\s\S]+?\$\$|\$[^\$]+?\$)/g);
 
+    // The splitter lives in services/mathDelimiters.ts, mirrored byte-for-byte
+    // from the Assignment Maker, so what the instructor authored renders here
+    // exactly as it did there. Do not reintroduce a local copy of the regex.
     return (
         <span className="whitespace-pre-wrap break-words">
-            {parts.map((part, index) => {
-                // Block Math
-                if (part.startsWith('$$') && part.endsWith('$$') && part.length >= 4) {
-                    // Pass the FULL part including delimiters
-                    return <KatexRenderer key={index} expression={part} block={true} className="block my-4 text-center" />;
-                } 
-                // Inline Math
-                else if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
-                    // Pass the FULL part including delimiters
-                    return <KatexRenderer key={index} expression={part} block={false} />;
-                } 
-                // Plain Text
-                else if (part) {
-                    return <span key={index}>{part}</span>;
-                }
-                return null;
+            {splitMath(content).map((seg, index) => {
+                if (seg.kind === 'text') return <span key={index}>{seg.value}</span>;
+                // KatexRenderer wants the full span, delimiters and all, so its
+                // fallback can show the raw source rather than stripped LaTeX.
+                return (
+                    <KatexRenderer
+                        key={index}
+                        expression={segToSource(seg)}
+                        block={seg.kind === 'display'}
+                        className={seg.kind === 'display' ? 'block my-4 text-center' : ''}
+                    />
+                );
             })}
         </span>
     );

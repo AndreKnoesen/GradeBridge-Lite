@@ -121,8 +121,12 @@ convention as the Assignment Maker (so what the instructor authored is what you 
   in the rendered output, and if rendering fails outright the raw expression is shown with its
   delimiters — so keep the LaTeX valid.
 
-Single-dollar inline works because rendering uses a custom splitter (`components/KatexRenderer.tsx`),
-not KaTeX auto-render.
+Single-dollar inline works because rendering uses a custom splitter, not KaTeX auto-render. That
+splitter lives in **`services/mathDelimiters.ts`, a byte-identical mirror of the same file in
+`GradeBridge-Assignment-Maker`** — so an instructor's math cannot render one way when they author it
+and another way when the student reads it. `npm test` compares the two copies and fails if they
+drift, and also greps the tree for a second copy of the regex. Edit one, copy it to the other; never
+re-implement the splitter locally.
 
 ---
 
