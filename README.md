@@ -107,6 +107,25 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 
 ---
 
+## Math notation (LaTeX)
+
+Problem and subsection descriptions support LaTeX math, rendered with KaTeX, using the same
+convention as the Assignment Maker (so what the instructor authored is what you see).
+
+- **Inline:** single dollars, `$...$` — e.g. `$V_x = 6\,\text{V}$`, `$I = 0.1\,V_x$`.
+- **Display:** double dollars, `$$...$$` — a centered block equation.
+- Use LaTeX for anything with structure: subscripts `$V_x$`, fractions `$\frac{17}{7}$`,
+  exponentials `$e^{-0.2(t-8)}$`, Greek and units `$\Omega$`. Plain text is fine for a bare symbol.
+- Every `$` must be paired; an inline expression may not contain a `$`; a literal dollar sign in
+  prose will be mis-parsed. Invalid LaTeX is never dropped silently — KaTeX flags the offending part
+  in the rendered output, and if rendering fails outright the raw expression is shown with its
+  delimiters — so keep the LaTeX valid.
+
+Single-dollar inline works because rendering uses a custom splitter (`components/KatexRenderer.tsx`),
+not KaTeX auto-render.
+
+---
+
 ## Data & Privacy
 
 - All data stored in browser localStorage
@@ -122,6 +141,7 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 |-------|----------|
 | Assignment won't load | Verify JSON was exported from Assignment Maker (encrypted `.json` file) |
 | LaTeX not rendering | Refresh page; KaTeX loads from CDN |
+| Single `$...$` shows as raw text | Check the `$` signs are paired and the expression is valid LaTeX (see [Math notation](#math-notation-latex)) |
 | PDF generation fails | Check internet connection; html2pdf loads from CDN |
 | Lost work | Use "Save Backup" regularly; restore with "Load Work" |
 | Images too large | Files over 4 MB are rejected; compress or use JPG instead of PNG |
