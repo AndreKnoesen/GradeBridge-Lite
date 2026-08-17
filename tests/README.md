@@ -19,6 +19,19 @@ the same WebCrypto API the browser uses. 27 checks covering
   downgrade to gb1)
 - gb1 regression — prefix, round trip, envelope length, `isEncoded()`
 
+`npm test` also runs the rendering-contract suites, both of which guard files
+held byte-identical with the Assignment Maker (each SKIPs its mirror check when
+that repo is not checked out alongside):
+
+- `math-delimiter-tests.mjs` — `services/mathDelimiters.ts`: the `$...$` /
+  `$$...$$` split, and no second copy of the regex anywhere in the tree.
+- `figure-tests.mjs` — `services/figureBlocks.ts`: a ` ```svg ` block or a
+  `![alt](url)` line is lifted out **before** the math splitter ever sees it (a
+  `$` in the drawing's path data would otherwise shred it), the split is exact,
+  each inlined copy of a drawing gets its own id namespace so the same figure on
+  two problems cannot capture the other's markers, and nothing executable
+  survives into the student's page.
+
 ## 2. Interop check — browser output into the real autograder
 
 The unit suite decrypts with Node. This one decrypts browser-produced gb2

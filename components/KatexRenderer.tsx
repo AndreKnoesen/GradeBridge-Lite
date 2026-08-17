@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import katex from 'katex';
 import { splitMath, segToSource } from '../services/mathDelimiters';
+import { Figure, prepareSvgForInline, figurePlaceholder, splitFigures, trimAroundFigures } from '../services/figureBlocks';
 
 interface KatexRendererProps {
   expression: string; // Expects full string WITH delimiters (e.g. "$\sin(x)$")
@@ -51,26 +52,64 @@ const KatexRenderer: React.FC<KatexRendererProps> = ({ expression, block = false
   );
 };
 
+/**
+ * A figure from the problem stem. The `svg` form is inlined so it stays vector
+ * and scales with the column; the fallback form is an image.
+ *
+ * `idPrefix` must be unique on the page: ids are document-global, and the same
+ * drawing may legitimately appear on two problems — inline both unprefixed and
+ * the second one's markers and gradients resolve to the first one's.
+ */
+const FigureBlock: React.FC<{ figure: Figure; idPrefix: string }> = ({ figure, idPrefix }) => {
+    if (figure.form === 'svg') {
+        return (
+            <span
+                className="block my-4 text-center"
+                dangerouslySetInnerHTML={{ __html: prepareSvgForInline(figure.svg, idPrefix) }}
+            />
+        );
+    }
+    const safe = /^\s*(?:data:image\/|https?:\/\/|\.{0,2}\/)/i.test(figure.url);
+    if (!safe) return <span className="block my-4 text-center font-mono text-gray-500">{figurePlaceholder(figure)}</span>;
+    return (
+        <span className="block my-4 text-center">
+            <img src={figure.url} alt={figure.alt} className="inline-block max-w-full h-auto" />
+        </span>
+    );
+};
+
 export const LatexContent: React.FC<{ content: string }> = ({ content }) => {
+    const uid = React.useId().replace(/[^a-zA-Z0-9]/g, '');
     if (!content) return null;
 
-    // The splitter lives in services/mathDelimiters.ts, mirrored byte-for-byte
-    // from the Assignment Maker, so what the instructor authored renders here
-    // exactly as it did there. Do not reintroduce a local copy of the regex.
+    // Figures come out first, before the math splitter ever sees the text: an
+    // SVG is full of characters `$...$` mis-reads — a stray `$` in path data is
+    // enough — and the drawing would be shredded into KaTeX spans with nothing
+    // downstream noticing. services/figureBlocks.ts is mirrored byte-for-byte
+    // from the Assignment Maker, as services/mathDelimiters.ts is, so a figure
+    // and its math render here exactly as they did when they were authored.
+    // Do not reintroduce a local copy of either splitter.
+    let figureIndex = 0;
     return (
         <span className="whitespace-pre-wrap break-words">
-            {splitMath(content).map((seg, index) => {
-                if (seg.kind === 'text') return <span key={index}>{seg.value}</span>;
-                // KatexRenderer wants the full span, delimiters and all, so its
-                // fallback can show the raw source rather than stripped LaTeX.
-                return (
-                    <KatexRenderer
-                        key={index}
-                        expression={segToSource(seg)}
-                        block={seg.kind === 'display'}
-                        className={seg.kind === 'display' ? 'block my-4 text-center' : ''}
-                    />
-                );
+            {trimAroundFigures(splitFigures(content)).map((fig, index) => {
+                if (fig.kind === 'figure') {
+                    return <FigureBlock key={index} figure={fig.figure} idPrefix={`f${uid}-${figureIndex++}-`} />;
+                }
+                return splitMath(fig.value).map((seg, mIndex) => {
+                    const key = `${index}-${mIndex}`;
+                    if (seg.kind === 'text') return <span key={key}>{seg.value}</span>;
+                    // KatexRenderer wants the full span, delimiters and all, so its
+                    // fallback can show the raw source rather than stripped LaTeX.
+                    return (
+                        <KatexRenderer
+                            key={key}
+                            expression={segToSource(seg)}
+                            block={seg.kind === 'display'}
+                            className={seg.kind === 'display' ? 'block my-4 text-center' : ''}
+                        />
+                    );
+                });
             })}
         </span>
     );

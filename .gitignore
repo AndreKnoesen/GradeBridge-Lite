@@ -26,3 +26,12 @@ dist-ssr
 # AI/LLM development context files
 .aicontext
 .claude/
+
+# Session documents — the working notes a Claude Code session writes and reads.
+# They are how a session hands off to the next one, not part of the app, and
+# they date fast; the contracts they describe live in the tracked README and in
+# GradeBridge2026/CLAUDE.md. Keep them local.
+HANDOFF_*.md
+COMPLETION_*.md
+WORKORDER_*.md
+CORRECTION_*.md
