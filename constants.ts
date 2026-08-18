@@ -1,7 +1,7 @@
 export const STORAGE_KEY = 'gradebridge_submission';
 export const PRIVACY_KEY = 'gradebridge_privacy_acknowledged';
 export const PDF_NOTICE_KEY = 'gradebridge_pdf_notice_shown';
-export const VERSION = 'v3.7.6';
+export const VERSION = 'v3.7.7';
 
 // =====================================================
 // Handwritten page pool (HANDWRITTEN_REGIONS_SPEC.md §5.2.1)
@@ -31,7 +31,6 @@ export const SUBMISSION_TYPES = {
   AI_SHORT:     'AI Graded: Short',
   AI_MEDIUM:    'AI Graded: Medium',
   AI_LONG:      'AI Graded: Long',
-  AI_FORMATIVE: 'AI Formative',
 };
 
 export const AI_GRADED_TYPES = new Set([
@@ -39,7 +38,6 @@ export const AI_GRADED_TYPES = new Set([
   'AI Graded: Short',
   'AI Graded: Medium',
   'AI Graded: Long',
-  'AI Formative',
 ]);
 
 export const AI_GRADED_WORD_RANGES: Record<string, { min: number; max: number; label: string }> = {

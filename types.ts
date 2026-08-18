@@ -10,7 +10,6 @@ export enum SubmissionType {
   AI_GRADED_SHORT = 'AI Graded: Short',
   AI_GRADED_MEDIUM = 'AI Graded: Medium',
   AI_GRADED_LONG = 'AI Graded: Long',
-  AI_FORMATIVE = 'AI Formative',
   HANDWRITTEN = 'Handwritten',
   MATLAB_GRADER = 'MatlabGrader',
   CODE = 'Code',

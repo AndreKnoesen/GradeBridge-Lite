@@ -309,31 +309,26 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
     );
   }
 
-  // --- AI Graded (binary / short / medium / long / formative) ---
+  // --- AI Graded (binary / short / medium / long) ---
   if (AI_GRADED_TYPES.has(type)) {
-    const range = AI_GRADED_WORD_RANGES[type]; // undefined for AI Formative — has no fixed word range
+    const range = AI_GRADED_WORD_RANGES[type];
     const aiText = data?.aiAnswer || '';
     const wordCount = aiText.trim() === '' ? 0 : aiText.trim().split(/\s+/).length;
 
     const wordCountLabel = `${wordCount} words`;
 
     const isBinary = type === 'AI Graded: Binary';
-    const isFormative = type === 'AI Formative';
     const placeholder = isBinary
       ? 'State your answer (yes/no/true/false) and give a brief justification...'
-      : isFormative
-        ? 'Write this report section here. Submit early — AI feedback is advisory and you can resubmit. Use $...$ for inline math and $$...$$ for display math.'
-        : 'Write your response here... Use $...$ for inline math and $$...$$ for display math.';
+      : 'Write your response here... Use $...$ for inline math and $$...$$ for display math.';
 
     return (
       <div className="space-y-2 w-full">
         <label className="block text-sm font-medium text-purple-700 flex items-center gap-2">
           <span className="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded-full border border-purple-200">
-            {isFormative ? 'AI Formative · advisory' : `AI Graded · ${range?.label ?? ''}`}
+            {`AI Graded · ${range.label}`}
           </span>
-          {range && (
-            <span className="text-gray-500 font-normal">Aim for {range.min}–{range.max} words</span>
-          )}
+          <span className="text-gray-500 font-normal">Aim for {range.min}–{range.max} words</span>
         </label>
         <textarea
           value={aiText}
@@ -356,9 +351,7 @@ const SubmissionWidget: React.FC<SubmissionWidgetProps> = ({ type, id, maxImages
         <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-1">
           <Lightbulb className="w-3 h-3" />
           <span>
-            {isFormative
-              ? 'AI feedback is advisory. You can resubmit before the deadline — submit early to get a revision round in.'
-              : `Writing more than ${range.max} words is fine — focus on quality over length.`}
+            {`Writing more than ${range.max} words is fine — focus on quality over length.`}
           </span>
         </div>
       </div>

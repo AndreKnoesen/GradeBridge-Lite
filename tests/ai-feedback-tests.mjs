@@ -143,9 +143,11 @@ if (emitMatch) {
 // components/ may mention it at all.
 //
 // The pattern is the flag's own two spellings, `aiFeedback` / `ai_feedback`,
-// not the words "AI feedback". SubmissionWidget already says "AI feedback is
-// advisory" in the AI Formative placeholder and hint — that copy is about the
-// AI Formative submission type, predates this flag, and is unrelated to it.
+// not the words "AI feedback". It was written that way because SubmissionWidget
+// then said "AI feedback is advisory" in copy belonging to the AI Formative
+// submission type, which predated this flag and was unrelated to it. That type
+// was removed on 2026-08-18, so no such copy is left — but the pattern stays
+// the flag's own spellings, because that is the thing being kept off the page.
 {
   const componentFiles = readdirSync(join(REPO, 'components'))
     .filter((f) => /\.(ts|tsx)$/.test(f));
