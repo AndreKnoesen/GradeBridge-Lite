@@ -149,8 +149,12 @@ const PageUploader: React.FC<PageUploaderProps> = ({
 
       <div className="p-6 space-y-5">
         <p className="text-sm text-gray-600">
-          Photograph or scan every page of your handwritten work and upload them here, in order.
-          You will mark which page each part of your answer is on in the next step.
+          <span className="font-semibold text-gray-800">
+            Take all your photos first, then upload them together
+          </span>{' '}
+          — photograph every page with your phone&rsquo;s normal camera app, then choose
+          &ldquo;Choose files&rdquo; and select them all at once, in order. The in-app camera is
+          there for a quick single page.
         </p>
 
         {/* --- Upload controls --- */}
@@ -171,12 +175,15 @@ const PageUploader: React.FC<PageUploaderProps> = ({
             onChange={handleChoose}
             className="hidden"
           />
+          {/* Single-shot on purpose: `capture` is one photo at a time, and pairing
+              it with `multiple` makes some mobile browsers drop the camera hint and
+              open the library picker instead — the batch path already has a picker.
+              `handleChoose` takes an array of any length, so nothing else changes. */}
           <input
             ref={cameraRef}
             type="file"
             accept="image/*"
             capture="environment"
-            multiple
             onChange={handleChoose}
             className="hidden"
           />
@@ -209,7 +216,7 @@ const PageUploader: React.FC<PageUploaderProps> = ({
                   className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-300 text-white rounded-lg font-medium text-sm transition-colors"
                 >
                   <Camera className="w-4 h-4" />
-                  Take photos
+                  Take photo
                 </button>
               )}
               <button
