@@ -55,6 +55,12 @@ export interface Assignment {
    * de-identified gb2: envelope instead of gb1:. Never a private key.
    */
   coursePublicKey?: string;
+  /**
+   * Per-assignment AI-feedback flag, set in the Assignment Maker. Absent means
+   * off. The app is pass-through only: it carries the flag to Gradescope, which
+   * owns the election, the tally, and the pointer. No UI here.
+   */
+  aiFeedback?: boolean;
 }
 
 // =====================================================

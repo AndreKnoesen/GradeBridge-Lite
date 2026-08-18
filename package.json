@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node tests/run-tests.mjs && node tests/orientation-tests.mjs && node tests/download-tests.mjs && node tests/math-delimiter-tests.mjs && node tests/figure-tests.mjs",
+    "test": "node tests/run-tests.mjs && node tests/orientation-tests.mjs && node tests/download-tests.mjs && node tests/math-delimiter-tests.mjs && node tests/figure-tests.mjs && node tests/ai-feedback-tests.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",

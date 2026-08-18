@@ -659,6 +659,9 @@ const App: React.FC = () => {
       course_code: state.assignment.courseCode,
       assignment_id: assignmentId,
       pdf_filename: pdfFilename,
+      // Pass-through, per-assignment. Always a real boolean so the autograder
+      // never has to tell "off" apart from "an older app version".
+      ai_feedback: state.assignment.aiFeedback === true,
       submission_data: convertedData,
       last_saved: new Date().toISOString()
     };

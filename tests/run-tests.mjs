@@ -251,6 +251,7 @@ if (fixture) {
     assignment_id: 'EEC1_Lab1_InLab',
     pdf_filename: 'Jane_Smith_EEC1_submission.pdf',
     submission_data: { p0s0: { answer: 'a', images_submitted: 0 } },
+    ai_feedback: true,
     last_saved: '2026-08-10T00:00:00.000Z',
   };
   const clean = svc.deidentifyForGb2(full);
@@ -264,6 +265,13 @@ if (fixture) {
     assert('assignment_id' in clean, 'assignment_id was dropped');
     assert('submission_data' in clean, 'submission_data was dropped');
     assertEqual(clean.submission_data, full.submission_data, 'submission_data was altered');
+  });
+  // ai_feedback is a pass-through flag, not PII. It is not in GB2_PII_FIELDS,
+  // so it should survive — asserted rather than assumed, because Gradescope
+  // reads it out of the de-identified payload and nothing else would notice.
+  check('de-identify: keeps ai_feedback, still boolean true', () => {
+    assert('ai_feedback' in clean, 'ai_feedback was stripped by de-identification');
+    assert(clean.ai_feedback === true, `ai_feedback is ${JSON.stringify(clean.ai_feedback)}, expected boolean true`);
   });
   check('de-identify: keeps the allowed course_code and pdf_filename', () => {
     assert(clean.course_code === 'EEC1', 'course_code was dropped');
@@ -283,6 +291,8 @@ if (fixture) {
       }
       assert('assignment_id' in decoded && 'submission_data' in decoded,
         'decrypted payload is missing assignment_id or submission_data');
+      assert(decoded.ai_feedback === true,
+        `ai_feedback is ${JSON.stringify(decoded.ai_feedback)} in the decrypted payload, expected true`);
     });
     check('de-identify: "Jane Smith" appears nowhere in the decrypted JSON text', () =>
       assert(!JSON.stringify(decoded).includes('Jane Smith'),
