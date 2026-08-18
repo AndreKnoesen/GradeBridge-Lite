@@ -30,7 +30,7 @@ This app handles lab reports, mini-projects, and homework:
 - **100% Browser-Based** - No server, no account, no data transmission. Everything stays on your computer.
 - **Auto-Save** - Work saved every second to browser storage
 - **LaTeX Math Support** - Live preview with built-in cheatsheet (fractions, integrals, Greek letters, matrices)
-- **Multiple Answer Types** - Text with LaTeX, image uploads, text + image combined, AI-graded responses, AI formative feedback
+- **Multiple Answer Types** - Text with LaTeX, image uploads, text + image combined, AI-graded responses
 - **Professional PDF Generation** - Gradescope-compatible output matching instructor templates
 - **Images in ZIP** - Uploaded images are included as individual files in the submission ZIP so graders can see them without opening the PDF
 - **Try Demo** - One-click sample assignment to explore features instantly
@@ -103,7 +103,9 @@ Assignments are created using the **[Assignment Maker](https://github.com/Bridge
 }
 ```
 
-**Submission Types:** `Text`, `Image`, `Text and Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`, `AI Formative`
+**Submission Types:** `Text`, `Image`, `Text and Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`
+
+`AI Formative` was retired on 2026-08-18. An archived spec that still names it loads unchanged — the part renders as plain text.
 
 ---
 
