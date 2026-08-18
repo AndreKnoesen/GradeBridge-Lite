@@ -1,0 +1,22 @@
+# Line endings, settled once.
+#
+# Without this, a Windows checkout with core.autocrlf=true writes CRLF into the
+# working copy while the repo stores LF, so every line of every text file reads
+# as modified with byte-identical content -- two dozen phantom diffs hiding the
+# one real edit, and `git add -A` unusable. `text=auto` still lets git detect
+# binaries and leave them alone; `eol=lf` pins the working copy to what the repo
+# already holds, on every platform. Same settings as the Assignment Maker repo.
+* text=auto eol=lf
+
+# Belt and braces for the image and font assets under logos/ and public/, so no
+# future detection change can rewrite one of them a line at a time.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
