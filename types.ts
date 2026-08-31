@@ -42,8 +42,11 @@ export interface Assignment {
   courseCode: string;
   title: string;
   inputMode?: InputMode;
-  dueDate: string;
-  dueTime: string;
+  // No dueDate / dueTime, deliberately (removed 2026-08-31). They were declared
+  // **required** here and read nowhere in this app, while the Assignment Maker
+  // never sent them: its markdown parser never set them and its editor stripped
+  // them on load. A required field that is never present is a type that lies to
+  // the next person who trusts it. Due dates are set in Canvas.
   preamble: string;
   problems: Problem[];
   createdAt: number;

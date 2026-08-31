@@ -10,8 +10,6 @@ export const DEMO_ASSIGNMENT: Assignment = {
   id: 'demo-assignment-001',
   courseCode: 'MATH 101',
   title: 'Sample Mathematics Assignment - Demo',
-  dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 14 days from now
-  dueTime: '23:59',
   preamble: `Welcome to this demo assignment! This sample showcases the features of GradeBridge Student Submission.
 
 You can:
