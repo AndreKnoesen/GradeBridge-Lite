@@ -324,8 +324,17 @@ const zipBytes = await built.zip.generateAsync({
 // =====================================================
 console.log('\n  5. write and unzip');
 
-rmSync(OUT_DIR, { recursive: true, force: true });
+// Clear only what this harness writes. `rmSync(OUT_DIR)` used to take the whole
+// folder, which quietly deleted anything a person had put beside the package —
+// including the written report, on its first re-run. A test that destroys the
+// notes someone made about its own output is a bad neighbour.
+for (const owned of ['unzipped', 'crops_for_inspection']) {
+  rmSync(join(OUT_DIR, owned), { recursive: true, force: true });
+}
 mkdirSync(OUT_DIR, { recursive: true });
+for (const stale of readdirSync(OUT_DIR).filter(n => n.endsWith('.zip'))) {
+  rmSync(join(OUT_DIR, stale), { force: true });
+}
 const zipPath = join(OUT_DIR, `${built.baseName}.zip`);
 writeFileSync(zipPath, zipBytes);
 check('the .zip exists on disk', existsSync(zipPath) && statSync(zipPath).size > 0,
