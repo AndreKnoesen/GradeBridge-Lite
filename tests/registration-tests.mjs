@@ -354,45 +354,61 @@ check('a page whose QR names another layout is refused rather than cropped', () 
 // =====================================================
 // Step 7 — the submission package
 // =====================================================
-// App.tsx cannot be imported here (JSX, React, a DOM), so these read the source
-// the same way ai-feedback-tests.mjs does. They exist because the bug they
-// guard was silent for weeks: the ZIP builder never referenced state.pages, so
-// a handwritten student submitted a PDF of the blank question paper and a JSON
-// in which every answer was null, and three comments in the tree asserted the
-// pages shipped.
+// The packaging lives in `services/submissionPackage.ts` now — it was inside
+// the React component until milestone zero needed to build a submission without
+// a browser — so these read that file rather than App.tsx.
+//
+// They stay source-level, and they exist because the bug they guard was silent
+// for weeks: the ZIP builder never referenced the pages at all, so a handwritten
+// student submitted a PDF of the blank question paper and a JSON in which every
+// answer was null, while three comments in the tree asserted the pages shipped.
+// The behavioural version now exists too — `milestone-zero.mjs` builds a real
+// package from two photographs and opens it — but that one needs an assignment
+// export and a capture set on disk, so these keep running in `npm test` alone.
 console.log('  step 7: the submission package');
 
 const appSrc = readFileSync(join(REPO, 'App.tsx'), 'utf8');
-const zipStart = appSrc.indexOf('const zip = new JSZip()');
-const zipEnd = appSrc.indexOf('generateAsync', zipStart);
-const zipBlock = appSrc.slice(zipStart, zipEnd);
+const pkgSrc = readFileSync(join(REPO, 'services', 'submissionPackage.ts'), 'utf8');
+/** Source with comments removed, for checks that must not match prose. */
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+
+const zipStart = pkgSrc.indexOf('const zip = new JSZip()');
+const zipEnd = pkgSrc.indexOf('return { zip', zipStart);
+const zipBlock = pkgSrc.slice(zipStart, zipEnd);
 
 check('the ZIP builder writes the page images', () => {
-  assert(zipStart !== -1 && zipEnd > zipStart, 'the ZIP builder could not be located in App.tsx');
-  assert(/for \(const page of state\.pages\)/.test(zipBlock),
-    'the ZIP builder does not iterate state.pages — the pages do not ship');
-  assert(/zip\.file\(page\.file,/.test(zipBlock),
-    'the ZIP builder does not write page.file');
+  assert(zipStart !== -1 && zipEnd > zipStart,
+    'the ZIP builder could not be located in services/submissionPackage.ts');
+  assert(/for \(const page of sources\.pages\)/.test(zipBlock),
+    'the ZIP builder does not iterate the pages — the pages do not ship');
+  assert(/add\(page\.file,/.test(zipBlock), 'the ZIP builder does not write page.file');
 });
 
 check('the ZIP builder writes the crop images', () => {
-  assert(/cropList\(state\.crops\)/.test(zipBlock), 'the ZIP builder does not iterate the crops');
-  assert(/zip\.file\(crop\.file,/.test(zipBlock), 'the ZIP builder does not write crop.file');
+  assert(/cropList\(sources\.crops\)/.test(zipBlock), 'the ZIP builder does not iterate the crops');
+  assert(/add\(crop\.file,/.test(zipBlock), 'the ZIP builder does not write crop.file');
+});
+
+check('the ZIP carries the JSON and the PDF', () => {
+  assert(zipBlock.includes('.json`, encoded.bytes)'), 'the ZIP builder does not write the JSON');
+  assert(zipBlock.includes('.pdf`, assets.pdfBytes)'), 'the ZIP builder does not write the PDF');
 });
 
 check('the submission JSON carries the layout_id and the page set with k and N', () => {
-  assert(/submissionJson\.layout_id\s*=/.test(appSrc), 'no layout_id in the submission JSON');
-  assert(/submissionJson\.pages\s*=/.test(appSrc), 'no page set in the submission JSON');
-  const pages = appSrc.slice(appSrc.indexOf('submissionJson.pages'), appSrc.indexOf('submissionJson.crops'));
+  assert(/submissionJson\.layout_id\s*=/.test(pkgSrc), 'no layout_id in the submission JSON');
+  assert(/submissionJson\.pages\s*=/.test(pkgSrc), 'no page set in the submission JSON');
+  const pages = pkgSrc.slice(pkgSrc.indexOf('submissionJson.pages'), pkgSrc.indexOf('submissionJson.crops'));
   for (const key of ['k:', 'n:', 'file:']) {
     assert(pages.includes(key), `the page set omits ${key}`);
   }
 });
 
 check('every crop carries its map row, its source, the review and the flags', () => {
-  const from = appSrc.indexOf('crops[crop.regionId] = {');
+  const from = pkgSrc.indexOf('crops[crop.regionId] = {');
   assert(from !== -1, 'the crop payload could not be located');
-  const payload = appSrc.slice(from, appSrc.indexOf('\n      }', from));
+  const payload = pkgSrc.slice(from, pkgSrc.indexOf('\n      };', from));
   for (const key of [
     'region_id:', 'part_id:', 'page_k:', 'is_drawing:', 'max_points:',
     'crop_source:', 'student_review:', 'quality_flags:', 'file:',
@@ -403,35 +419,50 @@ check('every crop carries its map row, its source, the review and the flags', ()
 
 check('nothing blocks submission on a flag or an unreviewed part', () => {
   // "A flagged part does not block submission. Do not put a detector between a
-  // student and a deadline." The download handler must not read either field.
+  // student and a deadline." Neither the packaging nor the handler may read
+  // either field. Comments are stripped first — both files discuss the rule.
+  const build = stripComments(pkgSrc.slice(pkgSrc.indexOf('export const buildSubmissionPackage')));
+  assert(!/\bflagged\b/.test(build), 'the package builder reads the flag state');
+  assert(!/not_reviewed/.test(build), 'the package builder reads the review state');
+
   const from = appSrc.indexOf('const handleDownloadForGradescope');
   const to = appSrc.indexOf('const acceptPrivacy', from);
-  const handler = appSrc.slice(from, to);
   assert(from !== -1 && to > from, 'the download handler could not be located');
+  const handler = stripComments(appSrc.slice(from, to));
   assert(!/\bflagged\b/.test(handler), 'the download handler reads the flag state');
   assert(!/not_reviewed/.test(handler), 'the download handler reads the review state');
+});
+
+check('the UI still calls the packaging service', () => {
+  // The point of lifting it out was to make it testable, not to fork it. If the
+  // component grows a copy of its own, everything above stops describing what
+  // a student actually downloads.
+  assert(/buildSubmissionPackage\(/.test(appSrc), 'App.tsx no longer calls buildSubmissionPackage');
+  assert(!/new JSZip\(\)/.test(appSrc), 'App.tsx builds a ZIP of its own again');
+  assert(/SUBMISSION_ZIP_OPTIONS/.test(appSrc), 'App.tsx no longer uses the shared archive options');
 });
 
 check('a bare spec still reaches the same submission path', () => {
   // An electronic assignment's payload must be what it always was, so every
   // handwritten field is set inside the isHandwritten branch and nowhere else.
-  const declared = appSrc.indexOf('const submissionJson');
-  const branch = appSrc.indexOf('if (isHandwritten) {', declared);
+  const declared = pkgSrc.indexOf('const submissionJson');
+  const branch = pkgSrc.indexOf('if (s.isHandwritten) {', declared);
   assert(branch !== -1, 'the handwritten branch could not be located');
 
-  const literalEnd = appSrc.indexOf('\n    };', declared);
-  const literal = appSrc.slice(declared, literalEnd);
+  const literalEnd = pkgSrc.indexOf('\n  };', declared);
+  const literal = pkgSrc.slice(declared, literalEnd);
   for (const key of ['layout_id:', 'crops:', 'input_mode:', 'pages:']) {
     assert(!literal.includes(key),
       `${key} is in the base submission literal — an electronic submission would carry it`);
   }
 
   // ...and every assignment onto submissionJson happens after the branch opens.
-  for (const m of appSrc.matchAll(/submissionJson\.(\w+)\s*=/g)) {
+  for (const m of pkgSrc.matchAll(/submissionJson\.(\w+)\s*=/g)) {
     assert(m.index > branch,
       `submissionJson.${m[1]} is set outside the handwritten branch`);
   }
 });
+
 
 // =====================================================
 console.log(results.join('\n'));

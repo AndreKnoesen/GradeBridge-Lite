@@ -52,6 +52,10 @@ const rendSrc   = readFileSync(join(REPO, 'components', 'ProblemRenderer.tsx'), 
 const printSrc  = readFileSync(join(REPO, 'components', 'PrintView.tsx'), 'utf8');
 const widgetSrc = readFileSync(join(REPO, 'components', 'SubmissionWidget.tsx'), 'utf8');
 const appSrc    = readFileSync(join(REPO, 'App.tsx'), 'utf8');
+// The export mapping moved out of the component when the packaging was lifted
+// into a service so a test could build a submission; the branch it guards is
+// unchanged and this is where it now lives.
+const pkgSrc    = readFileSync(join(REPO, 'services', 'submissionPackage.ts'), 'utf8');
 
 // Lift a top-level declaration out of a source file by its opening marker and
 // the terminator that closes it, both matched literally.
@@ -149,22 +153,22 @@ check(`types.ts: the ${RETIRED} enum member is gone`, () =>
     assertEqual(printMod.getSubmissionElements(RETIRED), [constants.SUBMISSION_TYPES.TEXT],
       'an archived AI Formative part no longer prints through the text element'));
 
-  // ---------- 5. App.tsx export mapping ----------
+  // ---------- 5. The export mapping ----------
   // The archived part must take the `textAnswer` branch, not the `aiAnswer` one,
   // because the plain-text widget it now renders as writes to textAnswer.
   {
-    const exprLine = appSrc.match(/const isAiGraded = ([^\n]+?);\n/);
-    check('App.tsx: the `isAiGraded` test is still present', () =>
-      assert(exprLine, 'could not find `const isAiGraded = ...` in App.tsx'));
+    const exprLine = pkgSrc.match(/const isAiGraded = ([^\n]+?);\n/);
+    check('submissionPackage: the `isAiGraded` test is still present', () =>
+      assert(exprLine, 'could not find `const isAiGraded = ...` in services/submissionPackage.ts'));
 
     if (exprLine) {
       const isAiGraded = new Function('sub', 'AI_GRADED_TYPES', `return (${exprLine[1]});`);
-      check(`App.tsx: "${RETIRED}" exports through the textAnswer branch`, () =>
+      check(`submissionPackage: "${RETIRED}" exports through the textAnswer branch`, () =>
         assert(isAiGraded({ submissionType: RETIRED }, constants.AI_GRADED_TYPES) === false,
           'an archived AI Formative part is still treated as AI-graded on export, so it '
           + 'would read aiAnswer while the widget writes textAnswer'));
 
-      check('App.tsx: the four surviving AI types still export through the aiAnswer branch', () => {
+      check('submissionPackage: the four surviving AI types still export through the aiAnswer branch', () => {
         for (const t of constants.AI_GRADED_TYPES) {
           assert(isAiGraded({ submissionType: t }, constants.AI_GRADED_TYPES) === true,
             `"${t}" is no longer recognised as AI-graded on export`);

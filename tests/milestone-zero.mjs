@@ -1,0 +1,484 @@
+// =====================================================
+// Milestone zero — one printed sheet, all the way to a package that opens
+// =====================================================
+// `workorders/WORKORDER_MILESTONE_ZERO_2026-09-01.md`. Everything else this app
+// does sits upstream of this path and until now nobody had run it end to end.
+//
+//   node tests/milestone-zero.mjs
+//
+// It drives the same functions the UI drives — `loadAssignmentBundle`,
+// `parseLayoutCsv`, `runCaptureGate`, `registerPage`, `cropRegions`,
+// `buildSubmissionPackage` — writes the archive to disk, unzips it, and
+// measures what came out.
+//
+// ## What it does NOT do
+//
+// **It does not judge the crops.** Whether `crops/p1a.jpg` actually contains
+// the handwriting for part 1(a) is a judgement only a person can make, and it
+// is the one thing this exercise exists to establish. So the crops are measured
+// and copied out to be looked at; nothing here asserts they are right.
+//
+// ## Two substitutions, both unavoidable, both named
+//
+// 1. **Ingest.** `imageIngest.ingestPage` is canvas-bound. `ingestLikeApp` in
+//    `realCaptures.mjs` mirrors it exactly — EXIF upright, halved to
+//    PAGE_MAX_EDGE, re-encoded at PAGE_JPEG_QUALITY — and is what the gate
+//    suite already measures against.
+// 2. **JPEG encoding.** `pageCrops.rgbaToJpegBlob` is canvas-bound too, so the
+//    crops are encoded here with `jpeg-js` at the same CROP_JPEG_QUALITY. The
+//    pixels handed to the encoder are `cropRegions`' own output, untouched.
+//
+// The PDF is a third and it is not a substitution but a gap; see PDF_NOTE.
+// =====================================================
+
+import { webcrypto } from 'node:crypto';
+globalThis.crypto ??= webcrypto;
+
+import {
+  cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+} from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import JSZip from 'jszip';
+import jpeg from 'jpeg-js';
+import { jsPDF } from 'jspdf';
+import { loadModule, CAPTURE_DIR } from './captureSet.mjs';
+import { ingestLikeApp } from './realCaptures.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '..');
+const SUITE = resolve(REPO, '..');
+
+const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? join(
+  'C:', 'Users', 'aknoesen', 'Documents', 'Knoesen', 'ENG17-Assignments',
+  'Processed Assignments', 'ENG17_Homework_1_Export (2)', 'student');
+const OUT_DIR = process.env.MILESTONE_OUT ?? join(SUITE, 'CaptureSet', 'milestone_zero');
+
+const STUDENT_NAME = 'Milestone Zero';
+const EXPECTED_LAYOUT_ID = '95438EDF';
+
+let failures = 0;
+const check = (name, ok, detail = '') => {
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${ok || !detail ? '' : ` — ${detail}`}`);
+  if (!ok) failures++;
+};
+const fatal = (msg) => { console.error(`\n  STOPPED: ${msg}\n`); process.exit(1); };
+
+// =====================================================
+// The app's own modules
+// =====================================================
+const bundleSvc = await loadModule('services/assignmentBundle.ts', 'mz_bundle.mjs');
+const layoutSvc = await loadModule('services/layoutMap.ts', 'mz_layout.mjs');
+const gateSvc = await loadModule('services/captureGate.ts', 'mz_gate.mjs');
+const regSvc = await loadModule('services/registration.ts', 'mz_reg.mjs');
+const cropSvc = await loadModule('services/cropRegions.ts', 'mz_crop.mjs');
+const pkgSvc = await loadModule('services/submissionPackage.ts', 'mz_pkg.mjs');
+const cryptoSvc = await loadModule('cryptoService.ts', 'mz_crypto.mjs');
+const constants = await loadModule('constants.ts', 'mz_const.mjs');
+const pageCropsConst = await loadModule('services/pageCrops.ts', 'mz_pagecrops.mjs');
+
+console.log('\nMilestone zero — one sheet, photographed, to a package that opens\n');
+
+// =====================================================
+// 1. Load the assignment zip
+// =====================================================
+console.log('  1. the assignment zip');
+
+if (!existsSync(EXPORT_DIR)) fatal(`assignment export not found at ${EXPORT_DIR}`);
+
+const assignmentZip = new JSZip();
+for (const name of readdirSync(EXPORT_DIR)) {
+  assignmentZip.file(name, readFileSync(join(EXPORT_DIR, name)));
+}
+const assignmentZipBytes = await assignmentZip.generateAsync({ type: 'uint8array' });
+
+// `loadAssignmentBundle` takes a File; it only ever calls `arrayBuffer()`.
+const loaded = await bundleSvc.loadAssignmentBundle({
+  arrayBuffer: async () => assignmentZipBytes.buffer.slice(
+    assignmentZipBytes.byteOffset, assignmentZipBytes.byteOffset + assignmentZipBytes.byteLength),
+});
+check('the zip is recognised as a bundle', loaded.kind === 'zip', loaded.kind);
+check('it carries a layout map', loaded.layout !== null);
+check('it carries the three student files', loaded.entries.length === 3,
+  loaded.entries.map(e => e.name).join(', '));
+
+const specText = loaded.specText;
+const spec = cryptoSvc.isEncoded(specText)
+  ? await cryptoSvc.decryptJson(specText)
+  : JSON.parse(specText);
+check('the spec decodes', spec !== null && typeof spec === 'object');
+check('the spec is handwritten', spec.inputMode === 'handwritten', String(spec.inputMode));
+
+const layout = await layoutSvc.parseLayoutCsv(loaded.layout.text, loaded.layout.name);
+check(`the recomputed layout_id is ${EXPECTED_LAYOUT_ID}`,
+  layout.computedLayoutId === EXPECTED_LAYOUT_ID, layout.computedLayoutId);
+check('the map declares 17 regions', layout.rows.length === 17, String(layout.rows.length));
+check('the sheet is 16 pages', layout.maxPageK === 16, String(layout.maxPageK));
+const totalPoints = layout.rows.reduce((s, r) => s + r.maxPoints, 0);
+check('the map totals 200 points', totalPoints === 200, String(totalPoints));
+
+// =====================================================
+// 2. Ingest, gate, register, crop
+// =====================================================
+console.log('\n  2. the photographs');
+
+const PHOTOS = [
+  { name: 'cap01', file: join(CAPTURE_DIR, 'real', 'cap01.jpg') },
+  { name: 'cap11', file: join(CAPTURE_DIR, 'real', 'cap11.jpg') },
+];
+
+/** Mirrors `pageCrops.rgbaToJpegBlob`, which needs a canvas. */
+const encodeJpeg = (image, quality) => jpeg.encode({
+  data: Buffer.from(image.data.buffer.slice(
+    image.data.byteOffset, image.data.byteOffset + image.data.byteLength)),
+  width: image.width,
+  height: image.height,
+}, Math.round(quality * 100)).data;
+
+const blobStore = new Map();
+const pages = [];
+const crops = {};
+const cropReport = [];
+const refusals = [];
+
+for (const [index, photo] of PHOTOS.entries()) {
+  if (!existsSync(photo.file)) fatal(`capture not found: ${photo.file}`);
+  const ingested = ingestLikeApp(photo.file, {
+    maxEdge: constants.PAGE_MAX_EDGE,
+    quality: Math.round(constants.PAGE_JPEG_QUALITY * 100),
+  });
+
+  const verdict = gateSvc.runCaptureGate(ingested);
+  check(`${photo.name}: passes the capture gate`, verdict.pass,
+    `${verdict.failed} — ${verdict.message}`);
+  if (!verdict.pass) { refusals.push(`${photo.name} was refused by the gate: ${verdict.failed}`); continue; }
+
+  const registration = verdict.registration;
+  const k = registration.qr.fields.k;
+  check(`${photo.name}: the page QR names layout ${EXPECTED_LAYOUT_ID}`,
+    registration.qr.fields.layoutId === layout.computedLayoutId,
+    registration.qr.fields.layoutId);
+
+  const pageId = `pg_milestone_${index}`;
+  const pageJpeg = encodeJpeg(ingested, constants.PAGE_JPEG_QUALITY);
+  blobStore.set(pageId, pageJpeg);
+  pages.push({
+    id: pageId,
+    file: `page_${index + 1}.jpg`,
+    width: ingested.width,
+    height: ingested.height,
+    bytes: pageJpeg.length,
+    sourceName: `${photo.name}.jpg`,
+    registration: {
+      status: registration.status === 'degraded' ? 'degraded' : 'ok',
+      k, n: registration.qr.fields.n,
+      layoutId: registration.qr.fields.layoutId,
+      marksFound: registration.marksFound,
+      residualMm: registration.residualMm ?? undefined,
+      message: registration.message,
+    },
+  });
+
+  const rows = layoutSvc.rowsForPage(layout, k);
+  const cut = cropSvc.cropRegions(ingested, registration.transform, rows);
+  check(`${photo.name}: page ${k} — every declared region was cut`,
+    cut.length === rows.length, `${cut.length} of ${rows.length}`);
+
+  for (const c of cut) {
+    const bytes = encodeJpeg(c.image, pageCropsConst.CROP_JPEG_QUALITY);
+    blobStore.set(pkgSvc.cropBlobKey(c.row.regionId), bytes);
+    crops[c.row.regionId] = {
+      regionId: c.row.regionId,
+      partId: c.row.partId,
+      pageK: c.row.pageK,
+      isDrawing: c.row.isDrawing,
+      maxPoints: c.row.maxPoints,
+      cropSource: 'registration',
+      // The review path, driven as the UI drives it: `handleReviewCrop` sets
+      // exactly this field and nothing else.
+      review: 'signed_off',
+      qualityFlags: c.flags,
+      file: `crops/${c.row.regionId.replace(/[^a-z0-9_\-]/gi, '_')}.jpg`,
+      width: c.image.width,
+      height: c.image.height,
+      bytes: bytes.length,
+      fromPage: pageId,
+    };
+    cropReport.push({
+      regionId: c.row.regionId,
+      partId: c.row.partId,
+      pageK: c.row.pageK,
+      width: c.image.width,
+      height: c.image.height,
+      mmPerPx: 1 / c.pxPerMm,
+      pxPerMm: c.pxPerMm,
+      inkFraction: inkFractionOf(c.image),
+      flags: c.flags,
+      bytes: bytes.length,
+    });
+  }
+}
+
+/** The same measure `cropRegions` flags on, recomputed here so it can be reported. */
+function inkFractionOf(image) {
+  const { data, width, height } = image;
+  const n = width * height;
+  if (n === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  const threshold = sum / n - 40;
+  let dark = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] < threshold) dark++;
+  }
+  return dark / n;
+}
+
+check('two pages registered', pages.length === 2, String(pages.length));
+check('three regions were cut', Object.keys(crops).length === 3,
+  Object.keys(crops).join(', '));
+check('the regions are the three the work order names',
+  ['p1a', 'p1b', 'p1c'].every(id => id in crops), Object.keys(crops).join(', '));
+
+// =====================================================
+// 3. The PDF
+// =====================================================
+// **This is a gap, not a substitution, and it is the largest finding here.**
+//
+// The app builds its PDF in `App.buildPdfBytes`, which clones the live
+// `#pdf-content` element and rasterises it with `html2canvas`. That needs a
+// browser laying out real DOM and cannot run in Node, so it could not be
+// lifted into the package service and cannot be exercised by this harness.
+//
+// Worse, and independent of headlessness: `PrintView` takes only `assignment`,
+// `submissionData` and `studentName`. It never receives `pages` or `crops`. So
+// for a handwritten assignment the PDF the app produces today is the ELECTRONIC
+// answer-sheet render with every answer empty — the blank question paper with a
+// title page. The student's photographs reach the ZIP as `page_*.jpg`, but they
+// are not in the PDF.
+//
+// So the PDF below is built by this harness, with the app's own jsPDF, from the
+// student's page photographs. It is what the package needs to be openable and
+// it is what a handwritten submission's PDF ought to contain. **It is not what
+// the app ships today.**
+const PDF_NOTE =
+  'The PDF in this package was built by tests/milestone-zero.mjs from the page ' +
+  'photographs, using the app\'s own jsPDF. The app itself builds its PDF with ' +
+  'html2canvas over PrintView, which has no handwritten branch and would have ' +
+  'produced the blank question paper with all answers empty. See the harness.';
+console.log('\n  3. the PDF');
+
+const pdf = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' });
+for (const [i, page] of pages.entries()) {
+  if (i > 0) pdf.addPage('letter', 'portrait');
+  const jpegBytes = blobStore.get(page.id);
+  const dataUri = `data:image/jpeg;base64,${Buffer.from(jpegBytes).toString('base64')}`;
+  // Fit the photograph inside the sheet, preserving its aspect.
+  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+  const scale = Math.min(pw / page.width, ph / page.height);
+  const w = page.width * scale, h = page.height * scale;
+  pdf.addImage(dataUri, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
+}
+const pdfBytes = new Uint8Array(pdf.output('arraybuffer'));
+check('a PDF was produced', pdfBytes.length > 0, String(pdfBytes.length));
+
+// =====================================================
+// 4. Build the package
+// =====================================================
+console.log('\n  4. the submission package');
+
+const assignment = spec;
+let built = null;
+try {
+  built = await pkgSvc.buildSubmissionPackage(
+    {
+      studentName: STUDENT_NAME,
+      assignment,
+      submissionData: {},
+      isHandwritten: assignment.inputMode === 'handwritten',
+      layoutId: layout.computedLayoutId,
+      pages,
+      crops,
+    },
+    {
+      pdfBytes,
+      readBlob: async (key) => blobStore.get(key) ?? null,
+      downsampleImage: async (uri) => uri,
+    },
+  );
+} catch (err) {
+  refusals.push(`buildSubmissionPackage threw: ${err.message}`);
+  fatal(`the package could not be built: ${err.message}`);
+}
+
+check('a partial submission packages without complaint (2 pages of 16)', built !== null);
+
+const zipBytes = await built.zip.generateAsync({
+  type: 'nodebuffer', ...pkgSvc.SUBMISSION_ZIP_OPTIONS,
+});
+
+// =====================================================
+// 5. Write it out, and open it
+// =====================================================
+console.log('\n  5. write and unzip');
+
+rmSync(OUT_DIR, { recursive: true, force: true });
+mkdirSync(OUT_DIR, { recursive: true });
+const zipPath = join(OUT_DIR, `${built.baseName}.zip`);
+writeFileSync(zipPath, zipBytes);
+check('the .zip exists on disk', existsSync(zipPath) && statSync(zipPath).size > 0,
+  `${statSync(zipPath).size} bytes`);
+
+const reopened = await JSZip.loadAsync(readFileSync(zipPath));
+const manifest = [];
+const unzipDir = join(OUT_DIR, 'unzipped');
+for (const name of Object.keys(reopened.files).sort()) {
+  const entry = reopened.files[name];
+  if (entry.dir) continue;
+  const content = await entry.async('nodebuffer');
+  manifest.push({ name, bytes: content.length });
+  const dest = join(unzipDir, name);
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, content);
+}
+check('the archive reopens', manifest.length > 0, `${manifest.length} entries`);
+check('every entry is non-empty', manifest.every(m => m.bytes > 0),
+  manifest.filter(m => !m.bytes).map(m => m.name).join(', '));
+
+// The page images must be the student's photographs, not the question paper.
+for (const [i, page] of pages.entries()) {
+  const inZip = manifest.find(m => m.name === page.file);
+  const stored = blobStore.get(page.id);
+  check(`${page.file} is the student's own photograph`,
+    inZip !== undefined && inZip.bytes === stored.length,
+    inZip ? `${inZip.bytes} vs ${stored.length} stored` : 'missing');
+  void i;
+}
+
+// =====================================================
+// 6. The JSON, and what must not be in it
+// =====================================================
+console.log('\n  6. the payload');
+
+const jsonEntry = manifest.find(m => m.name.endsWith('.json'));
+const jsonText = await reopened.file(jsonEntry.name).async('string');
+const envelope = jsonText.slice(0, 4);
+check('the payload is an encoded envelope', cryptoSvc.isEncoded(jsonText), envelope);
+check(`the envelope is ${built.format}`, jsonText.startsWith(`${built.format}:`), envelope);
+
+const payload = await cryptoSvc.decryptJson(jsonText);
+check('the payload decrypts', payload !== null && typeof payload === 'object');
+check('it names the assignment', typeof payload.assignment_id === 'string' && payload.assignment_id.length > 0,
+  String(payload.assignment_id));
+check('it carries the layout_id', payload.layout_id === EXPECTED_LAYOUT_ID, String(payload.layout_id));
+check('it declares the handwritten mode', payload.input_mode === 'handwritten', String(payload.input_mode));
+check('it lists both pages', Array.isArray(payload.pages) && payload.pages.length === 2,
+  String(payload.pages && payload.pages.length));
+check('it lists all three crops', payload.crops && Object.keys(payload.crops).length === 3,
+  Object.keys(payload.crops ?? {}).join(', '));
+check('every crop is signed off',
+  Object.values(payload.crops ?? {}).every(c => c.student_review === 'signed_off'));
+
+// --- the answer key check. This shipped to students once already. ---
+const flat = JSON.stringify(payload);
+const FORBIDDEN = [
+  ['aiGradingPrompt', /aiGradingPrompt/i],
+  ['grading_prompt', /grading_prompt/i],
+  ['REFERENCE:', /REFERENCE\s*:/],
+  ['graderNote', /graderNote/i],
+  ['grader_note', /grader_note/i],
+  ['rubric', /rubric/i],
+  ['answer key', /answer\s*key/i],
+  ['aiGradingConfig', /aiGradingConfig/i],
+];
+for (const [label, re] of FORBIDDEN) {
+  check(`the payload carries no ${label}`, !re.test(flat));
+}
+// The spec the student loaded is the other half of the same question.
+const specFlat = JSON.stringify(spec);
+for (const [label, re] of FORBIDDEN) {
+  check(`the loaded spec carries no ${label}`, !re.test(specFlat));
+}
+
+// =====================================================
+// 7. Report
+// =====================================================
+console.log('\n=== ZIP MANIFEST ===');
+for (const m of manifest) console.log(`  ${String(m.bytes).padStart(9)}  ${m.name}`);
+console.log(`  ${String(zipBytes.length).padStart(9)}  (the archive itself)`);
+
+console.log('\n=== PAYLOAD ===');
+console.log(`  envelope: ${built.format}`);
+const shape = (v, depth = 0) => {
+  if (Array.isArray(v)) return `array[${v.length}]`;
+  if (v && typeof v === 'object') {
+    if (depth >= 1) return `{${Object.keys(v).join(', ')}}`;
+    return `{\n${Object.entries(v).map(([k, x]) => `      ${k}: ${shape(x, depth + 1)}`).join('\n')}\n    }`;
+  }
+  return JSON.stringify(v);
+};
+for (const [k, v] of Object.entries(payload)) {
+  console.log(`  ${k}: ${shape(v)}`);
+}
+console.log('\n  pages:');
+for (const p of payload.pages) {
+  console.log(`    ${p.file}  k=${p.k}/${p.n}  ${p.width}x${p.height}  ` +
+    `${p.registration}  marks=${p.marks_found}  residual=${p.residual_mm?.toFixed(3)} mm`);
+}
+console.log('\n  crops:');
+for (const c of Object.values(payload.crops)) {
+  console.log(`    ${c.region_id}  part ${c.part_id}  page ${c.page_k}  ${c.width}x${c.height}  ` +
+    `${c.max_points} pts  drawing=${c.is_drawing}  ${c.crop_source}  ${c.student_review}  ` +
+    `flags=[${c.quality_flags.join(', ')}]`);
+}
+
+console.log('\n=== CROPS, MEASURED (not judged) ===');
+console.log('  region  part   page  pixels        mm/px    px/mm   ink      bytes   flags');
+for (const c of cropReport) {
+  console.log(`  ${c.regionId.padEnd(7)} ${c.partId.padEnd(6)} ${String(c.pageK).padEnd(5)} ` +
+    `${`${c.width}x${c.height}`.padEnd(13)} ${c.mmPerPx.toFixed(4)}  ${c.pxPerMm.toFixed(2).padStart(6)}  ` +
+    `${(c.inkFraction * 100).toFixed(2).padStart(5)}%  ${String(c.bytes).padStart(6)}  ` +
+    `${c.flags.join(', ') || '—'}`);
+}
+
+console.log('\n=== PDF ===');
+console.log(`  ${pdfBytes.length} bytes, ${pages.length} page(s)`);
+console.log(`  NOTE: ${PDF_NOTE}`);
+
+if (refusals.length) {
+  console.log('\n=== THE PIPELINE REFUSED ===');
+  for (const r of refusals) console.log(`  ${r}`);
+}
+
+writeFileSync(join(OUT_DIR, 'README.txt'),
+  [
+    'Milestone zero — produced by GradeBridge-Student-Submission/tests/milestone-zero.mjs',
+    '',
+    `assignment : ENG17 HW1, layout_id ${EXPECTED_LAYOUT_ID}, 16 pages, 17 regions, 200 points`,
+    `photographs: cap01 (page 2), cap11 (page 3) — 2 of 16 pages, a deliberate partial submission`,
+    `student    : ${STUDENT_NAME}`,
+    `envelope   : ${built.format}`,
+    '',
+    'LOOK AT THE CROPS. Whether crops/p1a.jpg, p1b.jpg and p1c.jpg actually contain',
+    'the handwriting for parts 1(a), 1(b) and 1(c) is the one thing no test can',
+    'establish. Everything else in here has been checked.',
+    '',
+    `PDF: ${PDF_NOTE}`,
+    '',
+    'Manifest:',
+    ...manifest.map(m => `  ${String(m.bytes).padStart(9)}  ${m.name}`),
+  ].join('\n'));
+
+// Copy the crops to the top of the output folder so they are one click away.
+const cropsOut = join(OUT_DIR, 'crops_for_inspection');
+mkdirSync(cropsOut, { recursive: true });
+for (const c of Object.values(crops)) {
+  cpSync(join(unzipDir, c.file), join(cropsOut, `${c.regionId}_part_${c.partId.replace(/[^a-z0-9]/gi, '')}.jpg`));
+}
+
+console.log(`\n  package written to: ${OUT_DIR}`);
+console.log(`  crops for inspection: ${cropsOut}`);
+console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} check(s) failed`}\n`);
+process.exit(failures > 0 ? 1 : 0);

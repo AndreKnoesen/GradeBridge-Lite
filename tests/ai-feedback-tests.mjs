@@ -7,13 +7,16 @@
 //
 //   npm test
 //
-// Why these are source-level. The two things that can break are both inside
-// App.tsx: the key emitted into the submission JSON, and the autosave that has
-// to carry the flag across a closed tab. App.tsx cannot be imported here (it
-// pulls React and the whole component tree), so instead of restating its logic
-// in a copy that could quietly diverge, each check EXTRACTS the real expression
-// from the file and evaluates that. A rename, a dropped `=== true`, or an
-// autosave that switches to picking named assignment fields fails here.
+// Why these are source-level. Two things can break: the key emitted into the
+// submission JSON, and the autosave that has to carry the flag across a closed
+// tab. The emission now lives in `services/submissionPackage.ts` — it was in
+// `App.tsx` until the packaging was lifted out of the component so a test could
+// build a submission — and the autosave is still in `App.tsx`, which cannot be
+// imported here because it pulls React and the whole component tree. So instead
+// of restating the logic in a copy that could quietly diverge, each check
+// EXTRACTS the real expression from the file and evaluates that. A rename, a
+// dropped `=== true`, or an autosave that switches to picking named assignment
+// fields fails here.
 // =====================================================
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -33,6 +36,7 @@ const check = (name, fn) => {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 const appSrc = readFileSync(join(REPO, 'App.tsx'), 'utf8');
+const pkgSrc = readFileSync(join(REPO, 'services', 'submissionPackage.ts'), 'utf8');
 const typesSrc = readFileSync(join(REPO, 'types.ts'), 'utf8');
 
 console.log('\naiFeedback — pass-through contract\n');
@@ -47,29 +51,31 @@ check('types.ts: Assignment carries `aiFeedback?: boolean`', () =>
 // =====================================================
 // 2. The emitted key, and the value it produces for every spec shape
 // =====================================================
-const emitMatch = appSrc.match(/\n\s*ai_feedback:\s*([^\n]+?),?\s*\n/);
+const emitMatch = pkgSrc.match(/\n\s*ai_feedback:\s*([^\n]+?),?\s*\n/);
 
-check('App.tsx: the submission JSON emits an `ai_feedback` key', () =>
-  assert(emitMatch, 'no `ai_feedback:` key found in App.tsx'));
+check('submissionPackage: the submission JSON emits an `ai_feedback` key', () =>
+  assert(emitMatch, 'no `ai_feedback:` key found in services/submissionPackage.ts'));
 
-check('App.tsx: `ai_feedback` sits in the submissionJson object literal', () => {
+/** The `submissionJson` literal, wherever it lives, closed at its own indent. */
+const submissionJsonLiteral = () => {
+  const start = pkgSrc.search(/const submissionJson(: [^=]+)? = \{/);
+  assert(start !== -1, 'submissionJson object literal not found');
+  const end = pkgSrc.indexOf('\n  };', start);
+  assert(end !== -1, 'end of the submissionJson literal not found');
+  return pkgSrc.slice(start, end);
+};
+
+check('submissionPackage: `ai_feedback` sits in the submissionJson object literal', () => {
   // The declaration may carry a type annotation (it gained one when the
   // handwritten fields were added, which are set on the object afterwards).
   // What this check is for is unchanged: the flag must be part of the literal
   // every submission is built from, not spliced in on some branch.
-  const start = appSrc.search(/const submissionJson(: [^=]+)? = \{/);
-  assert(start !== -1, 'submissionJson object literal not found');
-  const end = appSrc.indexOf('\n    };', start);
-  assert(end !== -1, 'end of the submissionJson literal not found');
-  assert(appSrc.slice(start, end).includes('ai_feedback:'),
-    'ai_feedback is somewhere in App.tsx but not inside submissionJson');
+  assert(submissionJsonLiteral().includes('ai_feedback:'),
+    'ai_feedback is somewhere in submissionPackage.ts but not inside submissionJson');
 });
 
-check('App.tsx: the handwritten rewrite did not put `ai_feedback` behind a branch', () => {
-  const start = appSrc.search(/const submissionJson(: [^=]+)? = \{/);
-  const end = appSrc.indexOf('\n    };', start);
-  const literal = appSrc.slice(start, end);
-  assert(!/\bif\s*\(/.test(literal),
+check('submissionPackage: the handwritten rewrite did not put `ai_feedback` behind a branch', () => {
+  assert(!/\bif\s*\(/.test(submissionJsonLiteral()),
     'the submissionJson literal now contains a conditional — ai_feedback must be unconditional');
 });
 
@@ -77,7 +83,9 @@ if (emitMatch) {
   // The real expression out of the file, evaluated against a mock state. Not a
   // restatement of it — if the source says something else, this runs that.
   const expr = emitMatch[1];
-  const emit = new Function('state', `return (${expr});`);
+  // The parameter is named `s` because that is what the expression in
+  // `buildSubmissionJson` reads from — the sources object, not React state.
+  const emit = new Function('s', `return (${expr});`);
   const withFlag = (v) => ({ assignment: v === undefined ? {} : { aiFeedback: v } });
 
   check('spec `aiFeedback: true` -> `ai_feedback: true`', () => {
@@ -151,8 +159,9 @@ if (emitMatch) {
 // 4. No student-visible surface
 // =====================================================
 // The app is pass-through only. If a student can see this flag, the change is
-// wrong. App.tsx is allowed exactly the one emission line; nothing under
-// components/ may mention it at all.
+// wrong. `services/submissionPackage.ts` is allowed exactly the one emission
+// line, `App.tsx` none at all now that the packaging has moved out of it, and
+// nothing under components/ may mention it.
 //
 // The pattern is the flag's own two spellings, `aiFeedback` / `ai_feedback`,
 // not the words "AI feedback". It was written that way because SubmissionWidget
@@ -175,16 +184,29 @@ if (emitMatch) {
     assert(hits.length === 0, `student-facing reference to AI feedback:\n          ${hits.join('\n          ')}`);
   });
 
-  check('App.tsx: mentions the flag only where it is typed, read and emitted', () => {
-    const hits = appSrc.split('\n')
-      .map((line, i) => [i + 1, line])
-      .filter(([, line]) => /aiFeedback|ai_feedback/.test(line))
-      .filter(([, line]) => !/^(\/\/|\*)/.test(line.trim()));
+  const nonComment = (src) => src.split('\n')
+    .map((line, i) => [i + 1, line])
+    .filter(([, line]) => /aiFeedback|ai_feedback/.test(line))
+    .filter(([, line]) => !/^(\/\/|\*)/.test(line.trim()));
+
+  check('submissionPackage: mentions the flag only where it is read and emitted', () => {
+    const hits = nonComment(pkgSrc);
     for (const [n, line] of hits) {
-      assert(/ai_feedback:\s*state\.assignment\.aiFeedback === true,/.test(line),
-        `unexpected AI-feedback reference at App.tsx:${n}: ${line.trim()}`);
+      assert(/ai_feedback:\s*s\.assignment\.aiFeedback === true,/.test(line),
+        `unexpected AI-feedback reference at services/submissionPackage.ts:${n}: ${line.trim()}`);
     }
-    assert(hits.length === 1, `expected exactly one non-comment AI-feedback line in App.tsx, found ${hits.length}`);
+    assert(hits.length === 1,
+      `expected exactly one non-comment AI-feedback line in submissionPackage.ts, found ${hits.length}`);
+  });
+
+  // App.tsx used to carry the emission line. It carries none now that the
+  // packaging moved out, and it must not grow one back: a second place that
+  // decides this flag is a second place that can disagree.
+  check('App.tsx: no longer mentions the flag at all', () => {
+    const hits = nonComment(appSrc);
+    assert(hits.length === 0,
+      `App.tsx should not reference AI feedback now that packaging has moved:\n          ` +
+      hits.map(([n, l]) => `${n}: ${l.trim()}`).join('\n          '));
   });
 }
 

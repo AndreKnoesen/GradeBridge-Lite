@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import Sidebar from './components/Sidebar';
@@ -12,16 +11,19 @@ import {
   AppState, Assignment, CropRef, PageRef, StoredLayoutMap, StudentReview,
   SubmissionData, BackupData,
 } from './types';
-import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
+import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
 import { IngestedPage, blobToDataUri, dataUriToBlob, ingestPage, rotatePageBlob } from './imageIngest';
 import { downloadBlob } from './downloadFile';
 import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
-import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
+import { isEncoded, decryptJson, GB2_KEY_ERROR } from './cryptoService';
 import { BundleError, loadAssignmentBundle } from './services/assignmentBundle';
 import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
 import { registerAndCropPage } from './services/pageCrops';
+import {
+  SUBMISSION_ZIP_OPTIONS, buildSubmissionPackage, cropBlobKey, cropList,
+} from './services/submissionPackage';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
@@ -57,19 +59,18 @@ const renumberPages = (pages: PageRef[]): PageRef[] =>
 const newPageId = (): string =>
   `pg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-/** IndexedDB key for a crop bitmap; page bitmaps use the bare PageRef.id. */
-const cropKey = (regionId: string): string => `crop_${regionId}`;
+/**
+ * IndexedDB key for a crop bitmap; page bitmaps use the bare PageRef.id.
+ *
+ * Both this and `cropList` now come from `services/submissionPackage`, because
+ * the package is written from the same keys and the same order and the two must
+ * not be able to drift. Re-exported here under the names the component already
+ * used so the call sites read as they did.
+ */
+const cropKey = cropBlobKey;
 
 const cropFileName = (regionId: string): string =>
   `crops/${regionId.replace(/[^a-z0-9_\-]/gi, '_')}.jpg`;
-
-// `@types/react` is not installed, so `state` inside the component is untyped
-// and `Object.values(state.crops)` comes back as `{}[]`. Going through this
-// keeps every crop loop typed without pulling React's types into a work order
-// that has nothing to do with them. (Flagged in the completion notes: the whole
-// of App.tsx is currently unchecked for the same reason.)
-const cropList = (crops: Record<string, CropRef>): CropRef[] =>
-  Object.keys(crops).map((regionId) => crops[regionId]);
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -901,124 +902,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Returns the encrypted JSON bytes, or null if validation fails.
-  const buildSubmissionJsonBytes = async (): Promise<{ bytes: Uint8Array; filename: string } | null> => {
-    if (!state.assignment) return null;
-    if (!state.studentName.trim()) {
-      alert("Please enter your name before submitting.");
-      return null;
-    }
-
-    const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
-
-    state.assignment.problems.forEach((problem, pIdx) => {
-      problem.subsections.forEach((sub, sIdx) => {
-        const internalKey = `p${pIdx}_s${sIdx}`;
-        const autograderKey = `p${pIdx}s${sIdx}`;
-        const subData = state.submissionData[internalKey];
-        const isAiGraded = typeof sub.submissionType === 'string' && AI_GRADED_TYPES.has(sub.submissionType);
-
-        if (sub.submissionType === 'Image') {
-          convertedData[autograderKey] = {
-            answer: null,
-            images_submitted: subData?.imageAnswers?.length ?? 0
-          };
-        } else if (sub.submissionType === 'Text and Image') {
-          convertedData[autograderKey] = {
-            answer: subData?.textAnswer ?? null,
-            images_submitted: subData?.imageAnswers?.length ?? 0
-          };
-        } else if (isAiGraded) {
-          convertedData[autograderKey] = {
-            answer: subData?.aiAnswer ?? null,
-            images_submitted: 0
-          };
-        } else {
-          convertedData[autograderKey] = {
-            answer: subData?.textAnswer ?? null,
-            images_submitted: 0
-          };
-        }
-      });
-    });
-
-    const assignmentId = `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`;
-    const pdfFilename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
-      .replace(/[^a-z0-9_\-\.]/gi, '_');
-
-    const submissionJson: Record<string, unknown> = {
-      student_name: state.studentName,
-      course_code: state.assignment.courseCode,
-      assignment_id: assignmentId,
-      pdf_filename: pdfFilename,
-      // Pass-through, per-assignment. Always a real boolean so the autograder
-      // never has to tell "off" apart from "an older app version". This
-      // survives the handwritten rewrite deliberately.
-      ai_feedback: state.assignment.aiFeedback === true,
-      submission_data: convertedData,
-      last_saved: new Date().toISOString()
-    };
-
-    // Handwritten: the pages, the crops and what the student said about each.
-    // Nothing here is emitted for an electronic assignment, whose payload is
-    // byte-for-byte what it was.
-    if (isHandwritten) {
-      submissionJson.input_mode = 'handwritten';
-      submissionJson.layout_id = state.layout?.computedLayoutId ?? null;
-      // `k` and `N` come from each page's own QR, never from upload order.
-      submissionJson.pages = state.pages.map(page => ({
-        file: page.file,
-        width: page.width,
-        height: page.height,
-        k: page.registration?.k ?? null,
-        n: page.registration?.n ?? null,
-        registration: page.registration?.status ?? 'pending',
-        marks_found: page.registration?.marksFound ?? 0,
-        residual_mm: page.registration?.residualMm ?? null,
-      }));
-      const crops: Record<string, unknown> = {};
-      for (const crop of cropList(state.crops)) {
-        crops[crop.regionId] = {
-          region_id: crop.regionId,
-          part_id: crop.partId,
-          page_k: crop.pageK,
-          is_drawing: crop.isDrawing,
-          max_points: crop.maxPoints,
-          // How it was obtained. A grader must not assume a direct capture came
-          // from a known rectangle on a registered page.
-          crop_source: crop.cropSource,
-          // What the student said after looking at it. A part they never
-          // reached is neither signed off nor flagged.
-          student_review: crop.review,
-          quality_flags: crop.qualityFlags,
-          file: crop.file,
-          width: crop.width,
-          height: crop.height,
-        };
-      }
-      submissionJson.crops = crops;
-    }
-
-    // Format selection: a spec carrying a course public key gets the hardened
-    // gb2 envelope with a de-identified payload; everything else stays on gb1.
-    // A spec that asked for gb2 must never silently downgrade to gb1, so any
-    // gb2 failure propagates out of here rather than being caught.
-    const coursePublicKey = state.assignment.coursePublicKey?.trim();
-    let encoded: string;
-    if (coursePublicKey) {
-      // Identity comes from Gradescope's authenticated submitter metadata, not
-      // the payload. The PDF and all filenames keep the student's name.
-      encoded = await encryptJsonGb2(deidentifyForGb2(submissionJson), coursePublicKey);
-    } else {
-      encoded = await encryptJson(submissionJson);
-    }
-    const bytes = new TextEncoder().encode(encoded);
-    const filename = `${state.studentName}_${state.assignment.courseCode}_submission.json`
-      .replace(/[^a-z0-9_\-\.]/gi, '_');
-
-    return { bytes, filename };
-  };
-
   const handleDownloadForGradescope = async () => {
     if (!state.assignment) return;
     if (!state.studentName.trim()) {
@@ -1037,50 +920,32 @@ const App: React.FC = () => {
       });
       if (!pdfBytes) return;
 
-      // Phase 2: build JSON
+      // Phase 2 and 3: the payload and the archive.
+      //
+      // Both live in `services/submissionPackage` now rather than here. What
+      // this handler owns is the browser: the progress overlay, the blob store
+      // the bitmaps come out of, the download, and the messages. The package
+      // itself is built by a function that can also be called by a test, which
+      // is the only way the artefact this app exists to produce can be opened
+      // and checked without a person clicking a button.
       setPdfProgress({ active: true, phase: 'packaging', current: 0, total: 0 });
       setStatusMessage("Packaging submission...");
 
-      const jsonResult = await buildSubmissionJsonBytes();
-      if (!jsonResult) return;
+      const built = await buildSubmissionPackage(
+        {
+          studentName: state.studentName,
+          assignment: state.assignment,
+          submissionData: state.submissionData,
+          isHandwritten,
+          layoutId: state.layout?.computedLayoutId ?? null,
+          pages: state.pages,
+          crops: state.crops,
+        },
+        { pdfBytes, readBlob: getPageBlob, downsampleImage },
+      );
+      const baseName = built.baseName;
 
-      // Phase 3: zip both files
-      const zip = new JSZip();
-      const baseName = `${state.studentName}_${state.assignment.courseCode}_submission`
-        .replace(/[^a-z0-9_\-]/gi, '_');
-
-      zip.file(`${baseName}.json`, jsonResult.bytes);
-      zip.file(`${baseName}.pdf`, pdfBytes);
-
-      // The pages and the crops. Until this landed the ZIP builder never
-      // referenced state.pages at all, so a handwritten student submitted a PDF
-      // of the blank question paper and a JSON in which every answer was null —
-      // and nothing anywhere said so.
-      for (const page of state.pages) {
-        const pageBlob = await getPageBlob(page.id);
-        if (pageBlob) zip.file(page.file, pageBlob);
-      }
-      for (const crop of cropList(state.crops)) {
-        const cropBlob = await getPageBlob(cropKey(crop.regionId));
-        if (cropBlob) zip.file(crop.file, cropBlob);
-      }
-
-      for (let pIdx = 0; pIdx < state.assignment.problems.length; pIdx++) {
-        const problem = state.assignment.problems[pIdx];
-        for (let sIdx = 0; sIdx < problem.subsections.length; sIdx++) {
-          const sub = problem.subsections[sIdx];
-          if (sub.submissionType === 'Image' || sub.submissionType === 'Text and Image') {
-            const autograderKey = `p${pIdx}s${sIdx}`;
-            const images = state.submissionData[`p${pIdx}_s${sIdx}`]?.imageAnswers ?? [];
-            for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
-              const downsampled = await downsampleImage(images[imgIdx]);
-              zip.file(`${autograderKey}_image_${imgIdx}.jpg`, downsampled.replace(/^data:[^;]+;base64,/, ''), { base64: true });
-            }
-          }
-        }
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+      const zipBlob = await built.zip.generateAsync({ type: 'blob', ...SUBMISSION_ZIP_OPTIONS });
 
       downloadBlob(zipBlob, `${baseName}.zip`);
 
