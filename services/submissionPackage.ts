@@ -18,10 +18,12 @@
  *
  * Two things are deliberately parameters rather than imports.
  *
- * **The PDF arrives as bytes.** Building it means rasterising a live DOM with
- * `html2canvas`, which needs a browser laying out real elements. It cannot be
- * lifted out of the component and it cannot run in Node, so this file takes the
- * result rather than pretending to own the step.
+ * **The PDF arrives as bytes, and only an electronic submission has one.**
+ * Building it means rasterising a live DOM with `html2canvas`, which needs a
+ * browser laying out real elements; it cannot be lifted out of the component and
+ * cannot run in Node, so this file takes the result rather than pretending to own
+ * the step. A handwritten submission carries no PDF at all — see
+ * `buildSubmissionPackage`.
  *
  * **The page and crop bitmaps arrive through a reader.** In the app they live
  * in IndexedDB under keys this module names; a test supplies them from memory.
@@ -134,6 +136,16 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
   // Handwritten: the pages, the crops and what the student said about each.
   // Nothing here is emitted for an electronic assignment.
   if (s.isHandwritten) {
+    // No PDF is written for a handwritten submission, so the field naming one
+    // is deleted rather than left pointing at a file that is not in the archive.
+    // A consumer that opens what a payload names is doing the right thing; a
+    // payload that names something absent is the defect.
+    //
+    // It is removed here rather than left out of the literal above so that an
+    // ELECTRONIC payload keeps its exact key order, which is unchanged by any of
+    // this.
+    delete submissionJson.pdf_filename;
+
     submissionJson.input_mode = 'handwritten';
     submissionJson.layout_id = s.layoutId;
     // `k` and `N` come from each page's own QR, never from upload order.
@@ -211,8 +223,13 @@ export const SUBMISSION_ZIP_OPTIONS = {
 } as const;
 
 export interface PackageAssets {
-  /** The rendered submission PDF. See the note at the top of this file. */
-  pdfBytes: Uint8Array;
+  /**
+   * The rendered submission PDF, for an ELECTRONIC submission only. Omit it for
+   * a handwritten one; passing it there is ignored rather than honoured, because
+   * whether the archive carries a PDF is a property of the submission and not of
+   * what the caller happened to have to hand.
+   */
+  pdfBytes?: Uint8Array;
   /** Page and crop bitmaps by store key: `PageRef.id`, or `cropBlobKey(regionId)`. */
   readBlob: (key: string) => Promise<Blob | Uint8Array | null>;
   /**
@@ -263,7 +280,27 @@ export const buildSubmissionPackage = async (
   };
 
   add(`${baseName}.json`, encoded.bytes);
-  add(`${baseName}.pdf`, assets.pdfBytes);
+
+  // **A handwritten submission carries no PDF.** Andre, 2026-09-01, in
+  // `workorders/DECISION_PACKAGE_CONTENTS_2026-09-01.md`.
+  //
+  // `PrintView` never receives the pages or the crops, so the PDF a handwritten
+  // submission used to carry was the blank question paper. The instinct is to
+  // fill it with the student's photographs; the decision is not to. Nothing
+  // consumes it — Gradescope does not render it on the autograder path — it was
+  // roughly half the archive by bytes, and it duplicates `page_N.jpg`, which is
+  // kept. **A blank PDF nobody is supposed to read is worse than no PDF**,
+  // because sooner or later somebody opens it and concludes the student
+  // submitted nothing.
+  //
+  // Removing a thing that can be wrong beats maintaining a second copy of
+  // something already kept. The electronic path is untouched.
+  if (!sources.isHandwritten) {
+    if (!assets.pdfBytes) {
+      throw new Error('An electronic submission needs a PDF, and none was supplied.');
+    }
+    add(`${baseName}.pdf`, assets.pdfBytes);
+  }
 
   // The pages and the crops. Until this landed the ZIP builder never referenced
   // the pages at all, so a handwritten student submitted a PDF of the blank

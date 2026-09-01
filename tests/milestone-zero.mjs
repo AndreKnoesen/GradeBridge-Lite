@@ -28,7 +28,7 @@
 //    crops are encoded here with `jpeg-js` at the same CROP_JPEG_QUALITY. The
 //    pixels handed to the encoder are `cropRegions`' own output, untouched.
 //
-// The PDF is a third and it is not a substitution but a gap; see PDF_NOTE.
+// There is no third. A handwritten submission carries no PDF at all; see part 3.
 // =====================================================
 
 import { webcrypto } from 'node:crypto';
@@ -41,7 +41,6 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import jpeg from 'jpeg-js';
-import { jsPDF } from 'jspdf';
 import { loadModule, CAPTURE_DIR } from './captureSet.mjs';
 import { ingestLikeApp } from './realCaptures.mjs';
 
@@ -243,46 +242,21 @@ check('the regions are the three the work order names',
   ['p1a', 'p1b', 'p1c'].every(id => id in crops), Object.keys(crops).join(', '));
 
 // =====================================================
-// 3. The PDF
+// 3. No PDF
 // =====================================================
-// **This is a gap, not a substitution, and it is the largest finding here.**
+// **A handwritten submission carries no PDF.** Andre, 2026-09-01,
+// `workorders/DECISION_PACKAGE_CONTENTS_2026-09-01.md`.
 //
-// The app builds its PDF in `App.buildPdfBytes`, which clones the live
-// `#pdf-content` element and rasterises it with `html2canvas`. That needs a
-// browser laying out real DOM and cannot run in Node, so it could not be
-// lifted into the package service and cannot be exercised by this harness.
+// This harness used to build one, because the app's own PDF path is
+// `html2canvas` over a live DOM and cannot run in Node — and because the PDF the
+// app would have produced was the blank question paper, `PrintView` never having
+// received the pages or the crops. Filling it was the obvious fix and it is not
+// the decision. Nothing consumes it, Gradescope does not render it on the
+// autograder path, it was roughly half the archive by bytes, and it duplicates
+// `page_N.jpg`, which is kept as the record of what the student photographed.
 //
-// Worse, and independent of headlessness: `PrintView` takes only `assignment`,
-// `submissionData` and `studentName`. It never receives `pages` or `crops`. So
-// for a handwritten assignment the PDF the app produces today is the ELECTRONIC
-// answer-sheet render with every answer empty — the blank question paper with a
-// title page. The student's photographs reach the ZIP as `page_*.jpg`, but they
-// are not in the PDF.
-//
-// So the PDF below is built by this harness, with the app's own jsPDF, from the
-// student's page photographs. It is what the package needs to be openable and
-// it is what a handwritten submission's PDF ought to contain. **It is not what
-// the app ships today.**
-const PDF_NOTE =
-  'The PDF in this package was built by tests/milestone-zero.mjs from the page ' +
-  'photographs, using the app\'s own jsPDF. The app itself builds its PDF with ' +
-  'html2canvas over PrintView, which has no handwritten branch and would have ' +
-  'produced the blank question paper with all answers empty. See the harness.';
-console.log('\n  3. the PDF');
-
-const pdf = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' });
-for (const [i, page] of pages.entries()) {
-  if (i > 0) pdf.addPage('letter', 'portrait');
-  const jpegBytes = blobStore.get(page.id);
-  const dataUri = `data:image/jpeg;base64,${Buffer.from(jpegBytes).toString('base64')}`;
-  // Fit the photograph inside the sheet, preserving its aspect.
-  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
-  const scale = Math.min(pw / page.width, ph / page.height);
-  const w = page.width * scale, h = page.height * scale;
-  pdf.addImage(dataUri, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
-}
-const pdfBytes = new Uint8Array(pdf.output('arraybuffer'));
-check('a PDF was produced', pdfBytes.length > 0, String(pdfBytes.length));
+// So there is nothing to build here; the check is that the archive has none.
+console.log('\n  3. no PDF (handwritten)');
 
 // =====================================================
 // 4. Build the package
@@ -303,7 +277,6 @@ try {
       crops,
     },
     {
-      pdfBytes,
       readBlob: async (key) => blobStore.get(key) ?? null,
       downsampleImage: async (uri) => uri,
     },
@@ -314,6 +287,7 @@ try {
 }
 
 check('a partial submission packages without complaint (2 pages of 16)', built !== null);
+const builtPayloadPreview = built.submissionJson;
 
 const zipBytes = await built.zip.generateAsync({
   type: 'nodebuffer', ...pkgSvc.SUBMISSION_ZIP_OPTIONS,
@@ -353,6 +327,14 @@ for (const name of Object.keys(reopened.files).sort()) {
   writeFileSync(dest, content);
 }
 check('the archive reopens', manifest.length > 0, `${manifest.length} entries`);
+
+// The decision, asserted rather than assumed. Filling the PDF was the obvious
+// fix and is not what was decided, so the check is for absence.
+check('the archive carries no PDF', !manifest.some(m => m.name.toLowerCase().endsWith('.pdf')),
+  manifest.filter(m => m.name.toLowerCase().endsWith('.pdf')).map(m => m.name).join(', '));
+check('the payload names no PDF either',
+  !('pdf_filename' in builtPayloadPreview),
+  String(builtPayloadPreview.pdf_filename));
 check('every entry is non-empty', manifest.every(m => m.bytes > 0),
   manifest.filter(m => !m.bytes).map(m => m.name).join(', '));
 
@@ -453,8 +435,8 @@ for (const c of cropReport) {
 }
 
 console.log('\n=== PDF ===');
-console.log(`  ${pdfBytes.length} bytes, ${pages.length} page(s)`);
-console.log(`  NOTE: ${PDF_NOTE}`);
+console.log('  none, by decision — a handwritten submission carries no PDF.');
+console.log('  workorders/DECISION_PACKAGE_CONTENTS_2026-09-01.md');
 
 if (refusals.length) {
   console.log('\n=== THE PIPELINE REFUSED ===');
@@ -477,7 +459,9 @@ writeFileSync(join(OUT_DIR, 'README.txt'),
     'the handwriting for parts 1(a), 1(b) and 1(c) is the one thing no test can',
     'establish. Everything else in here has been checked.',
     '',
-    `PDF: ${PDF_NOTE}`,
+    'PDF: none. A handwritten submission carries no PDF, by the decision of',
+    '2026-09-01: nothing consumes it, and a blank one invites a reader to',
+    'conclude the student submitted nothing. page_N.jpg is the record instead.',
     '',
     'Manifest:',
     ...manifest.map(m => `  ${String(m.bytes).padStart(9)}  ${m.name}`),

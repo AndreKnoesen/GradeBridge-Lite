@@ -391,9 +391,26 @@ check('the ZIP builder writes the crop images', () => {
   assert(/add\(crop\.file,/.test(zipBlock), 'the ZIP builder does not write crop.file');
 });
 
-check('the ZIP carries the JSON and the PDF', () => {
+check('the ZIP always carries the JSON', () => {
   assert(zipBlock.includes('.json`, encoded.bytes)'), 'the ZIP builder does not write the JSON');
-  assert(zipBlock.includes('.pdf`, assets.pdfBytes)'), 'the ZIP builder does not write the PDF');
+});
+
+check('a handwritten submission carries no PDF', () => {
+  // Andre, 2026-09-01, DECISION_PACKAGE_CONTENTS_2026-09-01.md. Nothing consumes
+  // it, it was half the archive, and the one the app would have produced was the
+  // blank question paper — which invites a reader to conclude the student
+  // submitted nothing. The electronic path still writes one.
+  const pdfWrite = zipBlock.indexOf('.pdf`, assets.pdfBytes)');
+  assert(pdfWrite !== -1, 'the ZIP builder no longer writes a PDF at all — the electronic path needs one');
+  const guard = zipBlock.lastIndexOf('if (!sources.isHandwritten)', pdfWrite);
+  assert(guard !== -1, 'the PDF write is not behind an isHandwritten guard');
+
+  // ...and the payload must not name a file the archive does not contain.
+  assert(/delete submissionJson\.pdf_filename;/.test(pkgSrc),
+    'pdf_filename is still emitted on the handwritten path, naming a file that is not there');
+  const branch = pkgSrc.indexOf('if (s.isHandwritten) {');
+  assert(pkgSrc.indexOf('delete submissionJson.pdf_filename;') > branch,
+    'pdf_filename is deleted outside the handwritten branch — an electronic payload would lose it');
 });
 
 check('the submission JSON carries the layout_id and the page set with k and N', () => {

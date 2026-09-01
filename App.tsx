@@ -913,12 +913,22 @@ const App: React.FC = () => {
     setStatusMessage("Generating submission package...");
 
     try {
-      // Phase 1: build PDF
-      const pdfBytes = await buildPdfBytes((current, total) => {
-        setPdfProgress({ active: true, phase: 'pdf', current, total });
-        setStatusMessage(`Generating PDF... Page ${current} of ${total}`);
-      });
-      if (!pdfBytes) return;
+      // Phase 1: build the PDF — an ELECTRONIC submission only.
+      //
+      // A handwritten submission carries no PDF (see `submissionPackage`), so it
+      // does not build one. That is not only bytes saved: rasterising the print
+      // view is by far the slowest thing this handler does, and it is the step a
+      // student waits through on a phone. A handwritten submission now goes
+      // straight to packaging.
+      let pdfBytes: Uint8Array | undefined;
+      if (!isHandwritten) {
+        const rendered = await buildPdfBytes((current, total) => {
+          setPdfProgress({ active: true, phase: 'pdf', current, total });
+          setStatusMessage(`Generating PDF... Page ${current} of ${total}`);
+        });
+        if (!rendered) return;
+        pdfBytes = rendered;
+      }
 
       // Phase 2 and 3: the payload and the archive.
       //

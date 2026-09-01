@@ -48,17 +48,18 @@ gives `Milestone_Zero_ENG17_submission`. DEFLATE, level 6.
 
 | bytes | entry |
 |---:|---|
-| 2,704 | `Milestone_Zero_ENG17_submission.json` |
-| 979,728 | `Milestone_Zero_ENG17_submission.pdf` |
+| 2,632 | `Milestone_Zero_ENG17_submission.json` |
 | 40,696 | `crops/p1a.jpg` |
 | 38,285 | `crops/p1b.jpg` |
 | 81,454 | `crops/p1c.jpg` |
 | 474,470 | `page_1.jpg` |
 | 501,463 | `page_2.jpg` |
 
-Archive total 2,079,104 bytes. The seven entries are byte-identical between runs
-of the same inputs; the total moves a byte or two because `last_saved` is a
+Archive total 1,117,339 bytes. The six entries are byte-identical between runs of
+the same inputs; the total moves a byte or two because `last_saved` is a
 timestamp inside the encrypted payload.
+
+**There is no PDF.** See §5 — this is a decision, not an omission.
 
 **It is not flat.** There is a `crops/` directory entry. An extractor that calls
 `os.path.basename()` on every member — as the v3.1 snippet does — collapses
@@ -70,9 +71,14 @@ gives you. See §7.
 | pattern | count here | magic | what it is |
 |---|---|---|---|
 | `*_submission.json` | 1 | `67 62 31 3a` (`gb1:`) | the payload, §3 |
-| `*_submission.pdf` | 1 | `25 50 44 46` (`%PDF`) | §5 |
-| `page_{n}.jpg` | 2 | `ff d8 ff e0` | the student's photographs, §4 |
-| `crops/{region_id}.jpg` | 3 | `ff d8 ff e0` | one answer each, §4 |
+| `crops/{region_id}.jpg` | 3 | `ff d8 ff e0` | **the grader's input**, §4 |
+| `page_{n}.jpg` | 2 | `ff d8 ff e0` | **retained, not consumed**, §4 |
+
+**Consumed is not the same as retained.** The crops are the interface; the page
+images are the record of what the student photographed, kept so a dispute can be
+adjudicated. Do not feed the pages to a grader. §4 says why both exist.
+
+**No `*_submission.pdf`** on the handwritten path. §5.
 
 **Not present in this archive, and declared by the app rather than observed:**
 `p{i}s{j}_image_{n}.jpg` at the archive root, written only for an *electronic*
@@ -116,17 +122,16 @@ four-character envelope tag.
 Read the first four characters and branch. Do not assume `gb1:`.
 
 A `gb2:` payload is **de-identified**: identity comes from Gradescope's
-authenticated submitter metadata, not from the payload. The PDF and all
-filenames keep the student's name in both cases.
+authenticated submitter metadata, not from the payload. The archive's filenames
+keep the student's name in both cases.
 
-### Decrypted structure — all eleven top-level keys, as observed
+### Decrypted structure — all ten top-level keys, as observed
 
 ```json
 {
   "student_name":   "Milestone Zero",
   "course_code":    "ENG17",
   "assignment_id":  "ENG17_Homework_1",
-  "pdf_filename":   "Milestone_Zero_ENG17_submission.pdf",
   "ai_feedback":    false,
   "submission_data": { "p0s0": { "answer": null, "images_submitted": 0 }, … },
   "last_saved":     "2026-09-01T17:59:37.496Z",
@@ -142,7 +147,7 @@ filenames keep the student's name in both cases.
 | `student_name` | string | Compare against Gradescope's submitter; a mismatch is for instructor review. |
 | `course_code` | string | |
 | `assignment_id` | string | `{courseCode}_{title with spaces → _}`. **Not** the `assignment_id` in `layout_*.csv`, which is `ENG17HOM496F`. Two different identifiers; do not join on this one. |
-| `pdf_filename` | string | The PDF's name inside this archive. |
+| `pdf_filename` | string | **Electronic only.** Absent from a handwritten payload, because a handwritten archive has no PDF and a field naming a file that is not there is a defect rather than a courtesy. Do not index it unconditionally. |
 | `ai_feedback` | boolean | Always a real boolean, never absent, so "off" is never confusable with an older app version. |
 | `submission_data` | object | §3.1 |
 | `last_saved` | string | ISO 8601, UTC. |
@@ -257,30 +262,58 @@ exact.
 rectified, with the right handwriting in it; `p1b` and `p1c` are not swapped
 (aspect ratios 0.314 and 0.550 against declared 0.3138 and 0.5492).
 
-### The page photographs
+### The page photographs — retained, not consumed
 
 `page_1.jpg`, `page_2.jpg` — 1650 × 2200 each, the student's own pictures after
 the app's ingest (EXIF-uprighted, long edge stepped to 2200 px, JPEG 0.85).
 
-They are there **for a human grader and for recovery**, not as the input to a
-reading pass. See §6.
+**These are not a grader input and must not be treated as one.** They are kept
+for one reason: **a crop is a derived artefact.** It depends on the layout map
+being right and on the homography being right for that page. If either is wrong,
+or a student says "I wrote it and the tool cut it off", the page image is the
+only thing that can settle it — and once discarded, that evidence does not come
+back.
+
+So they are what a dispute is adjudicated against. Roughly 0.5 MB per page, about
+8 MB for a full sixteen-page HW1; cheap for what it buys.
+
+Do not run a reading pass over them. §6 says why.
 
 ---
 
-## 5. The PDF
+## 5. There is no PDF
 
-`%PDF-1.3`, 2 page objects, 979,728 bytes, opens cleanly.
+**A handwritten submission carries no PDF.** Decision of 2026-09-01,
+`GradeBridge2026\workorders\DECISION_PACKAGE_CONTENTS_2026-09-01.md`. The
+electronic path still carries one and is unchanged.
 
-> **The PDF in this archive was produced by the milestone harness, not by the
-> app**, and this is an open defect rather than a property of the format. The
-> app's `PrintView` receives only `assignment`, `submissionData` and
-> `studentName` — never `pages` or `crops` — so for a handwritten assignment the
-> PDF it builds today is the *electronic* answer-sheet render with every answer
-> empty: the blank question paper with a title page.
->
-> **Do not build anything that depends on the PDF's contents until that is
-> settled.** The images in §4 are the reliable artefacts. `pdf_filename` in the
-> payload is still correct as a filename.
+Until that decision the archive held a `*_submission.pdf`, and it was **the blank
+question paper**: `PrintView` receives only `assignment`, `submissionData` and
+`studentName` — never `pages` or `crops` — so a handwritten submission's PDF was
+the electronic answer-sheet render with every answer empty.
+
+The obvious fix was to fill it with the student's photographs. That is not what
+was decided, and the reasoning is worth carrying because it applies again the
+next time something in this archive has no reader:
+
+- **Nothing consumes it.** On the autograder path Gradescope does not render it.
+- **It was roughly half the archive.** 0.98 MB of 2.08 MB. Removing it took the
+  observed package from 2,079,104 bytes to **1,117,339**.
+- **It duplicated `page_N.jpg`**, which is kept.
+- **A blank PDF that nobody is supposed to read is worse than no PDF**, because
+  sooner or later somebody opens it and concludes the student submitted nothing.
+
+Removing a thing that can be wrong beats maintaining a second copy of something
+already kept.
+
+**Consequences for a reader:**
+
+- Do not look for a PDF in a handwritten archive, and do not treat its absence as
+  a malformed submission.
+- `pdf_filename` is **absent from a handwritten payload**. Indexing it
+  unconditionally raises. Test `input_mode` first.
+- If a human grader needs to see the whole page, `page_N.jpg` is that, at full
+  ingest resolution.
 
 ---
 
@@ -376,7 +409,7 @@ Unchanged from v3.1, and still true:
 | student uploads | behaviour |
 |---|---|
 | `submission.zip`, electronic | Extracts, `input_mode` absent, grade from `submission_data` exactly as before |
-| `submission.zip`, handwritten | Extracts, `input_mode == "handwritten"`, grade from `crops` |
+| `submission.zip`, handwritten | Extracts, `input_mode == "handwritten"`, grade from `crops`. **No PDF, and no `pdf_filename`** |
 | `submission.json` + `submission.pdf` (v3.0) | No ZIP found, proceeds as before |
 
 Nothing in this document changes the electronic path: `input_mode`, `layout_id`,
@@ -420,6 +453,6 @@ in `GradeBridge-Student-Submission`; the harness re-derives the whole package fr
 the assignment export and two photographs, and prints the manifest, the decrypted
 payload and the crop measurements.
 
-Full report on how the package was produced, including the two open defects
-(§5's PDF and §6's `low-resolution`):
+Full report on how the package was produced, including §6's `low-resolution`,
+which is still open:
 `GradeBridge-Student-Submission/MILESTONE_ZERO_REPORT_2026-09-01.md`.
