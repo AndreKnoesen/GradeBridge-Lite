@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node tests/run-tests.mjs && node tests/orientation-tests.mjs && node tests/download-tests.mjs && node tests/math-delimiter-tests.mjs && node tests/figure-tests.mjs && node tests/ai-feedback-tests.mjs && node tests/legacy-type-tests.mjs",
+    "captures": "node --input-type=module -e \"import { writeCaptures } from './tests/captureSet.mjs'; await writeCaptures();\"",
+    "test": "node tests/run-tests.mjs && node tests/orientation-tests.mjs && node tests/download-tests.mjs && node tests/math-delimiter-tests.mjs && node tests/figure-tests.mjs && node tests/ai-feedback-tests.mjs && node tests/legacy-type-tests.mjs && node tests/registration-tests.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
@@ -18,6 +19,7 @@
     "heic2any": "^0.0.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
+    "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
     "lucide-react": "^0.554.0",
@@ -27,10 +29,15 @@
   "devDependencies": {
     "@types/katex": "^0.16.8",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.5.4",
     "gh-pages": "^6.3.0",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.26",
+    "qrcode": "^1.5.4",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

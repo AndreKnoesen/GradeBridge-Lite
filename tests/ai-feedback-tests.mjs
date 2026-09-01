@@ -53,12 +53,24 @@ check('App.tsx: the submission JSON emits an `ai_feedback` key', () =>
   assert(emitMatch, 'no `ai_feedback:` key found in App.tsx'));
 
 check('App.tsx: `ai_feedback` sits in the submissionJson object literal', () => {
-  const start = appSrc.indexOf('const submissionJson = {');
+  // The declaration may carry a type annotation (it gained one when the
+  // handwritten fields were added, which are set on the object afterwards).
+  // What this check is for is unchanged: the flag must be part of the literal
+  // every submission is built from, not spliced in on some branch.
+  const start = appSrc.search(/const submissionJson(: [^=]+)? = \{/);
   assert(start !== -1, 'submissionJson object literal not found');
   const end = appSrc.indexOf('\n    };', start);
   assert(end !== -1, 'end of the submissionJson literal not found');
   assert(appSrc.slice(start, end).includes('ai_feedback:'),
     'ai_feedback is somewhere in App.tsx but not inside submissionJson');
+});
+
+check('App.tsx: the handwritten rewrite did not put `ai_feedback` behind a branch', () => {
+  const start = appSrc.search(/const submissionJson(: [^=]+)? = \{/);
+  const end = appSrc.indexOf('\n    };', start);
+  const literal = appSrc.slice(start, end);
+  assert(!/\bif\s*\(/.test(literal),
+    'the submissionJson literal now contains a conditional — ai_feedback must be unconditional');
 });
 
 if (emitMatch) {

@@ -52,6 +52,24 @@ const PageUploader: React.FC<PageUploaderProps> = ({
   const overBudget = totalBytes > PAGE_TOTAL_SIZE_TARGET;
   const missingIds = pages.filter((p) => !pageUrls[p.id]).map((p) => p.id);
 
+  // Two photographs of the same sheet. Each cuts the same regions, so the
+  // second silently replaces the first's answers — which is right if it is a
+  // better photo and wrong if it is the one they meant to delete. Either way
+  // the student is the only one who can tell, so say it rather than pick.
+  const seenK = new Map<number, number>();
+  for (const page of pages) {
+    const k = page.registration?.k;
+    if (k) seenK.set(k, (seenK.get(k) ?? 0) + 1);
+  }
+  const duplicateK = [...seenK.entries()].filter(([, n]) => n > 1).map(([k]) => k);
+
+  // Pages the assignment has that nothing uploaded covers. `N` comes from the
+  // QR on the paper, so this is only knowable once at least one page is in.
+  const declaredN = pages.map((p) => p.registration?.n).find((n) => typeof n === 'number');
+  const missingK = declaredN
+    ? Array.from({ length: declaredN }, (_, i) => i + 1).filter((k) => !seenK.has(k))
+    : [];
+
   /**
    * One page at a time, released before the next starts. Eight 12-megapixel
    * photos decoded concurrently will take a budget phone's tab down with it.
@@ -299,12 +317,30 @@ const PageUploader: React.FC<PageUploaderProps> = ({
                     .filter(({ p }) => !pageUrls[p.id])
                     .map(({ idx }) => `page ${idx + 1}`)
                     .join(', ')}{' '}
-                  using the button on each empty slot. Anything you have already marked on those
-                  pages is kept, as long as you put the same page back in the same position.
+                  using the button on each empty slot. The answers already cut from those pages are
+                  kept, and re-uploading the same page cuts them again from the new photo.
                 </p>
               </div>
             </div>
           </div>
+        )}
+
+        {/* --- The same sheet photographed twice --- */}
+        {duplicateK.length > 0 && (
+          <p className="text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3" role="alert">
+            You have uploaded {duplicateK.length === 1 ? 'page' : 'pages'}{' '}
+            {duplicateK.join(', ')} more than once. Only the last photo of each is used for your
+            answers — remove the ones you do not want.
+          </p>
+        )}
+
+        {/* --- Pages the assignment has that are not here yet --- */}
+        {missingK.length > 0 && (
+          <p className="text-sm text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            This assignment has {declaredN} pages. You have not photographed{' '}
+            {missingK.length === 1 ? 'page' : 'pages'} {missingK.join(', ')} yet. If you left a page
+            blank on purpose you can still submit.
+          </p>
         )}
 
         {/* --- Size guard --- */}
@@ -349,7 +385,7 @@ const PageUploader: React.FC<PageUploaderProps> = ({
                       </div>
                     )}
                     <span className="absolute top-1 left-1 bg-slate-900/80 text-white text-xs font-semibold px-2 py-0.5 rounded">
-                      {idx + 1}
+                      {page.registration?.k ? `p${page.registration.k}` : idx + 1}
                     </span>
                     <button
                       type="button"
@@ -436,6 +472,29 @@ const PageUploader: React.FC<PageUploaderProps> = ({
                       </div>
                     )}
 
+                    {/* What registration made of this page. A student whose
+                        photo did not line up needs to know here, holding the
+                        paper, not at submission time. */}
+                    {url && page.registration && page.registration.status !== 'ok' && (
+                      <div className={`text-[11px] rounded p-1.5 border ${
+                        page.registration.status === 'pending'
+                          ? 'text-slate-600 bg-slate-50 border-slate-200'
+                          : page.registration.status === 'degraded'
+                            ? 'text-amber-900 bg-amber-50 border-amber-200'
+                            : 'text-red-800 bg-red-50 border-red-200'
+                      }`}>
+                        {page.registration.status === 'pending'
+                          ? 'Reading this page…'
+                          : page.registration.message
+                            ?? 'This page could not be read. Retake it flat, with all four corners in frame.'}
+                      </div>
+                    )}
+                    {url && page.registration?.status === 'ok' && (
+                      <p className="text-[11px] text-green-800 bg-green-50 border border-green-200 rounded p-1.5">
+                        Read as page {page.registration.k} of {page.registration.n}.
+                      </p>
+                    )}
+
                     {warnings.length > 0 && (
                       <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-1.5 space-y-1">
                         {warnings.map((w, wIdx) => (
@@ -454,8 +513,9 @@ const PageUploader: React.FC<PageUploaderProps> = ({
         )}
 
         <p className="text-xs text-gray-500">
-          Page order sets the order they appear in your submission. It does not have to match the
-          question order — you will point each part at its page in the next step.
+          You do not have to upload the pages in order. Each page says which page of the assignment
+          it is, in the code printed in its top-right corner, and your answers are cut out from
+          that. Check them in the next section before you submit.
         </p>
       </div>
     </section>

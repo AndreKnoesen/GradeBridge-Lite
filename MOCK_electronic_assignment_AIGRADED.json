@@ -1,0 +1,70 @@
+{
+  "id": "mock-elec-eec110a-hw4",
+  "courseCode": "EEC110A",
+  "title": "Homework 4 (Electronic) — Amplifier Analysis and Design Reasoning",
+  "dueDate": "",
+  "dueTime": "",
+  "preamble": "Type your answers directly in this app. Every part on this assignment is answered on screen; nothing is printed, photographed, or scanned. Show your reasoning in words as well as numbers — the AI-graded parts are read for the argument, not just the final value.",
+  "aiFeedback": true,
+  "problems": [
+    {
+      "id": "p1",
+      "name": "Common-Emitter Stage",
+      "description": "A common-emitter amplifier is biased at I_C = 1 mA with R_C = 4.7 kOhm, driven from a source with R_S = 600 Ohm. Assume beta = 150 and V_T = 26 mV at room temperature.",
+      "subsections": [
+        {
+          "id": "p1s0",
+          "name": "Is the stage inverting?",
+          "description": "State whether this stage inverts the signal, and justify your answer in one or two sentences by reference to the direction of collector current change.",
+          "points": 5,
+          "submissionType": "AI Graded: Binary"
+        },
+        {
+          "id": "p1s1",
+          "name": "Small-signal voltage gain",
+          "description": "Compute g_m and the small-signal voltage gain A_v = -g_m * R_C. Give the numeric result and state the assumption you made about the output loading.",
+          "points": 10,
+          "submissionType": "AI Graded: Short"
+        },
+        {
+          "id": "p1s2",
+          "name": "Effect of source resistance",
+          "description": "Explain how the 600 Ohm source resistance changes the gain you would actually measure at the output, and identify which element of the small-signal model is responsible.",
+          "points": 15,
+          "submissionType": "AI Graded: Medium"
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Design Trade-offs",
+      "description": "You are asked to raise the gain of the stage in Problem 1 without changing the supply voltage.",
+      "subsections": [
+        {
+          "id": "p2s0",
+          "name": "Propose and defend a design change",
+          "description": "Propose one change to the circuit that raises the voltage gain, work through its effect on bias point, headroom, and bandwidth, and explain what you are giving up. A complete answer names the trade-off explicitly rather than only describing the benefit.",
+          "points": 25,
+          "submissionType": "AI Graded: Long"
+        },
+        {
+          "id": "p2s1",
+          "name": "Final numeric answer",
+          "description": "State the new voltage gain produced by your proposed change, as a single number with units.",
+          "points": 5,
+          "submissionType": "Text"
+        },
+        {
+          "id": "p2s2",
+          "name": "Annotated schematic",
+          "description": "Upload a photograph or export of your revised schematic with the changed element marked.",
+          "points": 10,
+          "submissionType": "Image",
+          "maxImages": 2
+        }
+      ]
+    }
+  ],
+  "createdAt": 1755500000000,
+  "updatedAt": 1755500000000
+}

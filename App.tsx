@@ -5,16 +5,23 @@ import html2canvas from 'html2canvas';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
 import PageUploader from './components/PageUploader';
+import CropReview from './components/CropReview';
 import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
-import { AppState, Assignment, PageRef, SubmissionData, BackupData } from './types';
+import {
+  AppState, Assignment, CropRef, PageRef, StoredLayoutMap, StudentReview,
+  SubmissionData, BackupData,
+} from './types';
 import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
-import { IngestedPage, blobToDataUri, dataUriToBlob, rotatePageBlob } from './imageIngest';
+import { IngestedPage, blobToDataUri, dataUriToBlob, ingestPage, rotatePageBlob } from './imageIngest';
 import { downloadBlob } from './downloadFile';
 import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
 import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
+import { BundleError, loadAssignmentBundle } from './services/assignmentBundle';
+import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
+import { registerAndCropPage } from './services/pageCrops';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
@@ -36,40 +43,33 @@ function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise
   });
 }
 
-// Page order drives the filenames inside the submission ZIP, so it is
-// recomputed on every add, removal and reorder. Regions bind to PageRef.id,
-// never to the filename, so reordering never invalidates a marking.
+// Page order drives the filenames the pages are written under in the submission
+// ZIP, so it is recomputed on every add, removal and reorder. Crops bind to
+// PageRef.id and to the page's own `k` from its QR, never to the filename, so
+// reordering never invalidates one.
+//
+// (This comment used to assert the pages ship. Until the fix below they did
+// not: the ZIP builder never referenced state.pages, so a handwritten student
+// submitted the blank question paper and a JSON of nulls. They ship now.)
 const renumberPages = (pages: PageRef[]): PageRef[] =>
   pages.map((page, idx) => ({ ...page, file: `page_${idx + 1}.jpg` }));
 
 const newPageId = (): string =>
   `pg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-// A quarter turn clockwise carries anything marked on the page with it:
-// in the normalized frame (x, y, w, h) → (1 − y − h, x, h, w).
-// Nothing writes regions yet — the marker is stage 2b — but rotation and
-// marking are independent controls on the same page, so a student will
-// eventually do them in either order, and a stale rectangle would crop the
-// wrong part of the page with nothing on screen to show it went wrong.
-const rotateRegionsClockwise = (data: SubmissionData, pageId: string): SubmissionData => {
-  let changed = false;
-  const next: SubmissionData = {};
-  for (const [key, entry] of Object.entries(data)) {
-    const regions = entry.regions;
-    if (!regions?.some(r => r.page === pageId)) {
-      next[key] = entry;
-      continue;
-    }
-    changed = true;
-    next[key] = {
-      ...entry,
-      regions: regions.map(r => r.page === pageId
-        ? { page: r.page, x: 1 - r.y - r.h, y: r.x, w: r.h, h: r.w }
-        : r)
-    };
-  }
-  return changed ? next : data;
-};
+/** IndexedDB key for a crop bitmap; page bitmaps use the bare PageRef.id. */
+const cropKey = (regionId: string): string => `crop_${regionId}`;
+
+const cropFileName = (regionId: string): string =>
+  `crops/${regionId.replace(/[^a-z0-9_\-]/gi, '_')}.jpg`;
+
+// `@types/react` is not installed, so `state` inside the component is untyped
+// and `Object.values(state.crops)` comes back as `{}[]`. Going through this
+// keeps every crop loop typed without pulling React's types into a work order
+// that has nothing to do with them. (Flagged in the completion notes: the whole
+// of App.tsx is currently unchecked for the same reason.)
+const cropList = (crops: Record<string, CropRef>): CropRef[] =>
+  Object.keys(crops).map((regionId) => crops[regionId]);
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -77,6 +77,8 @@ const App: React.FC = () => {
     assignment: null,
     submissionData: {},
     pages: [],
+    layout: null,
+    crops: {},
     viewMode: 'edit',
     lastSaved: null,
     privacyAcknowledged: false
@@ -90,6 +92,13 @@ const App: React.FC = () => {
   // metadata but no image — the uploader surfaces it as needing re-upload.
   const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
   const pageUrlsRef = useRef<Record<string, string>>({});
+
+  // The same, for crop bitmaps, keyed by region_id.
+  const [cropUrls, setCropUrls] = useState<Record<string, string>>({});
+  const cropUrlsRef = useRef<Record<string, string>>({});
+
+  /** region_id currently being re-cut, so the review row can say so. */
+  const [cropBusy, setCropBusy] = useState<string | null>(null);
 
   const isHandwritten = state.assignment?.inputMode === 'handwritten';
 
@@ -115,19 +124,46 @@ const App: React.FC = () => {
     setPageUrls({});
   }, []);
 
-  // Revoke on unmount so a long session does not leak page bitmaps.
-  useEffect(() => () => {
-    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+  const setCropUrl = useCallback((regionId: string, blob: Blob) => {
+    const previous = cropUrlsRef.current[regionId];
+    if (previous) URL.revokeObjectURL(previous);
+    cropUrlsRef.current = { ...cropUrlsRef.current, [regionId]: URL.createObjectURL(blob) };
+    setCropUrls(cropUrlsRef.current);
   }, []);
 
-  /** Pulls stored bitmaps for a page list; anything missing stays missing. */
-  const hydratePages = useCallback(async (pages: PageRef[]) => {
+  const dropAllCropUrls = useCallback(() => {
+    Object.values(cropUrlsRef.current).forEach(URL.revokeObjectURL);
+    cropUrlsRef.current = {};
+    setCropUrls({});
+  }, []);
+
+  // Revoke on unmount so a long session does not leak page or crop bitmaps.
+  useEffect(() => () => {
+    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+    Object.values(cropUrlsRef.current).forEach(URL.revokeObjectURL);
+  }, []);
+
+  /**
+   * Pulls stored bitmaps for the pages and crops; anything missing stays
+   * missing. The prune has to see BOTH lists — page and crop bitmaps share one
+   * object store, so pruning against the pages alone deletes every crop.
+   */
+  const hydrateStoredImages = useCallback(async (
+    pages: PageRef[], crops: Record<string, CropRef>
+  ) => {
     for (const page of pages) {
       const blob = await getPageBlob(page.id);
       if (blob) setPageUrl(page.id, blob);
     }
-    await pruneExcept(pages.map((p) => p.id));
-  }, [setPageUrl]);
+    for (const regionId of Object.keys(crops)) {
+      const blob = await getPageBlob(cropKey(regionId));
+      if (blob) setCropUrl(regionId, blob);
+    }
+    await pruneExcept([
+      ...pages.map((p) => p.id),
+      ...Object.keys(crops).map(cropKey),
+    ]);
+  }, [setPageUrl, setCropUrl]);
 
   // Mobile detection
   useEffect(() => {
@@ -155,19 +191,25 @@ const App: React.FC = () => {
         // Only restore if version matches or simple check passes
         if (parsed.submissionData) {
            const pages: PageRef[] = Array.isArray(parsed.pages) ? parsed.pages : [];
+           const crops: Record<string, CropRef> =
+             parsed.crops && typeof parsed.crops === 'object' ? parsed.crops : {};
            setState(prev => ({
              ...prev,
              studentName: parsed.studentName || '',
              assignment: parsed.assignment || null,
              submissionData: parsed.submissionData || {},
              pages,
+             layout: parsed.layout ?? null,
+             crops,
              lastSaved: parsed.lastSaved || null,
              privacyAcknowledged: true // If they have data, they likely ack'd privacy
            }));
-           // Page bitmaps live in IndexedDB, so they restore separately and may
-           // be gone (cleared cache, different browser). Regions are kept either
-           // way — re-uploading the same page in the same slot revalidates them.
-           if (pages.length > 0) void hydratePages(pages);
+           // Page and crop bitmaps live in IndexedDB, so they restore separately
+           // and may be gone (cleared cache, different browser). The metadata is
+           // kept either way — re-photographing the page re-cuts its crops.
+           if (pages.length > 0 || Object.keys(crops).length > 0) {
+             void hydrateStoredImages(pages, crops);
+           }
         }
       } catch (e) {
         console.error("Failed to restore session", e);
@@ -187,6 +229,8 @@ const App: React.FC = () => {
           assignment: state.assignment,
           submissionData: state.submissionData,
           pages: state.pages,
+          layout: state.layout,
+          crops: state.crops,
           lastSaved: new Date().toISOString()
         };
         try {
@@ -202,7 +246,7 @@ const App: React.FC = () => {
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [state.studentName, state.submissionData, state.assignment, state.pages]);
+  }, [state.studentName, state.submissionData, state.assignment, state.pages, state.layout, state.crops]);
 
   // Handlers
   const handleUpdateStudent = (field: string, value: string) => {
@@ -221,6 +265,77 @@ const App: React.FC = () => {
 
   // --- Handwritten page pool ---
 
+  /**
+   * Registers one photographed page and stores every crop the map declares for
+   * it. Runs on upload, on replace and on rotate, because all three change what
+   * the camera actually delivered and none of them can be corrected for by
+   * moving a rectangle: the transform is fitted to the marks on THIS bitmap.
+   *
+   * A page whose QR names a layout other than the one in the loaded file is
+   * refused here and nothing is cropped. That is the single check standing
+   * between a student who printed this week's sheet and loaded last week's zip
+   * and a submission full of perfectly cut rectangles under the wrong labels.
+   */
+  const runRegistration = useCallback(async (
+    pageId: string, blob: Blob, layout: StoredLayoutMap | null, pageWarnings: string[]
+  ): Promise<void> => {
+    const result = await registerAndCropPage(blob, layout);
+    const reg = result.registration;
+    const fields = reg.qr?.fields;
+
+    const info: PageRef['registration'] = result.layoutMismatch
+      ? {
+          status: 'layout_mismatch',
+          k: fields?.k, n: fields?.n, layoutId: result.layoutMismatch.onPage,
+          marksFound: reg.marksFound,
+          message:
+            'This page belongs to a different version of the assignment than the file you loaded, ' +
+            'so nothing was cut from it. Load the assignment zip you printed these pages from.',
+        }
+      : !reg.usable
+        ? {
+            status: 'failed',
+            k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
+            marksFound: reg.marksFound, message: reg.message,
+          }
+        : {
+            status: reg.status === 'degraded' ? 'degraded' : 'ok',
+            k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
+            marksFound: reg.marksFound,
+            residualMm: reg.residualMm ?? undefined,
+            message: reg.message,
+          };
+
+    const cut: Record<string, CropRef> = {};
+    for (const c of result.crops) {
+      await putPageBlob(cropKey(c.row.regionId), c.blob);
+      setCropUrl(c.row.regionId, c.blob);
+      cut[c.row.regionId] = {
+        regionId: c.row.regionId,
+        partId: c.row.partId,
+        pageK: c.row.pageK,
+        isDrawing: c.row.isDrawing,
+        maxPoints: c.row.maxPoints,
+        cropSource: 'registration',
+        // Re-cutting a page resets its sign-off: the picture the student
+        // approved is not the picture that would now be submitted.
+        review: 'not_reviewed',
+        qualityFlags: [...c.flags, ...pageWarnings],
+        file: cropFileName(c.row.regionId),
+        width: c.width,
+        height: c.height,
+        bytes: c.blob.size,
+        fromPage: pageId,
+      };
+    }
+
+    setState(prev => ({
+      ...prev,
+      pages: prev.pages.map(page => page.id === pageId ? { ...page, registration: info } : page),
+      crops: { ...prev.crops, ...cut },
+    }));
+  }, [setCropUrl]);
+
   const handleAddPage = async (ingested: IngestedPage) => {
     const id = newPageId();
     await putPageBlob(id, ingested.blob);
@@ -236,13 +351,16 @@ const App: React.FC = () => {
           height: ingested.height,
           bytes: ingested.bytes,
           sourceName: ingested.sourceName,
-          warnings: ingested.warnings
+          warnings: ingested.warnings,
+          registration: { status: 'pending' }
         }
       ])
     }));
+    if (isHandwritten) await runRegistration(id, ingested.blob, state.layout, ingested.warnings);
   };
 
-  // Keeps the id, so any regions already marked against this slot stay valid.
+  // Keeps the id, so the page keeps its place in the pool and its crops are
+  // re-cut into the same region slots.
   const handleReplacePage = async (id: string, ingested: IngestedPage) => {
     await putPageBlob(id, ingested.blob);
     setPageUrl(id, ingested.blob);
@@ -255,10 +373,12 @@ const App: React.FC = () => {
             height: ingested.height,
             bytes: ingested.bytes,
             sourceName: ingested.sourceName,
-            warnings: ingested.warnings
+            warnings: ingested.warnings,
+            registration: { status: 'pending' }
           }
         : page)
     }));
+    if (isHandwritten) await runRegistration(id, ingested.blob, state.layout, ingested.warnings);
   };
 
   // Rotation rewrites the stored bitmap, so width/height swap with it and the
@@ -274,13 +394,20 @@ const App: React.FC = () => {
       const rotated = await rotatePageBlob(blob);
       await putPageBlob(id, rotated.blob);
       setPageUrl(id, rotated.blob);
+      const warnings = state.pages.find(p => p.id === id)?.warnings ?? [];
       setState(prev => ({
         ...prev,
-        submissionData: rotateRegionsClockwise(prev.submissionData, id),
         pages: prev.pages.map(page => page.id === id
-          ? { ...page, width: rotated.width, height: rotated.height, bytes: rotated.bytes }
+          ? {
+              ...page, width: rotated.width, height: rotated.height, bytes: rotated.bytes,
+              registration: { status: 'pending' }
+            }
           : page)
       }));
+      // Rotation rewrites the stored bitmap, so the transform fitted to the old
+      // one is void. Re-register rather than trying to turn the map: the marks
+      // are on the paper and the paper just moved.
+      if (isHandwritten) await runRegistration(id, rotated.blob, state.layout, warnings);
     } catch (err) {
       console.error('Rotate failed', err);
       setStatusMessage('This page could not be rotated. Try retaking it.');
@@ -288,12 +415,24 @@ const App: React.FC = () => {
   };
 
   const handleRemovePage = (id: string) => {
-    if (!window.confirm("Remove this page? You can upload it again afterwards, but anything you have marked on it will be lost.")) {
+    if (!window.confirm("Remove this page? You can upload it again afterwards, but the answers cut from it will go with it.")) {
       return;
     }
     void deletePageBlob(id);
     dropPageUrl(id);
-    setState(prev => ({ ...prev, pages: renumberPages(prev.pages.filter(page => page.id !== id)) }));
+    setState(prev => {
+      // Crops the student photographed directly are theirs, not this page's,
+      // and survive the page going away.
+      const crops: Record<string, CropRef> = {};
+      for (const crop of cropList(prev.crops)) {
+        if (crop.fromPage === id && crop.cropSource === 'registration') {
+          void deletePageBlob(cropKey(crop.regionId));
+          continue;
+        }
+        crops[crop.regionId] = crop;
+      }
+      return { ...prev, crops, pages: renumberPages(prev.pages.filter(page => page.id !== id)) };
+    });
   };
 
   const handleMovePage = (id: string, delta: number) => {
@@ -308,11 +447,100 @@ const App: React.FC = () => {
     });
   };
 
-  const handleLoadAssignment = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+  // --- Review and the two recovery routes (work order section 5) ---
+
+  const handleReviewCrop = (regionId: string, review: StudentReview) => {
+    setState(prev => {
+      const crop = prev.crops[regionId];
+      if (!crop) return prev;
+      return { ...prev, crops: { ...prev.crops, [regionId]: { ...crop, review } } };
+    });
+  };
+
+  /**
+   * Recovery route two: the student frames just that answer and the photograph
+   * **is** the crop. No registration, no rectangle, no map lookup for geometry —
+   * only the map row's labels, which are what the grader needs to file it.
+   *
+   * This is also the route for a student with no printer, who writes on blank
+   * paper and photographs each answer in turn. `crop_source` says so, because a
+   * grader must not assume a direct capture came from a known rectangle on a
+   * registered page.
+   */
+  const handleDirectCapture = async (regionId: string, file: File) => {
+    const row = state.layout?.rows.find(r => r.regionId === regionId);
+    if (!row) return;
+    setCropBusy(regionId);
+    try {
+      const result = await ingestPage(file);
+      if (!result.page) {
+        setStatusMessage(result.reason ?? 'That photo could not be used. Try taking it again.');
+        return;
+      }
+      await putPageBlob(cropKey(regionId), result.page.blob);
+      setCropUrl(regionId, result.page.blob);
+      setState(prev => ({
+        ...prev,
+        crops: {
+          ...prev.crops,
+          [regionId]: {
+            regionId,
+            partId: row.partId,
+            pageK: row.pageK,
+            isDrawing: row.isDrawing,
+            maxPoints: row.maxPoints,
+            cropSource: 'direct_capture',
+            review: 'not_reviewed',
+            qualityFlags: result.page.warnings,
+            file: cropFileName(regionId),
+            width: result.page.width,
+            height: result.page.height,
+            bytes: result.page.bytes,
+          },
+        },
+      }));
+      setStatusMessage('');
+    } finally {
+      setCropBusy(null);
+    }
+  };
+
+  /**
+   * Recovery route one: replace the whole page and re-cut every part on it.
+   * A page the student has not photographed yet is added rather than replaced,
+   * so "retake page 4" works before page 4 exists.
+   */
+  const handleRephotographPage = async (pageK: number, file: File) => {
+    setCropBusy(`page-${pageK}`);
+    try {
+      const result = await ingestPage(file);
+      if (!result.page) {
+        setStatusMessage(result.reason ?? 'That photo could not be used. Try taking it again.');
+        return;
+      }
+      const existing = state.pages.find(p => p.registration?.k === pageK);
+      if (existing) await handleReplacePage(existing.id, result.page);
+      else await handleAddPage(result.page);
+      setStatusMessage('');
+    } finally {
+      setCropBusy(null);
+    }
+  };
+
+  /**
+   * The student loads ONE file: the `student/` folder of the instructor's
+   * export, zipped — the same file they printed the PDF from. The zip carries
+   * the spec and the geometry map together, which is what makes the stale-map
+   * check possible at all.
+   *
+   * A bare `assignment_spec.json` still loads. Electronic assignments have no
+   * map and never needed one, and every file already in circulation is a bare
+   * spec, so refusing one would break them all to buy nothing.
+   */
+  const handleLoadAssignment = async (file: File) => {
       try {
-        const raw = (e.target?.result as string).trim();
+        const loaded = await loadAssignmentBundle(file);
+        const raw = loaded.specText;
         // Decode if encoded by Assignment Maker (gb1:…), otherwise parse plain JSON
         const decoded = (isEncoded(raw)
           ? await decryptJson(raw)
@@ -354,26 +582,62 @@ const App: React.FC = () => {
         )) {
           return;
         }
+        // The map, when the bundle carries one.
+        let layout: StoredLayoutMap | null = null;
+        if (loaded.layout) {
+          layout = await parseLayoutCsv(loaded.layout.text, loaded.layout.name);
+          if (layout.declaredLayoutId && layout.declaredLayoutId !== layout.computedLayoutId) {
+            throw new LayoutMapError(
+              `${loaded.layout.name} says its layout id is ${layout.declaredLayoutId}, but its own ` +
+              `rows come to ${layout.computedLayoutId}. The file has been edited or was not ` +
+              "downloaded completely — get the assignment file again."
+            );
+          }
+        }
+
         void clearPageBlobs();
         dropAllPageUrls();
-        setState(prev => ({ ...prev, assignment: json, submissionData: {}, pages: [] }));
+        dropAllCropUrls();
+        setState(prev => ({
+          ...prev, assignment: json, submissionData: {}, pages: [], layout, crops: {},
+        }));
+
+        // A handwritten assignment with no map can be photographed but never
+        // cropped. Say so here, plainly, rather than letting it fail later.
+        if (json.inputMode === 'handwritten' && !layout) {
+          alert(
+            "This assignment is written on paper, but the file you loaded has no layout map in it.\n\n" +
+            "You can still photograph your pages, but the app cannot cut your answers out of them " +
+            "for you, and your grader will get whole pages instead of answers.\n\n" +
+            "Load the assignment zip your instructor gave you — the one you printed the PDF from — " +
+            "rather than the assignment_spec.json on its own."
+          );
+        }
       } catch (err) {
+        // A bundle or map problem already says exactly what is wrong and what
+        // to do about it; do not bury it under the generic advice.
+        if (err instanceof BundleError || err instanceof LayoutMapError) {
+          alert(err.message);
+          return;
+        }
         alert(
           "Invalid Assignment File\n\n" +
           "This file doesn't appear to be a valid assignment.\n\n" +
-          "Please use the assignment JSON file provided by your course/instructor.\n\n" +
+          "Please use the assignment file your course/instructor provided — the zip you printed " +
+          "your pages from, or the assignment_spec.json inside it.\n\n" +
           "If you're trying to restore your previous work, use \"Load Work\" instead."
         );
       }
-    };
-    reader.readAsText(file);
   };
 
   const handleLoadDemo = () => {
     // Load the demo assignment directly without file upload
     void clearPageBlobs();
     dropAllPageUrls();
-    setState(prev => ({ ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {}, pages: [] }));
+    dropAllCropUrls();
+    setState(prev => ({
+      ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {}, pages: [], layout: null, crops: {},
+    }));
     setStatusMessage(DEMO_LOADED_MESSAGE);
     // Clear the message after 5 seconds
     setTimeout(() => setStatusMessage(''), 5000);
@@ -391,16 +655,26 @@ const App: React.FC = () => {
     };
 
     // A backup that omitted the pages would send a student who restores it
-    // back out to re-photograph everything, so carry the bitmaps too.
-    if (state.pages.length > 0) {
+    // back out to re-photograph everything, so carry the bitmaps too — and the
+    // crops with their sign-off state, so a restore does not send them back
+    // through the review either.
+    if (state.pages.length > 0 || Object.keys(state.crops).length > 0) {
       setStatusMessage('Packing your pages into the backup...');
       const images: Record<string, string> = {};
       for (const page of state.pages) {
         const pageBlob = await getPageBlob(page.id);
         if (pageBlob) images[page.id] = await blobToDataUri(pageBlob);
       }
+      const cropImages: Record<string, string> = {};
+      for (const regionId of Object.keys(state.crops)) {
+        const cropBlob = await getPageBlob(cropKey(regionId));
+        if (cropBlob) cropImages[regionId] = await blobToDataUri(cropBlob);
+      }
       backup.pages = state.pages;
       backup.page_images = images;
+      backup.layout = state.layout;
+      backup.crops = state.crops;
+      backup.crop_images = cropImages;
       setStatusMessage('');
     }
 
@@ -432,7 +706,7 @@ const App: React.FC = () => {
             "You selected an ASSIGNMENT file (used to define problems).\n\n" +
             "To restore your work, use a BACKUP file instead.\n" +
             "Backup files are named like: CourseCode_Title_backup.json\n\n" +
-            "To load an assignment, use 'Upload JSON' in the Assignment section above."
+            "To load an assignment, use 'Upload assignment' in the Assignment section above."
           );
           return;
         }
@@ -453,7 +727,7 @@ const App: React.FC = () => {
         if (!state.assignment && !window.confirm(
           "You haven't loaded an assignment file yet.\n\n" +
           "This backup might not display correctly without the original assignment structure.\n\n" +
-          "Recommended: First upload the assignment JSON, then load your backup.\n\n" +
+          "Recommended: First upload the assignment file, then load your backup.\n\n" +
           "Continue anyway?"
         )) {
           return;
@@ -474,10 +748,12 @@ const App: React.FC = () => {
         // Pages, when the backup carries them. Written back into IndexedDB so
         // they behave exactly like freshly uploaded pages from here on.
         const restoredPages = Array.isArray(backupData.pages) ? backupData.pages : [];
-        if (restoredPages.length > 0) {
+        const restoredCrops = backupData.crops ?? {};
+        if (restoredPages.length > 0 || Object.keys(restoredCrops).length > 0) {
           setStatusMessage('Restoring your pages...');
           await clearPageBlobs();
           dropAllPageUrls();
+          dropAllCropUrls();
           for (const page of restoredPages) {
             const dataUri = backupData.page_images?.[page.id];
             if (!dataUri) continue;
@@ -489,6 +765,17 @@ const App: React.FC = () => {
               console.error(`Could not restore page ${page.id}`, err);
             }
           }
+          for (const regionId of Object.keys(restoredCrops)) {
+            const dataUri = backupData.crop_images?.[regionId];
+            if (!dataUri) continue;
+            try {
+              const cropBlob = dataUriToBlob(dataUri);
+              await putPageBlob(cropKey(regionId), cropBlob);
+              setCropUrl(regionId, cropBlob);
+            } catch (err) {
+              console.error(`Could not restore crop ${regionId}`, err);
+            }
+          }
           setStatusMessage('');
         }
 
@@ -497,6 +784,8 @@ const App: React.FC = () => {
           studentName: backupData.student_name,
           submissionData: backupData.submission_data,
           pages: restoredPages.length > 0 ? renumberPages(restoredPages) : prev.pages,
+          layout: backupData.layout ?? prev.layout,
+          crops: Object.keys(restoredCrops).length > 0 ? restoredCrops : prev.crops,
           lastSaved: new Date().toISOString()
         }));
         alert("Work restored successfully!");
@@ -517,11 +806,14 @@ const App: React.FC = () => {
          localStorage.removeItem(STORAGE_KEY);
          void clearPageBlobs();
          dropAllPageUrls();
+         dropAllCropUrls();
          setState({
             studentName: '',
             assignment: null,
             submissionData: {},
             pages: [],
+            layout: null,
+            crops: {},
             viewMode: 'edit',
             lastSaved: null,
             privacyAcknowledged: true
@@ -654,17 +946,58 @@ const App: React.FC = () => {
     const pdfFilename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
       .replace(/[^a-z0-9_\-\.]/gi, '_');
 
-    const submissionJson = {
+    const submissionJson: Record<string, unknown> = {
       student_name: state.studentName,
       course_code: state.assignment.courseCode,
       assignment_id: assignmentId,
       pdf_filename: pdfFilename,
       // Pass-through, per-assignment. Always a real boolean so the autograder
-      // never has to tell "off" apart from "an older app version".
+      // never has to tell "off" apart from "an older app version". This
+      // survives the handwritten rewrite deliberately.
       ai_feedback: state.assignment.aiFeedback === true,
       submission_data: convertedData,
       last_saved: new Date().toISOString()
     };
+
+    // Handwritten: the pages, the crops and what the student said about each.
+    // Nothing here is emitted for an electronic assignment, whose payload is
+    // byte-for-byte what it was.
+    if (isHandwritten) {
+      submissionJson.input_mode = 'handwritten';
+      submissionJson.layout_id = state.layout?.computedLayoutId ?? null;
+      // `k` and `N` come from each page's own QR, never from upload order.
+      submissionJson.pages = state.pages.map(page => ({
+        file: page.file,
+        width: page.width,
+        height: page.height,
+        k: page.registration?.k ?? null,
+        n: page.registration?.n ?? null,
+        registration: page.registration?.status ?? 'pending',
+        marks_found: page.registration?.marksFound ?? 0,
+        residual_mm: page.registration?.residualMm ?? null,
+      }));
+      const crops: Record<string, unknown> = {};
+      for (const crop of cropList(state.crops)) {
+        crops[crop.regionId] = {
+          region_id: crop.regionId,
+          part_id: crop.partId,
+          page_k: crop.pageK,
+          is_drawing: crop.isDrawing,
+          max_points: crop.maxPoints,
+          // How it was obtained. A grader must not assume a direct capture came
+          // from a known rectangle on a registered page.
+          crop_source: crop.cropSource,
+          // What the student said after looking at it. A part they never
+          // reached is neither signed off nor flagged.
+          student_review: crop.review,
+          quality_flags: crop.qualityFlags,
+          file: crop.file,
+          width: crop.width,
+          height: crop.height,
+        };
+      }
+      submissionJson.crops = crops;
+    }
 
     // Format selection: a spec carrying a course public key gets the hardened
     // gb2 envelope with a de-identified payload; everything else stays on gb1.
@@ -718,6 +1051,19 @@ const App: React.FC = () => {
 
       zip.file(`${baseName}.json`, jsonResult.bytes);
       zip.file(`${baseName}.pdf`, pdfBytes);
+
+      // The pages and the crops. Until this landed the ZIP builder never
+      // referenced state.pages at all, so a handwritten student submitted a PDF
+      // of the blank question paper and a JSON in which every answer was null —
+      // and nothing anywhere said so.
+      for (const page of state.pages) {
+        const pageBlob = await getPageBlob(page.id);
+        if (pageBlob) zip.file(page.file, pageBlob);
+      }
+      for (const crop of cropList(state.crops)) {
+        const cropBlob = await getPageBlob(cropKey(crop.regionId));
+        if (cropBlob) zip.file(crop.file, cropBlob);
+      }
 
       for (let pIdx = 0; pIdx < state.assignment.problems.length; pIdx++) {
         const problem = state.assignment.problems[pIdx];
@@ -892,7 +1238,7 @@ const App: React.FC = () => {
                     </li>
                     <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
                       <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
-                      <span><strong>Load assignment</strong> - Upload the JSON file your instructor provided (or try demo)</span>
+                      <span><strong>Load assignment</strong> - Upload the assignment file your instructor provided — the zip you printed your pages from (or try the demo)</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
                       <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
@@ -910,7 +1256,7 @@ const App: React.FC = () => {
 
                 {state.studentName.trim() ? (
                   <div className="flex flex-col items-center gap-3">
-                    <p className="text-sm text-gray-600 font-medium">Upload an assignment JSON from the sidebar, or try the demo:</p>
+                    <p className="text-sm text-gray-600 font-medium">Upload your assignment file from the sidebar, or try the demo:</p>
                     <button
                       onClick={handleLoadDemo}
                       className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg shadow-lg transition-all font-medium"
@@ -955,6 +1301,23 @@ const App: React.FC = () => {
                      onRemovePage={handleRemovePage}
                      onMovePage={handleMovePage}
                      onRotatePage={handleRotatePage}
+                   />
+                 )}
+
+                 {/* The review step. Every crop, every time, before submission —
+                     not optional and not collapsible. It appears as soon as the
+                     map is loaded, so a student sees the empty list of parts
+                     they have to fill before they start photographing. */}
+                 {isHandwritten && state.layout && (
+                   <CropReview
+                     layout={state.layout}
+                     crops={state.crops}
+                     cropUrls={cropUrls}
+                     pages={state.pages}
+                     onReview={handleReviewCrop}
+                     onDirectCapture={handleDirectCapture}
+                     onRephotographPage={handleRephotographPage}
+                     busy={cropBusy}
                    />
                  )}
 

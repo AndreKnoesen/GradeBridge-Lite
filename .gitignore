@@ -35,3 +35,7 @@ HANDOFF_*.md
 COMPLETION_*.md
 WORKORDER_*.md
 CORRECTION_*.md
+
+# Generated capture set for the registration suite (npm run captures rebuilds it).
+# Real photographs in tests/captures/real/ ARE tracked — they are the evidence.
+tests/captures/synthetic/

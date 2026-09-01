@@ -45,13 +45,33 @@ This app handles lab reports, mini-projects, and homework:
 2. Click **"Try Demo Assignment"** in the sidebar
 3. Click **"LaTeX Math Help"** for math notation reference
 
-### Complete an Assignment
-1. Get assignment JSON from instructor
-2. Click **"Upload JSON"** in sidebar
+### Complete an assignment — typed
+1. Get the assignment file from your instructor
+2. Click **"Upload assignment"** in the sidebar
 3. Enter your full name
 4. Complete each problem (text / images / text+image / AI-graded response)
 5. Click **"Download for Gradescope"** — downloads a single ZIP containing the submission JSON and PDF
 6. Upload the ZIP file to Gradescope
+
+### Complete an assignment — handwritten
+Handwritten assignments are answered on paper. You get **one file**, a zip, and
+you use it twice.
+
+1. Open the zip and print `assignment.pdf` **at 100%** — not "fit to page", which
+   changes the scale and moves the corner marks the app registers against
+2. Write your answers in the printed boxes
+3. Load **that same zip** in the app (it holds the questions and the page geometry
+   together, which is what lets the app tell a stale sheet from a current one)
+4. Photograph your pages and upload them. They do not have to be in order — each
+   page says which page it is, in the code printed in its top-right corner
+5. **Check every answer.** The app shows you each one cut out, exactly as your
+   grader will see it. Sign each off, or flag it
+6. If a picture is wrong: retake the whole page, or photograph just that answer
+   and hand that picture in directly. Either works
+7. Click **"Download for Gradescope"** and upload the ZIP
+
+Flagging an answer does **not** stop you submitting — the flag goes to your
+grader with the picture.
 
 ### Local Development
 ```bash
@@ -146,9 +166,9 @@ re-implement the splitter locally.
 | Issue | Solution |
 |-------|----------|
 | Assignment won't load | Verify JSON was exported from Assignment Maker (encrypted `.json` file) |
-| LaTeX not rendering | Refresh page; KaTeX loads from CDN |
+| LaTeX not rendering | Refresh the page. KaTeX is bundled, so this is not a connection problem |
 | Single `$...$` shows as raw text | Check the `$` signs are paired and the expression is valid LaTeX (see [Math notation](#math-notation-latex)) |
-| PDF generation fails | Check internet connection; html2pdf loads from CDN |
+| PDF generation fails | Refresh and try again. Everything needed is bundled; the app makes no network requests |
 | Lost work | Use "Save Backup" regularly; restore with "Load Work" |
 | Images too large | Files over 4 MB are rejected; compress or use JPG instead of PNG |
 | Word count displayed | Shows current word count as guidance — no minimum or maximum is enforced |
@@ -187,7 +207,15 @@ See the [Assignment Maker README](https://github.com/BridgeSuite/GradeBridge-Ass
 ## Development
 
 ### Tech Stack
-React 19 + TypeScript + Vite + Tailwind CSS + KaTeX (CDN) + html2canvas (CDN) + jsPDF (CDN) + JSZip
+React 19 + TypeScript + Vite + Tailwind CSS + KaTeX + html2canvas + jsPDF + JSZip + jsqr
+
+**Everything is bundled into `dist/` at build time.** No CDN script tag, no
+runtime `fetch`, no wasm pulled from a URL, no dynamic import from a URL — a
+student photographing homework on a phone with no signal must still be able to
+submit. `jsqr` was chosen over the better-known QR decoders for exactly this
+reason: it is pure JavaScript and needs no wasm. (The one `cdnjs` string in the
+built bundle is a literal inside jsPDF's own `pdfobject` viewer path, which this
+app never calls; it is not a request.)
 
 ### Build & Deploy
 ```bash
@@ -197,8 +225,16 @@ npm run deploy     # Deploy to GitHub Pages
 
 ### Tests
 ```bash
-npm test           # cryptoService gb1 / gb2 suite
+npm test           # every suite, including registration and crop
+npm run captures   # regenerate the synthetic capture set on its own
 ```
+`tests/registration-tests.mjs` runs the handwritten path end to end in plain
+Node: the zip loader, the `layout_id` hash check, QR decode, mark detection, the
+transform and the crops, over a generated set of degraded captures. It prints a
+detection table. **That set is synthetic and is not the evidence the work order
+asks for** — see `tests/captures/README.md`, and drop real photographs into
+`tests/captures/real/` to have them scored alongside.
+
 The gb2 round-trip checks need the verified test fixture (test keypair + plaintext + a known-good `gb2:` string). It is deliberately **not** committed — it contains a private key. The runner looks for `../Encryption/gb2_test_fixture.json` relative to the repo, or wherever `GB2_FIXTURE` points:
 ```bash
 GB2_FIXTURE=/path/to/gb2_test_fixture.json npm test
@@ -208,6 +244,34 @@ Without it the suite still runs everything using an ephemeral keypair and marks 
 ---
 
 ## Changelog
+
+### v3.8.0 — the handwritten submission path
+- **The student loads one file: the assignment zip.** It carries
+  `assignment_spec.json` and `layout_{ID}.csv` together. A bare
+  `assignment_spec.json` still loads, so electronic assignments and every file
+  already in circulation are unaffected.
+- **`layout_id` is recomputed from the map and checked against the QR on every
+  page.** On a mismatch nothing is cropped and the student is told the file does
+  not match their pages. This is the one check that catches a student printing
+  this week's sheet and loading last week's zip — a failure that is otherwise
+  completely silent, producing correct rectangles under the wrong labels.
+- **Pages are registered and answers are cut out**: QR decode, reorient
+  (including 180 degrees), find the four registration marks, fit a four-point
+  transform, sample each declared rectangle. No network, no wasm, no full-page
+  warp. `jsqr` is the only new runtime dependency.
+- **Every answer is shown back before submission**, in assignment order,
+  labelled as exactly what the grader will see. The student signs each off or
+  flags it. **A flag never blocks submission.**
+- **Two recovery routes**: retake the whole page, or photograph just that answer
+  area — in which case the photograph *is* the crop, recorded as
+  `crop_source: "direct_capture"`. The second route also covers a student with
+  no printer, who writes on blank paper.
+- **Fixed: the pages never shipped.** The ZIP builder did not reference the
+  uploaded pages at all, so a handwritten student submitted a PDF of the blank
+  question paper and a JSON in which every answer was `null`. Three comments in
+  the tree asserted otherwise; all three are corrected.
+- Submission JSON gains `input_mode`, `layout_id`, `pages` (each with its `k`
+  and `N` from its own QR) and `crops`. `ai_feedback` is unchanged.
 
 ### v3.6.0
 - **`gb2:` hardened submission encoding.** When the loaded assignment spec carries a `coursePublicKey` (SPKI PEM), the submission JSON is encoded as a public-key envelope and de-identified — `student_name`, `email`, `sid`, and `student_id` are stripped from the payload. Specs without that field are unaffected and still produce `gb1:`. See [Gradescope Integration](#submission-encoding-gb1-and-gb2).
@@ -228,9 +292,9 @@ Without it the suite still runs everything using an ephemeral keypair and marks 
 
 ## Known Limitations
 
-- **CDN Dependencies** - KaTeX, html2canvas, and jsPDF load from CDN; internet required for LaTeX rendering and PDF generation
 - **Long Text Answers** - Very long answers that exceed one page may have imperfect breaks (html2pdf limitation)
-- **Mobile Experience** - Optimized for desktop; functional but not ideal on phones
+- **Mobile Experience** - Optimized for desktop for typed assignments; a handwritten assignment is meant to be done on the phone that took the photographs
+- **Registration thresholds are untuned against real photographs.** The mark detector has been measured only on rendered and synthetically degraded captures. See `tests/captures/README.md`.
 
 ## Browser Support
 

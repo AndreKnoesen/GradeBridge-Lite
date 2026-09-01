@@ -1,0 +1,67 @@
+{
+  "id": "mock-hw-eec130a-hw3",
+  "courseCode": "EEC130A",
+  "title": "Homework 3 (Handwritten) — Waveguides and Transmission Lines",
+  "dueDate": "",
+  "dueTime": "",
+  "inputMode": "handwritten",
+  "preamble": "Handwritten submission. Work each problem on a fresh sheet of paper, photograph your pages, and mark which region answers each part. Do not write your name or student ID on your answer pages. Write clearly; keep exponents and subscripts legible.",
+  "problems": [
+    {
+      "id": "p1",
+      "name": "TE10 Mode in a Rectangular Waveguide",
+      "description": "An air-filled rectangular waveguide has inner dimensions a = 2.29 cm and b = 1.02 cm (WR-90).",
+      "subsections": [
+        {
+          "id": "p1s0",
+          "name": "Cutoff frequency",
+          "description": "Determine the cutoff frequency of the dominant TE10 mode. Show your use of f_c = c / (2a).",
+          "points": 12,
+          "submissionType": "Handwritten",
+          "handwrittenGradingMode": "ai"
+        },
+        {
+          "id": "p1s1",
+          "name": "Guide wavelength at 10 GHz",
+          "description": "Operating at 10 GHz, compute the guide wavelength lambda_g for the TE10 mode.",
+          "points": 10,
+          "submissionType": "Handwritten",
+          "handwrittenGradingMode": "ai"
+        },
+        {
+          "id": "p1s2",
+          "name": "Field sketch and justification",
+          "description": "Sketch the transverse E-field of the TE10 mode across the cross-section and briefly justify the location of the maximum.",
+          "points": 8,
+          "submissionType": "Handwritten",
+          "handwrittenGradingMode": "human"
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Terminated Transmission Line",
+      "description": "A lossless 50-ohm line is terminated in a load Z_L = 75 + j25 ohm and operated at a frequency where the line is 0.30 wavelengths long.",
+      "subsections": [
+        {
+          "id": "p2s0",
+          "name": "Reflection coefficient",
+          "description": "Compute the load reflection coefficient Gamma_L in magnitude and angle.",
+          "points": 15,
+          "submissionType": "Handwritten",
+          "handwrittenGradingMode": "ai"
+        },
+        {
+          "id": "p2s1",
+          "name": "VSWR and input impedance",
+          "description": "Find the VSWR on the line and the input impedance seen at the source end.",
+          "points": 10,
+          "submissionType": "Handwritten",
+          "handwrittenGradingMode": "ai"
+        }
+      ]
+    }
+  ],
+  "createdAt": 1786400000000,
+  "updatedAt": 1786400000000
+}

@@ -7,7 +7,7 @@ import { LaTeXCheatsheet } from './LaTeXCheatsheet';
 interface SidebarProps {
   state: AppState;
   onUpdateStudent: (field: string, value: string) => void;
-  onLoadAssignment: (file: File) => void;
+  onLoadAssignment: (file: File) => void | Promise<void>;
   onLoadDemo: () => void;
   onLoadWork: (file: File) => void;
   onExportWork: () => void;
@@ -95,7 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group disabled:cursor-not-allowed disabled:hover:border-slate-600 disabled:hover:bg-transparent"
               >
                 <Upload className="w-5 h-5 group-hover:text-blue-400" />
-                <span className="text-sm font-medium">Upload JSON</span>
+                <span className="text-sm font-medium">Upload assignment</span>
               </button>
 
               <div className="flex items-center gap-2">
@@ -130,7 +130,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
              </div>
           )}
-          <input type="file" ref={assignmentInputRef} onChange={(e) => e.target.files?.[0] && onLoadAssignment(e.target.files[0])} accept=".json" className="hidden" />
+          {/* The student is given a zip — the `student/` folder of the
+              instructor's export, the same file they printed the PDF from. A
+              bare assignment_spec.json still loads, so both are accepted. */}
+          <input type="file" ref={assignmentInputRef} onChange={(e) => e.target.files?.[0] && void onLoadAssignment(e.target.files[0])} accept=".zip,.json,application/zip,application/json" className="hidden" />
         </div>
 
         {/* Actions */}

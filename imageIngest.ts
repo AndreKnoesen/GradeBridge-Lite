@@ -508,11 +508,16 @@ export interface RotatedPage {
  * Turns a stored page a quarter turn clockwise and re-encodes it.
  *
  * This rewrites the stored bitmap rather than applying a CSS transform,
- * because the stored frame is what regions are normalised against and what
- * ships in the submission ZIP — a display-only rotation would leave the
- * marked rectangles and the exported page disagreeing with what the student
- * saw. Dimensions therefore swap, and the caller must swap PageRef.width /
- * PageRef.height with them.
+ * because the stored frame is what registration measures and what ships in the
+ * submission ZIP — a display-only rotation would leave the transform fitted to
+ * one bitmap and the exported page being another. Dimensions therefore swap,
+ * and the caller must swap PageRef.width / PageRef.height with them, and
+ * re-register the page: the marks are on the paper and the paper just moved.
+ *
+ * (This comment used to say the rotation matters because regions are normalised
+ * against the stored frame. There are no student-drawn regions — the rectangles
+ * come from the instructor's map — and the pages did not in fact ship until the
+ * 2026-09-01 work order. Both halves are now true.)
  *
  * EXIF flag 6 *is* "a quarter turn clockwise" written in raw image
  * coordinates, so the ingest transform table already covers this case.
