@@ -5,8 +5,11 @@ What the registration pipeline is measured against.
 ```
 captures/
   synthetic/      generated, gitignored — `npm run captures` rebuilds it
-  real/           put real photographs here
-  layout_fixture.csv   the map the synthetic sheet was drawn from
+  real/           eleven phone photographs, cap01..cap11
+  stale/          five more of an older layout, stale01..stale05
+  LABELS.csv      the specification: what each of the sixteen should do
+  BASELINE_2026-09-01.md   what the pipeline did before the gate was built
+  layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
 ## What is in `synthetic/` and what it is worth
@@ -21,11 +24,10 @@ same canonical constants the Assignment Maker prints from, so the marks, the QR
 and the answer boxes are where a real sheet would put them. Only the degradation
 is synthetic.
 
-**This is not the section 8 evidence, and every threshold in the mark detector
-and the capture-quality checks is untuned against a phone photograph.** The work
-order asks for a printed sheet photographed a dozen ways before any of them is
-trusted, and that has not happened. What a renderer cannot produce is precisely
-what breaks registration in the field:
+**This is not the section 8 evidence, and no threshold is set from it.** The
+gap is not small and it is measured: this detector once scored 12 of 12 on these
+synthetics and 4 of 11 on the real photographs. What a renderer cannot produce is
+precisely what breaks registration in the field:
 
 - paper curl, which bends the page out of the plane the transform assumes
 - a specular highlight off a ballpoint line
@@ -33,11 +35,30 @@ what breaks registration in the field:
 - whatever a particular phone's image pipeline does with sharpening and noise
 - a thumb, a desk edge, or a second sheet in frame
 
+## LABELS.csv is the specification
+
+The sixteen photographs are labelled, and **the `review` column is the target**
+— not the `verdict` column, which is the first-pass judgement by eye and is
+wrong twice. `cap05` was called a shadow failure and is a soft gradient that
+stays legible; `cap09` was called acceptable clutter and is soft-focus enough
+that its QR does not decode at all. Where the two columns disagree the row says
+`DISAGREE:` and gives the reason.
+
+`tests/gate-tests.mjs` asserts **exact agreement** with that column: 12 pass, 4
+reject. Not a rate. A capture in the PASS set that the gate rejects is a failure
+of the same weight as one in the FAIL set that it passes — a threshold that
+rejects good work costs a student a photograph they should not have had to take.
+
+**Every threshold in the mark detector and the capture gate is set from these
+sixteen**, and each one carries the measurement that justifies it in the comment
+beside it. Changing any of them means re-running all sixteen and reporting the
+before-and-after table in the same message as the change.
+
 ## Adding real photographs
 
-Drop `.jpg` or `.png` files into `real/`. The suite picks them up with no code
-change. They carry no ground truth, so they are scored on whether the page
-registers at all, and that number is reported separately from the synthetic one.
+Drop `.jpg` or `.png` files into `real/` and add a row to `LABELS.csv`. The
+suite picks them up with no code change, and an unlabelled capture fails the
+suite rather than being quietly skipped.
 
 To make them: print `assignment.pdf` from a real assignment zip at 100% (no
 "fit to page" — it changes the scale and the marks move), write something in a

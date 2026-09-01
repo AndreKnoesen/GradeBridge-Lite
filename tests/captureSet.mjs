@@ -9,8 +9,9 @@
 // gradient, a shadow across a corner, defocus, JPEG loss, a dark desk, and one
 // capture with all of it at once.
 //
-// **This is not the section 8 evidence and every threshold in the detector is
-// untuned against a phone photograph.** The geometry is true — it comes from the
+// **This is not the section 8 evidence.** The detector's thresholds are set from
+// the real photographs, not from these — see tests/gate-tests.mjs and
+// tests/captures/BASELINE_2026-09-01.md. The geometry is true — it comes from the
 // same numbers the printer uses — and only the degradation is synthetic. What a
 // synthetic set cannot produce is the thing that actually breaks registration in
 // the field: paper curl, a specular highlight off a ballpoint line, motion blur

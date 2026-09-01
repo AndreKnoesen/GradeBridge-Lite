@@ -11,10 +11,17 @@
 //   step 3 — QR decode and mark detection over the capture set
 //   step 4 — the transform, and what the crops land on
 //
-// The capture set is synthetic (see captureSet.mjs). **It is not the section 8
-// evidence and every threshold here is untuned against a phone photograph.**
-// Drop real photographs into tests/captures/real/ and they are picked up with
-// no change to this file.
+// The capture set here is synthetic (see captureSet.mjs) and **it is not the
+// section 8 evidence**. The geometry is true; only the degradation is drawn.
+// What it cannot produce is what actually breaks registration in the field, and
+// the gap is not small: this detector once scored 12 of 12 on these synthetics
+// and 4 of 11 on real photographs.
+//
+// The thresholds are no longer untuned — every one of them is now set from the
+// sixteen photographs in tests/captures/real/ and stale/, and `gate-tests.mjs`
+// holds them there. This file's job is the parts a photograph cannot check on
+// its own: the ZIP path, the stale-map refusal, the crop geometry, and the
+// 180-degree case that the real set happens not to contain.
 // =====================================================
 
 import JSZip from 'jszip';
@@ -186,7 +193,16 @@ check('a bare assignment_spec.json still loads (electronic assignments keep work
 // =====================================================
 console.log('  step 3: QR decode and mark detection');
 
-const captures = listCaptures();
+// The synthetic set only. The real photographs are measured in
+// `gate-tests.mjs`, and they have to be measured THERE rather than here,
+// because this file reads a capture straight off disk: a photograph off the
+// phone is 4032 x 3024 and `imageIngest.ingestPage` stands it upright and steps
+// it down to 2200 px before registration ever sees it. Reading the original
+// measures an image the app never processes and flatters it — three times the
+// pixels and none of the recompression — and it disagrees with the gate. It did
+// disagree, visibly: this table reported `cap05` through `cap09` as `no_qr`
+// while the gate decodes four of the five and passes three.
+const captures = listCaptures().filter(c => c.synthetic);
 const truthFor = (file) => manifest.captures.find(c => c.file === file);
 const report = [];
 
@@ -194,11 +210,10 @@ for (const cap of captures) {
   const image = readCapture(cap.path);
   const qr = qrd.decodePageQr(image);
   const result = reg.registerPage(image);
-  report.push({ ...cap, image, qr, result, truth: cap.synthetic ? truthFor(cap.file) : null });
+  report.push({ ...cap, image, qr, result, truth: truthFor(cap.file) });
 }
 
-const synthetic = report.filter(r => r.synthetic);
-const real = report.filter(r => !r.synthetic);
+const synthetic = report;
 
 const qrOk = synthetic.filter(r => r.qr).length;
 const marks4 = synthetic.filter(r => r.result.marksFound === 4).length;
@@ -214,11 +229,7 @@ for (const r of report) {
 console.log('');
 console.log(`    synthetic set: QR ${qrOk}/${synthetic.length}, ` +
   `4-of-4 marks ${marks4}/${synthetic.length}, usable ${usable}/${synthetic.length}`);
-if (real.length > 0) {
-  console.log(`    real photographs: ${real.filter(r => r.result.usable).length}/${real.length} usable`);
-} else {
-  console.log(`    real photographs: none in ${REAL_DIR} — this is NOT the section 8 evidence`);
-}
+console.log(`    real photographs: measured in gate-tests.mjs, through the app's own ingest`);
 console.log('');
 
 check('the QR decodes on every synthetic capture', () => {
@@ -426,7 +437,7 @@ check('a bare spec still reaches the same submission path', () => {
 console.log(results.join('\n'));
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 console.log(`  Capture set: ${SYNTHETIC_DIR}`);
-console.log('  SYNTHETIC — not the section 8 evidence. Every threshold in the mark');
-console.log('  detector and the capture-quality checks is untuned against a phone');
-console.log(`  photograph. Drop real ones into ${REAL_DIR}.\n`);
+console.log('  SYNTHETIC — not the section 8 evidence. The thresholds are set from');
+console.log('  the real photographs and held by gate-tests.mjs; this file checks the');
+console.log(`  parts a photograph cannot. Real ones live in ${REAL_DIR}.\n`);
 process.exit(failed > 0 ? 1 : 0);
