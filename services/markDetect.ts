@@ -94,7 +94,7 @@ export const PHOTO_TOLERANCE: MarkTolerance = {
  * with it and only its edge reads as ink — and comfortably smaller than the
  * window, or the desk is back in the average.
  */
-export const LOCAL_RADIUS_MARKS = 3.0;
+export const LOCAL_RADIUS_MARKS = 2.5;
 
 /** Grey levels below the local mean before a pixel counts as ink. */
 export const INK_OFFSET = 18;
