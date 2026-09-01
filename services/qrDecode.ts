@@ -13,29 +13,40 @@
  * photographed upside down looks exactly like one photographed upright until
  * something on the page says otherwise.
  *
- * ## The search, and why it is a ladder
+ * ## The search is two passes, and it used to be three
  *
- * Measured on the eleven real captures. A whole-frame pass at native size finds
- * the symbol on 8 of 11 and is nearly free, so it goes first and almost always
- * ends it. What the other three needed:
+ * **The contrast-normalizing rung is deleted.** It rewrote every pixel of the
+ * frame and then re-ran both other passes over the result, and measured across
+ * all sixteen captures it decoded **nothing that the first two did not**. What
+ * it did was own the whole of the over-budget time: `cap08` and `cap09`, the
+ * two with no readable symbol, spent 4.5 s and 3.7 s reaching the same answer
+ * they reach in 0.6 s without it. It was built on the reasoning that those two
+ * are short of range rather than short of pixels, which is true, and on the hope
+ * that normalizing would recover them, which measurement does not support.
  *
- *   - **Tiles.** One sheet decodes from the top-left quadrant of the very same
- *     image that fails as a whole. Nothing is added by cropping except a
- *     different binarization: jsqr thresholds against the range it is given, and
- *     a frame holding a bright sheet and a dark desk gives it a range in which
- *     the symbol's own light and dark modules land on the same side. A tile
- *     holding mostly paper does not.
- *   - **Contrast.** Two sheets photographed at a mean luma of 64 and 96 do not
- *     decode at any scale, in any tile, at any resolution — not even from the
- *     4032 px original. They are not short of pixels, they are short of range,
- *     so the last rung normalizes locally and tries again.
+ * That is the policy as much as the measurement: a photograph that does not
+ * decode is reshot, not rescued, and the only thing worth optimising about
+ * failure is how fast it arrives.
  *
- * Each rung runs only when the one before it failed, so a well-lit photograph
- * pays for none of them.
+ * What remains, both measured on all sixteen:
+ *
+ *   - **The whole frame**, at native size and at half. Ends it for 13 of the 14
+ *     captures that decode at all — five at native size, eight at half.
+ *   - **Four overlapping quadrants.** `cap04` decodes from a quadrant of the
+ *     very same image that fails as a whole, and it is the only capture that
+ *     needs this. Nothing is added by cropping except a different binarization:
+ *     jsqr thresholds against the range it is given, and a frame holding three
+ *     sheets and a dark desk gives it a range in which the symbol's own light
+ *     and dark modules land on the same side. A tile holding mostly paper does
+ *     not. It is kept because deleting it would reject `cap04`, which is a
+ *     photograph a student should not have to take twice.
+ *
+ * The second pass runs only when the first found nothing, so a well-lit
+ * photograph pays for none of it.
  */
 
 import jsQR from 'jsqr';
-import { Rgba, cropRgba, downscaleRgba, localNormalize } from './raster';
+import { Rgba, cropRgba, downscaleRgba } from './raster';
 import { QrFields, parsePayload } from './qrPayload';
 import { Point } from './homography';
 
@@ -51,12 +62,14 @@ export interface QrReading {
 }
 
 /**
- * Native size first. A page photographed to fill a 2200 px frame carries about
- * 5 px per QR module, and halving that is already marginal — the smaller passes
- * are there for a sheet that fills the frame so completely that jsqr's finder
- * search struggles, not as the common case.
+ * Native size, then half. A page photographed to fill a 2200 px frame carries
+ * about 5 px per QR module, and halving that is already marginal — the half pass
+ * is there for a sheet that fills the frame so completely that jsqr's finder
+ * search struggles, and it earns its place: eight of the fourteen captures that
+ * decode need it. **A third pass at one-third size is deleted.** No capture in
+ * the set was ever found by it.
  */
-const SCALES = [1, 2, 3];
+const SCALES = [1, 2];
 
 /** Overlapping tiles: `grid` by `grid`, each 2/(grid+1) of the frame, 50% overlap. */
 const tileWindows = (
@@ -142,31 +155,26 @@ const rungs = (image: Rgba): Array<() => Generator<Attempt>> => {
   const tiled = function* (source: Rgba, tag: string, grids: number[]): Generator<Attempt> {
     for (const grid of grids) {
       for (const t of tileWindows(source, grid)) {
-        const tile = cropRgba(source, t.x0, t.y0, t.w, t.h);
-        for (const scale of [1, 2]) {
-          const scaled = scale === 1 ? tile : downscaleRgba(tile, scale);
-          yield {
-            image: scaled,
-            toSource: (p) => ({ x: t.x0 + p.x * scale, y: t.y0 + p.y * scale }),
-            label: `${tag} ${t.name} 1/${scale}`,
-          };
-        }
+        // Native size only. The half-size tile pass is deleted with the rest
+        // of the ladder: `cap04` is the one capture that needs a tile at all
+        // and it decodes both of its symbols at 1/1, so the half pass never
+        // found anything and was paid for on every photograph that fails.
+        yield {
+          image: cropRgba(source, t.x0, t.y0, t.w, t.h),
+          toSource: (p) => ({ x: t.x0 + p.x, y: t.y0 + p.y }),
+          label: `${tag} ${t.name} 1/1`,
+        };
       }
     }
   };
 
   return [
-    // Rung 1 — the whole frame. Ends it for 8 of the 11 real captures.
+    // The whole frame. Ends it for 13 of the 14 captures that decode.
     () => whole(image, 'image'),
-    // Rung 2 — overlapping tiles. Same pixels, a binarization that can see them.
-    () => tiled(image, 'image', [2, 3]),
-    // Rung 3 — both of the above on a locally contrast-normalized copy. Last
-    // resort, and the only expensive one.
-    function* () {
-      const normalized = localNormalize(image);
-      yield* whole(normalized, 'normalized');
-      yield* tiled(normalized, 'normalized', [2, 3]);
-    },
+    // Overlapping quadrants. Same pixels, a binarization that can see them.
+    // A 3x3 grid is deleted with the normalizing rung: nothing was ever found
+    // in it either, and both were paid for on every photograph that fails.
+    () => tiled(image, 'image', [2]),
   ];
 };
 

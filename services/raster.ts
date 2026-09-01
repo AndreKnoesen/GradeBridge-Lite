@@ -69,58 +69,6 @@ export const cropRgba = (src: Rgba, x0: number, y0: number, w: number, h: number
   return { data, width, height };
 };
 
-/**
- * Per-pixel contrast normalisation against a local mean and spread, for the QR
- * decoder only. A phone photograph taken in poor light delivers the symbol as a
- * narrow band of greys — on this capture set two sheets came in at a mean luma
- * of 64 and 96 — and jsqr's own binarizer, which works on the raw range, cannot
- * find a module grid in it. Stretching each neighbourhood to full range costs
- * one pass and is tried only after the plain image has already failed.
- *
- * Not used anywhere but the QR search: it is a decode aid, and nothing that
- * measures geometry should ever see a contrast-altered pixel.
- */
-export const localNormalize = (src: Rgba, radius = 24): Rgba => {
-  const gray = toGray(src);
-  const { width: w, height: h } = gray;
-  const sum = new Float64Array((w + 1) * (h + 1));
-  const sumSq = new Float64Array((w + 1) * (h + 1));
-  for (let y = 0; y < h; y++) {
-    let rs = 0, rq = 0;
-    for (let x = 0; x < w; x++) {
-      const v = gray.data[y * w + x];
-      rs += v; rq += v * v;
-      sum[(y + 1) * (w + 1) + (x + 1)] = sum[y * (w + 1) + (x + 1)] + rs;
-      sumSq[(y + 1) * (w + 1) + (x + 1)] = sumSq[y * (w + 1) + (x + 1)] + rq;
-    }
-  }
-  const box = (t: Float64Array, ax: number, ay: number, bx: number, by: number): number =>
-    t[(by + 1) * (w + 1) + (bx + 1)] - t[ay * (w + 1) + (bx + 1)]
-    - t[(by + 1) * (w + 1) + ax] + t[ay * (w + 1) + ax];
-
-  const data = new Uint8ClampedArray(w * h * 4);
-  const r = Math.max(2, Math.round(radius));
-  for (let y = 0; y < h; y++) {
-    const ay = Math.max(0, y - r), by = Math.min(h - 1, y + r);
-    for (let x = 0; x < w; x++) {
-      const ax = Math.max(0, x - r), bx = Math.min(w - 1, x + r);
-      const n = (bx - ax + 1) * (by - ay + 1);
-      const mean = box(sum, ax, ay, bx, by) / n;
-      const variance = Math.max(0, box(sumSq, ax, ay, bx, by) / n - mean * mean);
-      const sd = Math.sqrt(variance);
-      // A flat neighbourhood has nothing to stretch; leave it mid-grey rather
-      // than amplifying its sensor noise into a false module pattern.
-      const v = sd < 4
-        ? 128
-        : 128 + ((gray.data[y * w + x] - mean) * 64) / sd;
-      const o = (y * w + x) * 4;
-      data[o] = data[o + 1] = data[o + 2] = Math.max(0, Math.min(255, v));
-      data[o + 3] = 255;
-    }
-  }
-  return { data, width: w, height: h };
-};
-
 export interface RotatedGray extends Gray {
   /** Maps a point in this rotated frame back to the source image's pixel frame. */
   toSource: (x: number, y: number) => [number, number];

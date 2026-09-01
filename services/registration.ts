@@ -92,12 +92,48 @@ const QR_CORNER_KEYS = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'] as c
 const DEGRADED_RESIDUAL_MAX_MM = 3.0;
 
 /**
- * How many of the frame's square blobs each corner shortlists. Four to the
- * fourth is 256 combinations, each an 8x8 solve — nothing on a phone. Raising
- * it costs the fourth power and buys nothing measurable: on the real captures
- * the true mark is the nearest or second-nearest candidate every time.
+ * Most square blobs the whole frame may contribute before the enumeration is
+ * cut off. The detector returns them fullest-first, so a cap keeps the best.
+ *
+ * On all sixteen captures the real number is four to eight, and the exhaustive
+ * search over them is microseconds. The cap exists for the photograph this set
+ * does not contain — a desk strewn with printed squares — where the cost is the
+ * fourth power. Twenty-four gives 10,626 four-subsets, which is still a few
+ * milliseconds, and a page needing the twenty-fifth-best blob is a page that
+ * should be reshot.
  */
-const CANDIDATES_PER_CORNER = 4;
+const MAX_CANDIDATES = 24;
+
+/**
+ * A trio of marks read four ways — one labelling per corner that might be the
+ * missing one. Which it is cannot be told from the three points alone, so all
+ * four are scored and the QR decides.
+ */
+const THREE_MARK_LABELLINGS: number[][] = [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]];
+
+/** The printed mark spacing: 186.9 mm across the sheet, 250.4 mm down it. */
+const MARK_SPAN_X_MM = MARK_CENTRES_MM[1][0] - MARK_CENTRES_MM[0][0];
+const MARK_SPAN_Y_MM = MARK_CENTRES_MM[2][1] - MARK_CENTRES_MM[0][1];
+
+/**
+ * How far a set's implied scale may sit from the QR's, either way.
+ *
+ * Measured over the twelve captures that pass, taking the four true marks of
+ * each and the four side lengths they imply: **0.87 to 1.71 times the QR's own
+ * scale.** `cap04` is the 1.71, and it is not an artifact — the page is close to
+ * the lens and steeply angled, so its lower edge is genuinely 1.7 times the
+ * scale the QR reads in the far top corner. The previous 1.6 would have thrown
+ * that capture's true mark set away, and did.
+ */
+const SCALE_BAND = 2.1;
+
+/**
+ * The most one side of the sheet may be foreshortened against another. Beyond
+ * this the four points are not the corners of one sheet held at an angle, they
+ * are four points from two different things. Measured worst on the twelve:
+ * **1.49**, again `cap04`.
+ */
+const MAX_FORESHORTENING = 1.9;
 
 /**
  * What a three-mark fit gives up against a four-mark one, in millimetres of
@@ -188,11 +224,18 @@ const registerAgainstQr = (
 
   // ---- Stage 3: collect candidates ----
   //
-  // A window has to be placed before it can be searched, and the only thing
-  // available to place it with is the QR's position and scale. That is a
-  // similarity estimate: right about where the page is and roughly how big,
-  // silent about how it is tilted. Every blob that survives the shape tests is
-  // kept as a *candidate*; which one is a mark is settled in stage 4.
+  // One binarization, one assumed mark size, one pass over the frame.
+  //
+  // It used to be three passes at 0.7, 1.0 and 1.45 times the QR's predicted
+  // mark size, because the shape tests were measured in the image's frame and a
+  // mark turned or squashed by the camera failed them at its true size. Now that
+  // `fill` and `aspect` are measured in the blob's own frame (`markDetect.ts`)
+  // that is no longer true, and the sweep was measured to be worse than useless:
+  // on all sixteen captures a single pass finds every true mark, and it finds
+  // FEWER false ones — the extra passes were what gave `cap02` a four-mark set
+  // at 9.5 mm and `cap03` one at 65.0 mm, both of which vanish entirely when the
+  // frame is read once. It is also a third of the work, which is most of how a
+  // page came in under the gate's two-second budget.
   const expectedSidePx = MARK_SIZE_MM * pxPerMm;
   // **Every** symbol in the frame is masked, not just this one. A QR finder
   // pattern is 7 modules of 0.7273 mm — 5.1 mm, the same size as a registration
@@ -200,178 +243,13 @@ const registerAgainstQr = (
   // in the same photograph are three perfect false fiducials. Masking only the
   // sheet being registered left them in play, and on two real captures the fit
   // chose them and landed 125 mm out while reporting four marks found.
-  //
-  // The margin is 1 mm: the quiet zone and no more. The NE mark's own edge is
-  // 5 mm clear of the symbol, so anything generous here excludes a real mark —
-  // which is a failure mode this already had once.
   const exclude = allReadings.map(r =>
     qrBounds(QR_CORNER_KEYS.map(k => inUpright(r.corners[k])), QR_KEEPOUT_MARGIN_MM * pxPerMm));
 
-  const qrTl = qrUpright[0];
-  const origin = { x: qrTl.x - QR_RECT_MM.x0 * pxPerMm, y: qrTl.y - QR_RECT_MM.y0 * pxPerMm };
-  const bySimilarity = (p: Point): Point =>
-    ({ x: origin.x + p.x * pxPerMm, y: origin.y + p.y * pxPerMm });
-
-  const qrCentreMm = {
-    x: (QR_RECT_MM.x0 + QR_RECT_MM.x1) / 2,
-    y: (QR_RECT_MM.y0 + QR_RECT_MM.y1) / 2,
-  };
-
-  /**
-   * The taper is the point of this. The spec's 30 mm window is sized for a page
-   * already rectified to the canonical frame. Placed on an unrectified
-   * photograph from a QR-anchored estimate, that estimate's error grows with
-   * distance from its anchor — on the real set the near corners land within a
-   * few millimetres and the far ones 25 to 50 mm out. So the window grows with
-   * the same distance rather than being uniformly loose, and never drops below
-   * a floor, because the QR's own scale runs up to 10% out even at the corner
-   * beside it.
-   */
-  const windowMm = (mm: Point): number => Math.max(
-    MARK_SEARCH_WINDOW_MM + 0.35 * Math.hypot(mm.x - qrCentreMm.x, mm.y - qrCentreMm.y),
-    MARK_SEARCH_WINDOW_MM * 1.5
+  const squares = findMarksInWindow(
+    upright, { x0: 0, y0: 0, x1: upright.width, y1: upright.height },
+    expectedSidePx, { exclude, limit: MAX_CANDIDATES }
   );
-
-  const candidates: MarkCandidate[][] = [[], [], [], []];
-
-  // The whole frame is searched once, rather than four windows placed from an
-  // estimate. Window placement was the last thing standing between this and the
-  // real captures: the window has to be positioned by the QR, the QR's scale is
-  // up to 25% out on a tilted sheet, and a window that misses cannot be recovered
-  // from by any amount of care further down. A frame-wide search cannot miss.
-  //
-  // It is affordable because the shape tests are the expensive filter and they
-  // run per blob either way, and because the alternative — several overlapping
-  // windows, each re-binarized — was not much cheaper.
-  // Searched at three assumed mark sizes, and this is not belt-and-braces.
-  // `expectedSidePx` comes from the QR's scale, which is up to 25% low on a
-  // tilted sheet, and the binarizer's local-mean radius is derived from it: too
-  // small a radius means the mark's own interior drags the local mean down with
-  // it, the interior stops reading as ink, and the mark is not a blob at all.
-  // That is what a single pass was doing — on the three captures with the
-  // lowest QR scale it found one or two squares in the entire frame. Each pass
-  // brings its own radius and its own area band, so a mark half again the size
-  // the QR predicted is found properly by the pass that assumes it.
-  const SEARCH_SCALES = [0.7, 1.0, 1.45];
-  const squares: MarkCandidate[] = [];
-  for (const factor of SEARCH_SCALES) {
-    const found = findMarksInWindow(
-      upright, { x0: 0, y0: 0, x1: upright.width, y1: upright.height },
-      expectedSidePx * factor, { exclude, limit: 64 }
-    );
-    for (const c of found) {
-      const duplicate = squares.some(e =>
-        Math.hypot(e.x - c.x, e.y - c.y) < Math.max(expectedSidePx, c.width) * 0.6);
-      if (!duplicate) squares.push(c);
-    }
-  }
-
-  // The marks are found by their arrangement, not by where the QR predicts them.
-  //
-  // Ranking each corner's candidates by distance to a QR-derived prediction was
-  // the previous attempt, and it fails for the same reason window placement
-  // did: on a steeply tilted sheet the prediction is tens of millimetres out, so
-  // it does not even order the shortlist correctly, and the combination that
-  // wins is four wrong blobs — residuals of 27, 125 and 143 mm on three of the
-  // real captures. The QR is a 24 mm patch in one corner. It is an excellent
-  // *witness* and a poor *surveyor*, so it is used only as the former.
-  //
-  // Instead: take every pair of squares as a hypothetical NW and NE. That pair
-  // alone fixes a rotation and a scale — the two marks are a known 186.9 mm
-  // apart — and therefore predicts SW and SE to within the sheet's own
-  // flatness. Each hypothesis is scored by where it puts the QR. Only the scale
-  // sanity band comes from the QR, and it is deliberately loose.
-  const MARK_SPAN_X_MM = MARK_CENTRES_MM[1][0] - MARK_CENTRES_MM[0][0];
-  const MARK_SPAN_Y_MM = MARK_CENTRES_MM[2][1] - MARK_CENTRES_MM[0][1];
-
-  /**
-   * How far a square may sit from where the NW-NE pair predicts it, and it has
-   * to grow with distance from that baseline. The pair fixes a *similarity* —
-   * rotation, scale, translation — and a photographed sheet is not a similarity
-   * of the page: the far edge is nearer or further from the lens, so the two
-   * bottom marks land tens of millimetres from where a rigid scaling puts them.
-   * Measured: 43 mm on IMG_0371, at a page height of 250 mm. A flat 14 mm
-   * tolerance matched neither bottom mark on three of the captures, which left
-   * only a two-point hypothesis and nothing to fit.
-   */
-  const matchToleranceMm = (mm: Point): number =>
-    10 + 0.20 * Math.hypot(mm.x - MARK_CENTRES_MM[0][0], mm.y - MARK_CENTRES_MM[0][1]);
-  /** How far the pair's implied scale may sit from the QR's, either way. */
-  const SCALE_BAND = 1.6;
-  /**
-   * The most one side of the sheet may be foreshortened against another. A page
-   * photographed at a steep angle has a far edge shorter than its near one;
-   * beyond this the four points are not the corners of one sheet held at an
-   * angle, they are four points from two different things.
-   */
-  const MAX_FORESHORTENING = 1.8;
-  /** How far from horizontal the NW-NE edge may lie once the page is upright. */
-  const MAX_EDGE_TILT_RAD = (25 * Math.PI) / 180;
-
-  const hypotheses: Array<{ used: number[]; picks: MarkCandidate[] }> = [];
-
-  for (const a of squares) {
-    for (const b of squares) {
-      if (a === b) continue;
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const span = Math.hypot(dx, dy);
-      if (span < expectedSidePx * 2) continue;
-
-      const scale = span / MARK_SPAN_X_MM;
-      if (scale > pxPerMm * SCALE_BAND || scale < pxPerMm / SCALE_BAND) continue;
-      const theta = Math.atan2(dy, dx);
-      if (Math.abs(theta) > MAX_EDGE_TILT_RAD) continue;
-
-      // The similarity this pair implies, as a map from canonical mm.
-      const cos = Math.cos(theta), sin = Math.sin(theta);
-      const place = (mm: Point): Point => {
-        const ux = (mm.x - MARK_CENTRES_MM[0][0]) * scale;
-        const uy = (mm.y - MARK_CENTRES_MM[0][1]) * scale;
-        return { x: a.x + cos * ux - sin * uy, y: a.y + sin * ux + cos * uy };
-      };
-
-      const nearest = (mm: Point): MarkCandidate | null => {
-        let found: MarkCandidate | null = null;
-        let bestD = matchToleranceMm(mm) * scale;
-        const target = place(mm);
-        for (const c of squares) {
-          if (c === a || c === b) continue;
-          const d = Math.hypot(c.x - target.x, c.y - target.y);
-          if (d < bestD) { bestD = d; found = c; }
-        }
-        return found;
-      };
-
-      const sw = nearest({ x: MARK_CENTRES_MM[2][0], y: MARK_CENTRES_MM[2][1] });
-      const se = nearest({ x: MARK_CENTRES_MM[3][0], y: MARK_CENTRES_MM[3][1] });
-      if (sw && se && sw !== se) hypotheses.push({ used: [0, 1, 2, 3], picks: [a, b, sw, se] });
-      else if (sw) hypotheses.push({ used: [0, 1, 2], picks: [a, b, sw] });
-      else if (se) hypotheses.push({ used: [0, 1, 3], picks: [a, b, se] });
-    }
-  }
-
-  // Keep the per-corner shortlists as a fallback for a sheet whose top edge is
-  // clipped, so no NW-NE pair exists to seed a hypothesis. Ordering there is by
-  // the QR prediction, which is the best available when nothing else is.
-  const byPerspective = homographyFromQuad(QR_CORNERS_MM, qrUpright);
-  const distanceTo = (corner: Point, c: MarkCandidate): number => {
-    const a = bySimilarity(corner);
-    let best = Math.hypot(a.x - c.x, a.y - c.y);
-    if (byPerspective) {
-      const b = applyMatrix(byPerspective, corner);
-      if (Number.isFinite(b.x) && Number.isFinite(b.y)) {
-        best = Math.min(best, Math.hypot(b.x - c.x, b.y - c.y));
-      }
-    }
-    return best;
-  };
-
-  MARK_CENTRES_MM.forEach(([mmX, mmY], i) => {
-    const corner = { x: mmX, y: mmY };
-    candidates[i] = [...squares]
-      .sort((a, b) => distanceTo(corner, a) - distanceTo(corner, b))
-      .slice(0, CANDIDATES_PER_CORNER);
-  });
 
   // ---- Stage 4: choose the combination, then fit ----
   //
@@ -474,36 +352,60 @@ const registerAgainstQr = (
     if (!best || score < best.score) best = { transform, residual, used, degraded, score };
   };
 
-  /** Every way of choosing one candidate from each named corner. */
-  const enumerate = (used: number[]): void => {
-    const lists = used.map(i => candidates[i]);
-    if (lists.some(l => l.length === 0)) return;
-    const picks: MarkCandidate[] = new Array(used.length);
-    const walk = (depth: number): void => {
-      if (depth === used.length) { consider(used, picks); return; }
-      for (const c of lists[depth]) { picks[depth] = c; walk(depth + 1); }
-    };
-    walk(0);
+  /**
+   * Which of the four printed corners each of these points is, decided by where
+   * they lie relative to one another rather than by where the QR guessed they
+   * would be. The frame has already been turned by the QR's angle, so the page
+   * is within a few degrees of upright and the extremes of the two diagonals
+   * name the corners unambiguously.
+   *
+   * The QR is used to SCORE a set, never to place one. Ranking each corner's
+   * candidates by distance to a QR-derived prediction was the previous design,
+   * and it failed the way window placement failed before it: the prediction is
+   * tens of millimetres out on a tilted sheet — measured at 25 mm for `stale05`'s
+   * NW mark and 61 mm for its SE — so it did not even order the shortlist
+   * correctly, and the combination that won was four wrong blobs.
+   */
+  const label = (four: MarkCandidate[]): MarkCandidate[] | null => {
+    const bySum = [...four].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    const byDif = [...four].sort((a, b) => (a.x - a.y) - (b.x - b.y));
+    const nw = bySum[0], se = bySum[3], sw = byDif[0], ne = byDif[3];
+    if (new Set([nw, ne, sw, se]).size !== 4) return null;
+    return [nw, ne, sw, se];   // MARK_CENTRES_MM order
   };
 
-  // The arrangement hypotheses first — they are the ones that know the marks
-  // are 186.9 by 250.4 mm apart.
-  for (const h of hypotheses) consider(h.used, h.picks);
-
-  // Then the QR-ordered shortlists, which only matter when no NW-NE pair was
-  // found at all — a sheet with its top edge out of frame, say.
-  if (!best) {
-    enumerate([0, 1, 2, 3]);
-    if (!best) for (const trio of [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]) enumerate(trio);
+  // Every four of them, and every three, scored by where they put the QR.
+  //
+  // Exhaustive because it is now cheap enough to be: one detector pass at one
+  // scale with shape tests that no longer charge a mark for its angle returns
+  // four to eight candidates on all sixteen captures, and the cap keeps the
+  // worst case bounded on a photograph of a desk covered in printed squares.
+  // The previous design could not afford this and paid for it — it seeded
+  // hypotheses from NW-NE pairs and only fell back to enumeration when no pair
+  // survived, so on `stale05`, where a three-mark hypothesis did survive, the
+  // true four-mark combination was never considered at all. It scores 0.257 mm.
+  const n = squares.length;
+  for (let a = 0; a < n; a++) {
+    for (let b = a + 1; b < n; b++) {
+      for (let c = b + 1; c < n; c++) {
+        for (let d = c + 1; d < n; d++) {
+          const four = label([squares[a], squares[b], squares[c], squares[d]]);
+          if (four) consider([0, 1, 2, 3], four);
+        }
+        // The same three, read four ways: any one of the corners may be the one
+        // that is missing, and which it is cannot be told from the three alone.
+        for (const trio of THREE_MARK_LABELLINGS) {
+          consider(trio, [squares[a], squares[b], squares[c]]);
+        }
+      }
+    }
   }
 
   const chosen: Fit | null = best;
   if (!chosen) {
-    const have = candidates.filter(c => c.length > 0);
     return fail('too_few_marks',
-      `Only ${have.length} of the 4 corner squares could be found on this page. Retake it flat, ` +
-      'with all four corners of the paper in the photo.', qr,
-      candidates.map((c, i) => (c.length ? MARK_CORNER_NAMES[i] : '')).filter(Boolean));
+      'The four corner squares could not all be found on this page. Get the whole sheet in the ' +
+      'picture and shoot it flat, from directly above.', qr);
   }
 
   const marksDetected = chosen.used.map(i => MARK_CORNER_NAMES[i]);
@@ -549,9 +451,22 @@ const rank = (r: RegistrationResult): number => {
   return closeness;
 };
 
-const registerPageOrThrow = (image: Rgba): RegistrationResult => {
+export interface RegisterOptions {
+  /**
+   * Ceiling on the QR search alone. The caller owns the page's total budget and
+   * the decode is the only unbounded part of this, so the caller has to be able
+   * to say how much of that total the search may spend. Without it the decoder's
+   * own default silently outranks the gate's ceiling, which is how a photograph
+   * that cannot decode came to take longer than the budget that was supposed to
+   * stop it.
+   */
+  decodeBudgetMs?: number;
+}
+
+const registerPageOrThrow = (image: Rgba, options: RegisterOptions): RegistrationResult => {
   // ---- Stage 1: decode the QR ----
-  const readings = decodePageQrCandidates(image);
+  const readings = decodePageQrCandidates(
+    image, options.decodeBudgetMs === undefined ? {} : { budgetMs: options.decodeBudgetMs });
   if (readings.length === 0) {
     return fail('no_qr',
       'The code in the top-right corner of the page could not be read. Retake the photo with the ' +
@@ -584,9 +499,9 @@ const registerPageOrThrow = (image: Rgba): RegistrationResult => {
  * reason is carried in the result and logged, so a crash does not become
  * indistinguishable from a dark room.
  */
-export const registerPage = (image: Rgba): RegistrationResult => {
+export const registerPage = (image: Rgba, options: RegisterOptions = {}): RegistrationResult => {
   try {
-    return registerPageOrThrow(image);
+    return registerPageOrThrow(image, options);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error('registerPage failed', err);
