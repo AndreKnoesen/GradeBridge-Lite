@@ -1,0 +1,425 @@
+# GradeBridge — submission ZIP interface
+
+**Version:** v4.0
+**Date:** 2026-09-01
+**Supersedes:** v3.1, 2026-04-08
+**Audience:** whoever writes the autograder
+
+---
+
+## What changed, and why v3.1 must not be used
+
+v3.1 described the archive as **flat, one JSON and one PDF**, and said "all
+downstream file formats are unchanged". That was true of an electronic
+assignment in April. It is not true of a handwritten one, and a reader following
+it would extract two files, find every answer `null`, and conclude the student
+submitted nothing.
+
+**This document is written from one real archive, not from the code.** Every
+filename, field, type, byte size and value below was read out of:
+
+```
+GradeBridge2026\CaptureSet\milestone_zero\Milestone_Zero_ENG17_submission.zip
+```
+
+produced on 2026-09-01 by `GradeBridge-Student-Submission/tests/milestone-zero.mjs`
+(`npm run milestone:zero`), from ENG17 Homework 1 (`layout_id` **95438EDF**) and
+two phone photographs. Its three crops were inspected by eye and confirmed to
+land on their own regions with the right handwriting in each. Where this document
+states something that archive does not contain, it says so explicitly.
+
+**Nothing here is aspirational.** If a statement is not marked as unobserved, it
+came off that ZIP.
+
+---
+
+## 1. The archive
+
+One file, uploaded to Gradescope:
+
+```
+{StudentName}_{CourseCode}_submission.zip
+```
+
+Both parts are sanitised with `[^a-z0-9_\-] → _`, so `Milestone Zero` + `ENG17`
+gives `Milestone_Zero_ENG17_submission`. DEFLATE, level 6.
+
+### Observed manifest
+
+| bytes | entry |
+|---:|---|
+| 2,704 | `Milestone_Zero_ENG17_submission.json` |
+| 979,728 | `Milestone_Zero_ENG17_submission.pdf` |
+| 40,696 | `crops/p1a.jpg` |
+| 38,285 | `crops/p1b.jpg` |
+| 81,454 | `crops/p1c.jpg` |
+| 474,470 | `page_1.jpg` |
+| 501,463 | `page_2.jpg` |
+
+Archive total 2,079,104 bytes. The seven entries are byte-identical between runs
+of the same inputs; the total moves a byte or two because `last_saved` is a
+timestamp inside the encrypted payload.
+
+**It is not flat.** There is a `crops/` directory entry. An extractor that calls
+`os.path.basename()` on every member — as the v3.1 snippet does — collapses
+`crops/p1a.jpg` into `p1a.jpg` and silently breaks the `file` paths the payload
+gives you. See §7.
+
+### Entry kinds
+
+| pattern | count here | magic | what it is |
+|---|---|---|---|
+| `*_submission.json` | 1 | `67 62 31 3a` (`gb1:`) | the payload, §3 |
+| `*_submission.pdf` | 1 | `25 50 44 46` (`%PDF`) | §5 |
+| `page_{n}.jpg` | 2 | `ff d8 ff e0` | the student's photographs, §4 |
+| `crops/{region_id}.jpg` | 3 | `ff d8 ff e0` | one answer each, §4 |
+
+**Not present in this archive, and declared by the app rather than observed:**
+`p{i}s{j}_image_{n}.jpg` at the archive root, written only for an *electronic*
+assignment's `Image` or `Text and Image` parts. A handwritten submission has
+none.
+
+`{n}` in `page_{n}.jpg` is **the position in the ZIP, counting from 1**. It is
+not the page of the sheet. See §4.
+
+---
+
+## 2. Do not assume every file is there
+
+The observed archive is a **partial submission**: 2 pages of a 16-page sheet, 3
+regions of 17. This is not a degraded case to be handled defensively — it is a
+student part-way through, and the app packages it deliberately and without
+complaint.
+
+So:
+
+- **A region absent from `crops` is a region the student has not reached.** Not
+  an error, not a missing file. Award it what an unattempted part gets.
+- **A page absent from `pages` was never photographed.**
+- There is no field anywhere that says "this submission is complete", because the
+  app does not know and does not ask.
+
+---
+
+## 3. The payload
+
+### Envelope
+
+The JSON entry is **not** JSON on disk. It is a text file beginning with a
+four-character envelope tag.
+
+| observed | `gb1:` |
+|---|---|
+| meaning | AES-256-GCM, the shared key already in the autograder |
+| alternative | `gb2:` — used when the assignment spec carries a `coursePublicKey`. **Not observed here**; the ENG17 spec carries none. A spec that asks for gb2 never downgrades to gb1. |
+
+Read the first four characters and branch. Do not assume `gb1:`.
+
+A `gb2:` payload is **de-identified**: identity comes from Gradescope's
+authenticated submitter metadata, not from the payload. The PDF and all
+filenames keep the student's name in both cases.
+
+### Decrypted structure — all eleven top-level keys, as observed
+
+```json
+{
+  "student_name":   "Milestone Zero",
+  "course_code":    "ENG17",
+  "assignment_id":  "ENG17_Homework_1",
+  "pdf_filename":   "Milestone_Zero_ENG17_submission.pdf",
+  "ai_feedback":    false,
+  "submission_data": { "p0s0": { "answer": null, "images_submitted": 0 }, … },
+  "last_saved":     "2026-09-01T17:59:37.496Z",
+  "input_mode":     "handwritten",
+  "layout_id":      "95438EDF",
+  "pages":          [ … ],
+  "crops":          { … }
+}
+```
+
+| key | type | note |
+|---|---|---|
+| `student_name` | string | Compare against Gradescope's submitter; a mismatch is for instructor review. |
+| `course_code` | string | |
+| `assignment_id` | string | `{courseCode}_{title with spaces → _}`. **Not** the `assignment_id` in `layout_*.csv`, which is `ENG17HOM496F`. Two different identifiers; do not join on this one. |
+| `pdf_filename` | string | The PDF's name inside this archive. |
+| `ai_feedback` | boolean | Always a real boolean, never absent, so "off" is never confusable with an older app version. |
+| `submission_data` | object | §3.1 |
+| `last_saved` | string | ISO 8601, UTC. |
+| `input_mode` | string | `"handwritten"` observed. **Absent entirely on an electronic assignment** — its absence is the signal, so test for presence rather than for a value. |
+| `layout_id` | string | The map the app recomputed. Must equal the `layout_id` in every page's QR; the app refuses to crop when it does not. |
+| `pages` | array | §3.2. Handwritten only. |
+| `crops` | object | §3.3. Handwritten only. |
+
+`input_mode`, `layout_id`, `pages` and `crops` are written **only** when the
+assignment is handwritten; an electronic payload carries the other seven keys and
+none of these four. See §8 for the one key that has been added since v3.1.
+
+### 3.1 `submission_data` — read this, then ignore it
+
+Seventeen entries observed, `p0s0` `p0s1` `p0s2` `p0s3` `p1s0` `p1s1` `p1s2`
+`p2s0` `p2s1` `p2s2` `p3s0` `p4s0` `p5s0` `p6s0` `p7s0` `p8s0` `p9s0`. Every one
+of them:
+
+```json
+{ "answer": null, "images_submitted": 0 }
+```
+
+**This is correct for a handwritten submission and it looks exactly like an empty
+one.** The answers are images, and they are in `crops`. The keys here are
+`p{problem}s{subsection}` positions in the *spec*; they do not correspond to
+`region_id` and cannot be joined to it.
+
+On an electronic assignment this object is the whole submission and behaves as
+v3.1 described.
+
+### 3.2 `pages` — both entries, verbatim
+
+```json
+[
+  { "file": "page_1.jpg", "width": 1650, "height": 2200,
+    "k": 2, "n": 16, "registration": "ok",
+    "marks_found": 4, "residual_mm": 0.4958780733592441 },
+  { "file": "page_2.jpg", "width": 1650, "height": 2200,
+    "k": 3, "n": 16, "registration": "ok",
+    "marks_found": 4, "residual_mm": 0.34332017809218907 }
+]
+```
+
+| field | note |
+|---|---|
+| `file` | Entry name in this archive. |
+| `width`, `height` | Pixels of the **stored** image, after the app's ingest. |
+| `k`, `n` | Page number and page count **read from that page's own QR**, never from upload order. |
+| `registration` | `"ok"` observed. `"degraded"` (a three-mark affine fit, crops may be slightly off) is declared but **not observed here**. |
+| `marks_found` | 4 observed. |
+| `residual_mm` | QR reprojection error. Full float precision; do not expect it rounded. |
+
+**`page_1.jpg` is page 2 of the sheet.** The filename counts position in the ZIP;
+`k` counts position on the paper. Always use `k`.
+
+### 3.3 `crops` — all three, verbatim
+
+```json
+{
+  "p1a": { "region_id": "p1a", "part_id": "1(a)", "page_k": 2,
+           "is_drawing": false, "max_points": 5,
+           "crop_source": "registration", "student_review": "signed_off",
+           "quality_flags": ["low-resolution"],
+           "file": "crops/p1a.jpg", "width": 842, "height": 542 },
+  "p1b": { …, "part_id": "1(b)", "page_k": 3, "file": "crops/p1b.jpg",
+           "width": 1033, "height": 324 },
+  "p1c": { …, "part_id": "1(c)", "page_k": 3, "file": "crops/p1c.jpg",
+           "width": 1095, "height": 602 }
+}
+```
+
+Keyed by `region_id`. Every label a grader needs is on the row — nothing is
+parsed out of `region_id`, which is opaque and must stay so.
+
+| field | observed | note |
+|---|---|---|
+| `region_id` | `p1a` `p1b` `p1c` | Opaque. Do not parse. |
+| `part_id` | `1(a)` `1(b)` `1(c)` | The human label. Display this. |
+| `page_k` | 2, 3 | Which sheet page it was cut from. |
+| `is_drawing` | `false` | What the **author** asked for. See §6. |
+| `max_points` | 5 | From the map. |
+| `crop_source` | `registration` | Cut from a declared rectangle on a registered page. `direct_capture` — the student framed the answer themselves, no rectangle, no registration, framing is theirs — is declared but **not observed here**. Do not assume `registration`. |
+| `student_review` | `signed_off` | What the student said after looking at it. `flagged` and `not_reviewed` are declared but **not observed here**. |
+| `quality_flags` | `["low-resolution"]` | Advisory, never blocks. `looks-empty` is declared but **not observed here**. See §6. |
+| `file` | `crops/p1a.jpg` | Path **including the `crops/` prefix**. Use it as given. |
+| `width`, `height` | see above | Pixels. |
+
+---
+
+## 4. The images
+
+### The crops — measured off this archive
+
+| region | pixels | declared rectangle | mm per pixel | px per mm | ink | bytes |
+|---|---|---|---|---|---|---|
+| p1a | 842 × 542 | 191.2 × 123.0 mm | 0.2271 | 4.40 | 0.48% | 40,696 |
+| p1b | 1033 × 324 | 191.2 × 60.0 mm | 0.1851 | 5.40 | 0.98% | 38,285 |
+| p1c | 1095 × 602 | 191.2 × 105.0 mm | 0.1746 | 5.73 | 0.97% | 81,454 |
+
+Pixels × mm-per-pixel reproduces each declared rectangle to within **0.1 mm**, so
+a crop covers the rectangle the map declares and nothing else. JPEG, quality 0.9,
+never upsampled past the resolution the photograph actually had.
+
+**One caveat on the byte sizes.** The app encodes its JPEGs with the browser's
+canvas; the harness that produced this archive cannot, so it used `jpeg-js` at the
+same quality. Same format, same pixels, same dimensions — but **an archive
+produced by a browser will have slightly different byte sizes**. Treat the sizes
+in §1 as the right order of magnitude and the dimensions, paths and fields as
+exact.
+
+**Confirmed by eye, 2026-09-01**: each crop lands on its own region, correctly
+rectified, with the right handwriting in it; `p1b` and `p1c` are not swapped
+(aspect ratios 0.314 and 0.550 against declared 0.3138 and 0.5492).
+
+### The page photographs
+
+`page_1.jpg`, `page_2.jpg` — 1650 × 2200 each, the student's own pictures after
+the app's ingest (EXIF-uprighted, long edge stepped to 2200 px, JPEG 0.85).
+
+They are there **for a human grader and for recovery**, not as the input to a
+reading pass. See §6.
+
+---
+
+## 5. The PDF
+
+`%PDF-1.3`, 2 page objects, 979,728 bytes, opens cleanly.
+
+> **The PDF in this archive was produced by the milestone harness, not by the
+> app**, and this is an open defect rather than a property of the format. The
+> app's `PrintView` receives only `assignment`, `submissionData` and
+> `studentName` — never `pages` or `crops` — so for a handwritten assignment the
+> PDF it builds today is the *electronic* answer-sheet render with every answer
+> empty: the blank question paper with a title page.
+>
+> **Do not build anything that depends on the PDF's contents until that is
+> settled.** The images in §4 are the reliable artefacts. `pdf_filename` in the
+> payload is still correct as a filename.
+
+---
+
+## 6. How to read a crop
+
+Three findings from the visual inspection of this archive. Each is a real
+observation, not a precaution.
+
+**`is_drawing` does not predict what the answer looks like.** `p1c` is declared
+`is_drawing: false` and the student answered it with drawn circuit fragments. The
+field says what the *author* asked for, not what the *student* did. Do not route
+on it as though it forecast prose, and do not treat a drawing found under
+`is_drawing: false` as an error.
+
+**Some crops are genuinely unreadable, and the assist must say so.** `p1a` is
+faint pencil and partly illegible **to a person**. An assist that guesses at faint
+pencil produces a confident wrong transcription, which is worse than returning
+nothing: the next person to notice is a student disputing a mark on work they did
+correctly. Make "cannot read this" a first-class outcome that reaches a human.
+
+**Page-level OCR is unnecessary.** The crops are clean enough to work from
+directly. Running OCR across a whole page and then attributing text back to
+regions reintroduces exactly the attribution problem the declared rectangles have
+already solved, and it is the step most likely to put one part's answer under
+another part's mark.
+
+On `low-resolution`: every crop in this archive carries it, and that is
+structural rather than a comment on these photographs. The flag fires below
+150 dpi (5.906 px/mm); the app's ingest caps the long edge at 2200 px, which
+yields 7.87 px/mm only if the page fills the frame exactly, so the page must
+occupy about 75% of the long edge to clear it. `cap11` is the cleanest capture in
+the whole set at 0.34 mm residual and still trips it. **Treat this flag as
+advisory and expect it to be on.** It never blocks submission.
+
+---
+
+## 7. Extraction
+
+Replace the v3.1 snippet. It filters to `.json` and `.pdf`, which drops every
+image, and it flattens with `basename()`, which breaks `crops/…` paths.
+
+```python
+import os, zipfile, glob
+
+SUBMISSION_DIR = '/autograder/submission/'
+
+def _safe_join(base, member):
+    """Resolve a ZIP member under base, or return None if it escapes."""
+    target = os.path.realpath(os.path.join(base, member))
+    if os.path.commonpath([os.path.realpath(base), target]) != os.path.realpath(base):
+        return None                      # path traversal — refuse it
+    return target
+
+for archive in glob.glob(os.path.join(SUBMISSION_DIR, '*.zip')):
+    with zipfile.ZipFile(archive) as z:
+        for member in z.namelist():
+            if member.endswith('/'):
+                continue                 # directory entry, e.g. "crops/"
+            target = _safe_join(SUBMISSION_DIR, member)
+            if target is None:
+                continue
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with z.open(member) as src, open(target, 'wb') as dst:
+                dst.write(src.read())
+```
+
+**Keep the directory structure.** `crops/p1a.jpg` must land at `crops/p1a.jpg`,
+because that is the string the payload's `file` field gives you. Path traversal
+is still refused, by containment rather than by flattening.
+
+Then:
+
+```python
+payload = decrypt(open(glob.glob(SUBMISSION_DIR + '*_submission.json')[0]).read())
+
+if payload.get('input_mode') == 'handwritten':
+    for region_id, crop in payload['crops'].items():
+        image = os.path.join(SUBMISSION_DIR, crop['file'])   # 'crops/p1a.jpg'
+        # crop['part_id']      -> the label a human recognises
+        # crop['max_points']   -> from the map
+        # crop['page_k']       -> which sheet page
+        # crop['student_review'], crop['quality_flags'] -> advisory only
+else:
+    ...                                   # v3.1 behaviour, unchanged
+```
+
+---
+
+## 8. Backward compatibility
+
+Unchanged from v3.1, and still true:
+
+| student uploads | behaviour |
+|---|---|
+| `submission.zip`, electronic | Extracts, `input_mode` absent, grade from `submission_data` exactly as before |
+| `submission.zip`, handwritten | Extracts, `input_mode == "handwritten"`, grade from `crops` |
+| `submission.json` + `submission.pdf` (v3.0) | No ZIP found, proceeds as before |
+
+Nothing in this document changes the electronic path: `input_mode`, `layout_id`,
+`pages` and `crops` are written only for a handwritten assignment, and an
+electronic payload is untouched by the handwritten work.
+
+It is **not** identical to April's, though, and v3.1's "all downstream file
+formats are unchanged" has quietly expired in one more place: `ai_feedback` was
+added to every payload on 2026-08-18. It is always present and always a real
+boolean. If the autograder validates the payload against a fixed key set, that
+key has to be in it.
+
+---
+
+## 9. What this document does not cover
+
+- **`grading_rubric.json`** — unchanged, and it is the file that carries
+  `answer_modality`, `problem_statement` and the grading prompts. It reaches the
+  autograder by its own route and never travels in a student's ZIP.
+- **`results.json`** — unchanged.
+- **The decryption keys** — unchanged; `gb1:` uses the shared AES-256-GCM key
+  already in the image.
+- **Anything about how to grade.** This document says what is in the box.
+
+### One thing to check on arrival
+
+The payload must contain **no answer-key material**: no `aiGradingPrompt`, no
+`grading_prompt`, no `REFERENCE:` text, no `graderNote`, no rubric. That was
+verified on this archive and on the `assignment_spec.json` the student loads,
+both clean. It is worth re-checking on the first real submission, because a spec
+carrying grading prompts shipped to students once already — see
+`GradeBridge2026/CLAUDE.md`, Recent Changes 2026-08-31.
+
+---
+
+## Provenance
+
+Every number, filename and value above was read out of
+`Milestone_Zero_ENG17_submission.zip`. Regenerate it with `npm run milestone:zero`
+in `GradeBridge-Student-Submission`; the harness re-derives the whole package from
+the assignment export and two photographs, and prints the manifest, the decrypted
+payload and the crop measurements.
+
+Full report on how the package was produced, including the two open defects
+(§5's PDF and §6's `low-resolution`):
+`GradeBridge-Student-Submission/MILESTONE_ZERO_REPORT_2026-09-01.md`.
