@@ -13,6 +13,9 @@ captures/
                   Max (ios1_01..ios1_06) and six from an iPhone 17 Pro Max
                   (ios2_01..ios2_06). NOT YET TRACKED.
   LABELS.csv      the specification: what each of the 41 should do
+  REPORT_SEQUENCE_2026-09-02.md  START HERE for anything about registration.
+                  The five reports below were written in one day, three of them
+                  interact, and the order is not recoverable from this listing.
   BASELINE_2026-09-01.md   what the pipeline did before the gate was built
   REPORT_DECODER_ZXING_2026-09-01.md   the jsqr-vs-zxing decoder measurement
   REPORT_THREE_MARK_FIT_2026-09-02.md  the three-mark change, and the two
@@ -38,6 +41,10 @@ same reason the photographs are: **`GradeBridge2026\` is not a git repository**,
 so a measurement written only into `workorders/` exists on one machine. Anything
 whose conclusion a later session would otherwise have to re-derive by re-running
 the pipeline belongs in here, next to the evidence it was derived from.
+
+**`REPORT_SEQUENCE_2026-09-02.md` is the way in.** It puts the five 2026-09-02
+reports in the order they were written, says which constants may not be moved
+and why, and lists what is still open. Read it before any of the others.
 
 `REPORT_THREE_MARK_LABELLING_2026-09-02.md` is the last of the four and closes
 the sequence. It gives the three-mark branch the geometric sort the four-mark
