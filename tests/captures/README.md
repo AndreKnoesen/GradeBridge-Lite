@@ -7,10 +7,30 @@ captures/
   synthetic/      generated, gitignored — `npm run captures` rebuilds it
   real/           eleven phone photographs, cap01..cap11
   stale/          five more of an older layout, stale01..stale05
+  android/          thirteen from a Samsung Galaxy S22, android01..android13
+                  — unlabelled, and NOT YET TRACKED: they exist on one machine
   LABELS.csv      the specification: what each of the sixteen should do
   BASELINE_2026-09-01.md   what the pipeline did before the gate was built
+  REPORT_DECODER_ZXING_2026-09-01.md   the jsqr-vs-zxing decoder measurement
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
+
+## Why a measurement report is tracked here
+
+`BASELINE_2026-09-01.md` and `REPORT_DECODER_ZXING_2026-09-01.md` are the two
+records of what this capture set actually measured, and they are tracked for the
+same reason the photographs are: **`GradeBridge2026\` is not a git repository**,
+so a measurement written only into `workorders/` exists on one machine. Anything
+whose conclusion a later session would otherwise have to re-derive by re-running
+the pipeline belongs in here, next to the evidence it was derived from.
+
+The decoder report answers
+`GradeBridge2026\workorders\WORKORDER_DECODER_ZXING_2026-09-01.md`, which asked
+whether zxing-cpp's wasm build should replace jsQR. **The answer taken on
+2026-09-01 was not yet**, and the report carries the numbers, the two verdict
+changes, and — in its section 10 — the two triggers that would make it worth
+asking again. Read those before re-opening the question; the evaluation cost an
+afternoon and does not need repeating from scratch.
 
 ## What is in `synthetic/` and what it is worth
 
