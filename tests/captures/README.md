@@ -15,6 +15,9 @@ captures/
   LABELS.csv      the specification: what each of the 41 should do
   BASELINE_2026-09-01.md   what the pipeline did before the gate was built
   REPORT_DECODER_ZXING_2026-09-01.md   the jsqr-vs-zxing decoder measurement
+  REPORT_THREE_MARK_FIT_2026-09-02.md  the three-mark change, and the two
+                  defects that still reject ios2_05 — read before touching the
+                  mark detector, registration.ts, or the legibility floor
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
@@ -26,6 +29,14 @@ same reason the photographs are: **`GradeBridge2026\` is not a git repository**,
 so a measurement written only into `workorders/` exists on one machine. Anything
 whose conclusion a later session would otherwise have to re-derive by re-running
 the pipeline belongs in here, next to the evidence it was derived from.
+
+`REPORT_THREE_MARK_FIT_2026-09-02.md` answers
+`GradeBridge2026\workorders\WORKORDER_THREE_MARK_FIT_2026-09-02.md`. It records
+why the gate stopped requiring four corner marks, why `ios2_01` is refused anyway
+and why its legibility floor must not be moved, and — its §4 and §5 — **two
+unfixed defects that reject `ios2_05`, a photograph whose label is PASS and whose
+label is right**. Either one alone is enough to reject it. Read it before
+touching `markDetect.ts`, `registration.ts` or `LEGIBILITY_MIN_TILE_LUMA`.
 
 The decoder report answers
 `GradeBridge2026\workorders\WORKORDER_DECODER_ZXING_2026-09-01.md`, which asked
