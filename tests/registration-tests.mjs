@@ -585,6 +585,73 @@ check('the submission JSON carries the layout_id and the page set with k and N',
   }
 });
 
+check('a fit is scored against the evidence it declined, not a constant', () => {
+  const src = readFileSync(join(REPO, 'services', 'registration.ts'), 'utf8');
+  const code = stripComments(src);
+  // The constant is deleted, not retuned. It was a proxy for a measurement, and
+  // a bigger proxy would have been a bigger guess.
+  assert(!/DEGRADED_PENALTY_MM/.test(code),
+    'DEGRADED_PENALTY_MM is back — the point was to delete it, not to raise it');
+  assert(/HELDOUT_MAX_MM\s*=\s*10(\.0)?\b/.test(code),
+    'HELDOUT_MAX_MM is not 10.0 mm — the measured gap is 3.16 to 20.25 mm, and a ' +
+    'change to it needs that distribution re-measured on all 41');
+  // The score must be the worst of the witnesses, never their mean: one corner
+  // 3 mm out is a bad fit however good the others are.
+  assert(/Math\.max\(residual, evidence\.worst\)/.test(code),
+    'the score is no longer the worst of the QR residual and the held-out error');
+  // ...and the held-out set must be bounded by distance, or a neighbouring
+  // sheet's marks punish a correct fit. cap04 has three sheets in frame.
+  assert(/nearest > HELDOUT_MAX_MM \|\| which < 0\) continue/.test(code),
+    'declined candidates are no longer filtered by distance to a predicted corner');
+  // Declining evidence must lose outright, not merely cost millimetres. On a
+  // page with no perspective an affine predicts the mark it declined to within
+  // 0.08 mm, so a magnitude alone charges it almost nothing — which is the hole
+  // DEGRADED_PENALTY_MM was plugging by guess.
+  assert(/tier < best\.tier/.test(code),
+    'a fit that declined a usable mark no longer loses to one that used it');
+});
+
+check('no student-facing message asserts a cause the app has not measured', () => {
+  // The app knows what it measured; it does not know what was in front of the
+  // lens. Each of these was a diagnosis dressed as an observation, and one of
+  // them — "Only 3 of the 4 corner squares were found (NW missing)" — was
+  // simply false on ios2_05, where NW was found, measured and declined.
+  //
+  // Comments are stripped first: both files quote the old wording in order to
+  // explain why it went, and a guard that tripped on its own rationale would be
+  // deleted by the next person to read it.
+  const banned = [
+    [/is in shadow/i, '"is in shadow" — a dark region was measured; shadow is a guess'],
+    [/too blurry/i, '"Too blurry" — a gradient was measured, not a cause'],
+    [/corner squares were found/i, 'claims a count of marks found'],
+    [/\bmissing\b/i, 'claims a mark is missing'],
+  ];
+  for (const file of ['registration.ts', 'captureGate.ts']) {
+    const code = stripComments(readFileSync(join(REPO, 'services', file), 'utf8'));
+    for (const [re, why] of banned) {
+      assert(!re.test(code), `${file} ${why}`);
+    }
+    // A corner name in a student-facing string would name the mark it is
+    // claiming something about.
+    const strings = code.match(/'[^']{20,}'/g) ?? [];
+    for (const lit of strings) {
+      assert(!/\b(NW|NE|SW|SE)\b/.test(lit), `${file} names a corner to the student: ${lit}`);
+    }
+  }
+});
+
+check('a page that registered imperfectly is asked for again, not just looked at', () => {
+  const code = stripComments(readFileSync(join(REPO, 'services', 'registration.ts'), 'utf8'));
+  const i = code.indexOf('message: chosen.degraded');
+  assert(i !== -1, 'the degraded message could not be located');
+  const tail = code.slice(i, i + 400);
+  assert(/did not line up as precisely as usual/.test(tail),
+    'the degraded message no longer describes what the app observed');
+  // Hedge the diagnosis, not the instruction.
+  assert(/take this page again/i.test(tail),
+    'the degraded message no longer advises submitting the page again');
+});
+
 check('the page set says how the page registered, and on which corners', () => {
   // A page may register on three marks since 2026-09-02 (`captureGate.MARKS_MIN`),
   // and then the crops from it are cut through a transform that INFERRED one
@@ -594,12 +661,20 @@ check('the page set says how the page registered, and on which corners', () => {
   // a corner was missing; only `marks_detected` says which end of the sheet it
   // was, which is the first thing to look at when a crop is disputed.
   const pages = pkgSrc.slice(pkgSrc.indexOf('submissionJson.pages'), pkgSrc.indexOf('submissionJson.crops'));
-  for (const key of ['registration:', 'marks_found:', 'marks_detected:', 'residual_mm:']) {
+  for (const key of [
+    'registration:', 'marks_found:', 'marks_detected:', 'marks_declined:',
+    'residual_mm:', 'held_out_mm:',
+  ]) {
     assert(pages.includes(key), `the page set omits ${key}`);
   }
-  // ...and it must be the real corner list, not a placeholder.
+  // ...and they must be the real values, not placeholders.
   assert(/marks_detected:\s*page\.registration\?\.marksDetected/.test(pages),
     'marks_detected is not read from the registration');
+  // Detected-and-unused is not the complement of detected. A corner in neither
+  // list was never found; a corner here was found and thrown away, and only the
+  // second means the app had better information than it used.
+  assert(/marks_declined:\s*page\.registration\?\.marksDeclined/.test(pages),
+    'marks_declined is not read from the registration');
 });
 
 check('every crop carries its map row, its source, the review and the flags', () => {

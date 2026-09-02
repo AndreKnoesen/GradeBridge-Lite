@@ -87,7 +87,21 @@ export interface PageRegistrationInfo {
    * looking at a disputed crop should look at first. Empty when nothing fitted.
    */
   marksDetected?: string[];
+  /**
+   * Corners where a mark WAS detected and the chosen fit did not use it.
+   *
+   * "Detected and not used" and "never found" are different facts. Before
+   * 2026-09-02 the app collapsed them — it reported the complement of
+   * `marksDetected` as missing — and on `ios2_05` that made it state a mark had
+   * not been found when it had been found, measured and discarded.
+   */
+  marksDeclined?: string[];
   residualMm?: number;
+  /**
+   * Worst error at a declined mark near one of the fit's own predicted corners.
+   * The QR residual is one point in the NE corner; this is the second witness.
+   */
+  heldOutMm?: number;
   /** Student-facing, one sentence. */
   message?: string;
 }

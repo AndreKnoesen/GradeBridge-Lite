@@ -295,18 +295,17 @@ const MECHANISM_CASES = [
   },
   {
     name: 'ios2_05', folder: 'students',
-    // The capture this work order was written for. It now PASSES.
-    //
-    // It registers on THREE marks, not four, and that is not a leftover of the
-    // padding defect — all four are found. The three-mark affine reprojects the
-    // QR to 0.416 mm and the four-mark homography to 0.756 mm, and
-    // `DEGRADED_PENALTY_MM` is 0.25, so the affine wins on score by 0.09 mm.
-    // See the report: measured against the marks themselves rather than the QR,
-    // that affine is 3.162 mm out at the NW mark it declined to use. The
-    // penalty is a threshold and this work order forbids moving one, so the
-    // behaviour is pinned here rather than changed.
-    want: 'PASS', marks: 3, detected: ['NE', 'SW', 'SE'], status: 'degraded',
-    maxResidual: fmt.RESIDUAL_MAX_MM, degraded: true,
+    // **Its residual went UP, from 0.416 mm to 0.756 mm, and that is the
+    // point.** Until 2026-09-02 a fit was scored on the QR alone, and the QR
+    // sits in the NE corner, so a three-point affine could tilt toward it and
+    // score 0.416 while missing the NW mark — which it had found and declined —
+    // by 3.162 mm. Scoring a fit against the evidence it discarded reverses the
+    // ordering: the four-mark homography is exact at all four marks and now
+    // wins on 0.756. A larger number for a better fit.
+    want: 'PASS', marks: 4, detected: ['NW', 'NE', 'SW', 'SE'], status: 'ok',
+    maxResidual: fmt.RESIDUAL_MAX_MM, minResidual: 0.7,
+    // Nothing was declined near a corner, so there is no second-witness error.
+    heldOut: 0,
   },
   {
     name: 'ios2_04', folder: 'students',
@@ -357,16 +356,28 @@ for (const c of MECHANISM_CASES) {
       typeof m.residualMm === 'number' && m.residualMm < c.maxResidual, seen);
   }
   if (typeof c.minResidual === 'number') {
-    // The rejection must stay a residual rejection. If this number ever falls
-    // inside the budget the page is passing for a reason nothing here tested.
+    // For a rejection: it must stay a residual rejection, or the page is
+    // passing for a reason nothing here tested. For `ios2_05`: its residual must
+    // stay ABOVE the affine's 0.416 mm, because a drop back to that number
+    // means the QR-only scoring is back.
     check(`${c.name}: residual still over ${c.minResidual} mm`,
       typeof m.residualMm === 'number' && m.residualMm > c.minResidual, seen);
+  }
+  if (typeof c.heldOut === 'number') {
+    check(`${c.name}: held-out error ${c.heldOut} mm`,
+      v.registration !== null && v.registration.heldOutMm === c.heldOut,
+      v.registration ? String(v.registration.heldOutMm) : 'none');
+  }
+  // A fit that used every mark near its corners declined none, and must say so.
+  if (c.marks === 4) {
+    check(`${c.name}: declined nothing near a corner`,
+      v.registration !== null && v.registration.marksDeclined.length === 0,
+      v.registration ? v.registration.marksDeclined.join('+') : 'none');
   }
   // A page registered on three marks must SAY so, and say WHICH three: the
   // status, the count and the corner list all travel into the submission
   // manifest as `registration`, `marks_found` and `marks_detected`, which is
-  // where a grader looking at a disputed crop reads them. The absent corner
-  // names the end of the sheet the transform inferred rather than measured.
+  // where a grader looking at a disputed crop reads them.
   if (c.degraded) {
     check(`${c.name}: the record says which three it registered on`,
       v.registration !== null && v.registration.status === 'degraded' &&

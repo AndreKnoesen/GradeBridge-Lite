@@ -163,7 +163,18 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
       // instead of measuring. That is the first thing to look at when a crop
       // from such a page is disputed, and a count alone cannot say it.
       marks_detected: page.registration?.marksDetected ?? [],
+      // Detected, and NOT used by the fit that was chosen. This is not the
+      // complement of `marks_detected`: a corner absent from both was never
+      // found at all, and a corner listed here was found, measured and
+      // declined. A grader deciding a disputed crop needs those to be
+      // different facts, because the second one means the app had better
+      // information about that end of the sheet than it used.
+      marks_declined: page.registration?.marksDeclined ?? [],
       residual_mm: page.registration?.residualMm ?? null,
+      // QR reprojection is `residual_mm`; this is the worst error at a declined
+      // mark near one of the fit's own corners, in millimetres. 0 when the fit
+      // used every candidate near its corners.
+      held_out_mm: page.registration?.heldOutMm ?? null,
     }));
     const crops: Record<string, unknown> = {};
     for (const crop of cropList(s.crops)) {

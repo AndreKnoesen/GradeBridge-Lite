@@ -183,7 +183,9 @@ for (const [index, photo] of PHOTOS.entries()) {
       layoutId: registration.qr.fields.layoutId,
       marksFound: registration.marksFound,
       marksDetected: registration.marksDetected,
+      marksDeclined: registration.marksDeclined,
       residualMm: registration.residualMm ?? undefined,
+      heldOutMm: registration.heldOutMm ?? undefined,
       message: registration.message,
     },
   });
@@ -427,7 +429,8 @@ console.log('\n  pages:');
 for (const p of payload.pages) {
   console.log(`    ${p.file}  k=${p.k}/${p.n}  ${p.width}x${p.height}  ` +
     `${p.registration}  marks=${p.marks_found} (${(p.marks_detected ?? []).join('+') || 'none'})  ` +
-    `residual=${p.residual_mm?.toFixed(3)} mm`);
+    `declined=${(p.marks_declined ?? []).join('+') || 'none'}  ` +
+    `residual=${p.residual_mm?.toFixed(3)} mm  held-out=${(p.held_out_mm ?? 0).toFixed(3)} mm`);
 }
 console.log('\n  crops:');
 for (const c of Object.values(payload.crops)) {

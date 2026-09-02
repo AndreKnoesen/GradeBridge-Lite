@@ -21,6 +21,9 @@ captures/
   REPORT_PADDING_MASK_2026-09-02.md    the validity mask that fixed the first
                   of those two. ios2_05 passes; the permutation defect is still
                   open, and a third one is now exposed
+  REPORT_FIT_SCORING_2026-09-02.md     the third one, fixed: a fit is scored
+                  against the evidence it declined, DEGRADED_PENALTY_MM is gone,
+                  and no message asserts a cause the app has not measured
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
@@ -33,7 +36,14 @@ so a measurement written only into `workorders/` exists on one machine. Anything
 whose conclusion a later session would otherwise have to re-derive by re-running
 the pipeline belongs in here, next to the evidence it was derived from.
 
-`REPORT_PADDING_MASK_2026-09-02.md` is the later of the two and supersedes the
+`REPORT_FIT_SCORING_2026-09-02.md` is the latest. It deletes
+`DEGRADED_PENALTY_MM` and scores a fit against every mark it declined near one
+of its own predicted corners, which is what finally gives `ios2_05` a four-mark
+fit. **Read its §1 before changing `HELDOUT_MAX_MM` and its §3 before changing
+`consider`** — §3 records why a magnitude alone was not enough, which is not
+obvious and cost four synthetic captures to find.
+
+`REPORT_PADDING_MASK_2026-09-02.md` supersedes the
 first report's §4: `rotateGray`'s white padding was entering `adaptiveInk`'s
 local mean and erasing real marks at the frame edge, and `Gray` now carries a
 validity mask so the mean averages only real pixels. **`ios2_05` passes.** Read

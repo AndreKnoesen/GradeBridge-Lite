@@ -258,12 +258,29 @@ export interface GateVerdict {
   registration: RegistrationResult | null;
 }
 
+/**
+ * **Say what was observed, then what to do. Never why.**
+ *
+ * The app knows what it measured. It does not know what was in front of the
+ * lens, and every message that named a cause was asserting more than it had:
+ * "Too blurry" and "Part of the page is in shadow" are both diagnoses of a
+ * photograph from a number about a photograph. A dark region might be a shadow,
+ * a grey desk showing through a thin sheet, or a phone that metered for a
+ * window. The student is standing there and can see which; the app cannot.
+ *
+ * **The hedge belongs on the diagnosis, not on the instruction.** "Take the
+ * photo again" is a thing to do, not a claim about the world, and softening it
+ * into "you may wish to consider" would help nobody. So each of these describes
+ * an observation in the app's own terms and then gives a plain instruction.
+ *
+ * `page_code` and `budget` were already fact-about-the-app and are unchanged.
+ */
 const MESSAGES: Record<GateCheckId, string> = {
   page_code:
     'The code in the top-right corner of the page could not be read. Move somewhere brighter, ' +
     'hold the phone still, and take the photo again with the whole sheet in the picture.',
   sharpness:
-    'Too blurry. Hold the phone steady and shoot again.',
+    'This page does not look sharp enough to read. Hold the phone steady and take it again.',
   // Aim, not rule: the gate accepts a fit on three marks that lands inside the
   // residual budget (`MARKS_MIN`). A student who is being shown this message
   // has fewer than three or a fit that does not hold, and getting all four into
@@ -273,7 +290,7 @@ const MESSAGES: Record<GateCheckId, string> = {
     'Get the whole page in the frame. Aim to get all four corner squares in the picture — ' +
     'shoot the whole sheet from directly above.',
   legibility:
-    'Part of the page is in shadow. Move the light or the page and shoot again.',
+    'Part of the page looks too dark to read. Move the page or the light and take it again.',
   budget:
     'This page took too long to check. Take the photo again with the whole sheet in the picture.',
 };

@@ -39,6 +39,18 @@
  * Three give an affine fit with the fourth inferred and the page flagged. Two
  * or fewer is not a dead end the student should be shown — the caller routes
  * them to direct capture, where they photograph the answer area itself.
+ *
+ * ## A fit is scored on the evidence it did not use
+ *
+ * The QR is the first witness and for a long time it was the only one, which
+ * made the score gameable in one specific way: the symbol sits in the NE corner,
+ * and a three-point affine has a spare degree of freedom to tilt toward it. On
+ * `ios2_05` that produced a fit scoring 0.416 mm at the QR while missing, by
+ * 3.162 mm, an NW mark it had found and declined.
+ *
+ * So every candidate a fit declines is also reprojected and measured, and the
+ * score is the worst error over the QR and those. `HELDOUT_MAX_MM` keeps a
+ * neighbouring sheet's marks out of it.
  */
 
 import {
@@ -64,8 +76,24 @@ export interface RegistrationResult {
   marksFound: number;
   /** Which of NW, NE, SW, SE were used in the fit. */
   marksDetected: string[];
+  /**
+   * Corners where a mark WAS detected and this fit did not use it.
+   *
+   * "Detected and not used" and "never found" are different facts and a grader
+   * deciding a disputed crop needs to be able to tell them apart, so they are
+   * not collapsed into the complement of `marksDetected`.
+   */
+  marksDeclined: string[];
   /** QR reprojection error in page millimetres — independent of the fit's inputs. */
   residualMm: number | null;
+  /**
+   * Worst error, in millimetres, at a mark this fit declined to use but which
+   * sits within `HELDOUT_MAX_MM` of one of its own predicted corners. 0 when
+   * the fit used every candidate near its corners. This is the second witness:
+   * the QR is one point in the NE corner, and a three-point affine has a spare
+   * degree of freedom to tilt toward it.
+   */
+  heldOutMm: number | null;
   /** Student-facing, one sentence. Empty when nothing is wrong. */
   message: string;
   /** Set only when registration threw: the exception text, for the report. */
@@ -136,12 +164,55 @@ const SCALE_BAND = 2.1;
 const MAX_FORESHORTENING = 1.9;
 
 /**
- * What a three-mark fit gives up against a four-mark one, in millimetres of
- * residual. Small, because the residual is the real evidence: this only breaks
- * ties between fits that are both good, in favour of the one that can represent
- * perspective.
+ * How near a predicted corner a declined candidate must sit before it counts as
+ * evidence against the fit that declined it.
+ *
+ * **This replaced `DEGRADED_PENALTY_MM = 0.25`, which was a guess standing in
+ * for a measurement nobody was taking.** The penalty existed to stop a
+ * three-mark fit beating a four-mark one on a technicality, and it failed at
+ * exactly that on `ios2_05`: the affine scored 0.666 against the homography's
+ * 0.756 and won by 0.09 mm, while being 3.162 mm out at a mark it had found and
+ * declined. Making the constant bigger would have been a bigger guess. The fix
+ * is to score the fit against the evidence it threw away.
+ *
+ * ## Why there has to be a cut-off at all
+ *
+ * A cluttered desk produces mark-shaped blobs belonging to other sheets —
+ * `cap04` has three sheets in frame — and scoring a correct fit against a
+ * foreign sheet's mark would punish it for not matching a page it is not of.
+ * That would be worse than the defect being fixed. So a declined candidate is
+ * evidence only if it sits where this fit says one of ITS OWN corners is.
+ *
+ * ## The measurement, on all 41 captures
+ *
+ * For the fit actually chosen on each capture, every declined candidate's
+ * distance to the nearest predicted corner:
+ *
+ *   3.16 mm   ios2_05 NW      <- a true mark of this sheet, declined
+ *   -------------------------- 17 mm of empty space, and 10.0 sits in it
+ *   20.25 mm  android13         <- the nearest thing belonging to something else
+ *   31.25 .. 176.08 mm      <- 38 more, all clutter or another sheet
+ *
+ * **`cap04`, the three-sheet capture this cut-off exists for, has its nearest
+ * declined candidate at 48.64 mm.** The trap does not come close to firing.
+ *
+ * 10.0 mm is 3.2x the one true-mark case and half the nearest foreign blob.
+ *
+ * Note what this distance is used FOR: it decides whether a declined candidate
+ * is evidence at all. What follows from being evidence is in `consider` — the
+ * fit is charged the distance, and, more importantly, it is ranked below every
+ * fit that declined nothing.
+ *
+ * ## Why a false positive here is not symmetric with a false negative
+ *
+ * Across every fit CONSIDERED rather than chosen, 54 declined candidates of
+ * 1088 fall under 10 mm — but every one of those is under a fit that is wrong
+ * and loses anyway, and a near declined candidate RAISES a fit's score. Scoring
+ * one wrongly can only push a bad fit further down. The harmful direction is a
+ * spurious candidate near a corner of the fit that is RIGHT, and the closest
+ * that ever comes is the 20.25 mm above.
  */
-const DEGRADED_PENALTY_MM = 0.25;
+const HELDOUT_MAX_MM = 10.0;
 
 /**
  * How far beyond the symbol the mask reaches, in millimetres — chosen so the
@@ -184,17 +255,25 @@ const qrBounds = (corners: Point[], marginPx: number) => ({
 
 interface Fit {
   transform: Matrix3;
+  /** QR reprojection alone, in millimetres. Reported; not what orders fits. */
   residual: number;
   used: number[];
   degraded: boolean;
-  /** Residual plus the degraded penalty — what fits are actually ordered by. */
+  /** 0 when the fit declined nothing it could have used, 1 when it did. */
+  tier: number;
+  /** Worst error at a declined candidate near one of this fit's own corners. */
+  heldOut: number;
+  /** Corners where a candidate was detected and this fit did not use it. */
+  declined: number[];
+  /** `max(residual, heldOut)` — what fits are actually ordered by. */
   score: number;
 }
 
 const fail = (status: RegistrationStatus, message: string, qr: QrReading | null = null,
-              marksDetected: string[] = []): RegistrationResult => ({
+              marksDetected: string[] = [], marksDeclined: string[] = []): RegistrationResult => ({
   status, usable: false, qr, transform: null,
-  marksFound: marksDetected.length, marksDetected, residualMm: null, message,
+  marksFound: marksDetected.length, marksDetected, marksDeclined,
+  residualMm: null, heldOutMm: null, message,
 });
 
 /**
@@ -219,7 +298,8 @@ const registerAgainstQr = (
 
   const pxPerMm = qrScalePxPerMm(qrUpright);
   if (!Number.isFinite(pxPerMm) || pxPerMm <= 0) {
-    return fail('no_qr', 'That page could not be measured. Retake the photo straight on.', qr);
+    return fail('no_qr',
+      'This page could not be measured. Take the photo again, straight on.', qr);
   }
 
   // ---- Stage 3: collect candidates ----
@@ -284,6 +364,50 @@ const registerAgainstQr = (
 
   const cornerMm = (i: number): Point => ({ x: MARK_CENTRES_MM[i][0], y: MARK_CENTRES_MM[i][1] });
 
+  /**
+   * The second witness: every detected candidate this fit declined to consume,
+   * reprojected and measured against the corner it sits at.
+   *
+   * The QR is one point, in the NE corner. A three-point affine has a spare
+   * degree of freedom to tilt toward it and nail it while being badly wrong at
+   * the opposite corner — which is what `ios2_05` did, at 3.162 mm, having found
+   * the NW mark and thrown it away. A fit is now asked about the evidence it
+   * discarded as well as the evidence nobody gave it.
+   *
+   * The **worst** of the errors, never the mean: one corner 3 mm out is a bad
+   * fit however good the others are, and a mean lets three good points hide it.
+   *
+   * Only candidates within `HELDOUT_MAX_MM` of one of this fit's own predicted
+   * corners count — see there for why, and for the measurement behind 10.0.
+   */
+  const heldOutEvidence = (
+    transform: Matrix3, picks: MarkCandidate[],
+  ): { worst: number; corners: number[] } | null => {
+    // Predict the four corners once, not once per candidate.
+    const predicted: Point[] = [];
+    for (let i = 0; i < 4; i++) {
+      const p = applyMatrix(transform, cornerMm(i));
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+      predicted.push(p);
+    }
+    let worst = 0;
+    const corners = new Set<number>();
+    for (const candidate of squares) {
+      if (picks.includes(candidate)) continue;
+      const p = toSource(candidate);
+      let nearest = Infinity, which = -1;
+      for (let i = 0; i < 4; i++) {
+        const d = Math.hypot(p.x - predicted[i].x, p.y - predicted[i].y) / pxPerMm;
+        if (d < nearest) { nearest = d; which = i; }
+      }
+      // Too far to be about this sheet at all: another page, or clutter.
+      if (nearest > HELDOUT_MAX_MM || which < 0) continue;
+      corners.add(which);
+      if (nearest > worst) worst = nearest;
+    }
+    return { worst, corners: [...corners].sort((a, b) => a - b) };
+  };
+
   let best: Fit | null = null;
 
   /**
@@ -340,16 +464,51 @@ const registerAgainstQr = (
     if (!transform) return;
     const residual = scoreFit(transform);
     if (!Number.isFinite(residual)) return;
-    // **The residual decides, not the number of marks.** An earlier version
+    // **The evidence decides, not the number of marks.** An earlier version
     // preferred any four-mark fit over any three-mark one, on the reasoning that
     // four measured points beat three plus an inference. That is true only when
     // the fourth point is a mark. On a capture whose bottom-left corner is
     // outside the frame there is no fourth mark to find, so the rule promoted a
     // speck of header text into the corner and took a 0.5 mm fit to a 21 mm one.
-    // A small penalty keeps the original preference where it was right: between
-    // two fits of comparable quality, the one that can model perspective wins.
-    const score = residual + (degraded ? DEGRADED_PENALTY_MM : 0);
-    if (!best || score < best.score) best = { transform, residual, used, degraded, score };
+    //
+    // Then it was a fixed penalty on being three-mark, which is a proxy for the
+    // question rather than the question. **Now the fit is scored on every piece
+    // of evidence it did not use**, so a three-mark fit that ignored a real
+    // fourth mark is charged the full distance it misses that mark by, and a
+    // three-mark fit on a page with only three marks is charged nothing. No
+    // constant expresses the preference any more; the measurement does.
+    const evidence = heldOutEvidence(transform, picks);
+    if (!evidence) return;
+    const score = Math.max(residual, evidence.worst);
+
+    // **Two tiers, and the first one is the whole of the fix.**
+    //
+    // Tier 0 is a fit that declined nothing it could have used. Tier 1 is a fit
+    // that left a detected mark sitting where it says one of its own corners
+    // is. Any tier-0 fit beats any tier-1 fit, whatever the millimetres say.
+    //
+    // A magnitude alone cannot express this, and that is measured rather than
+    // argued. On four of the synthetic captures — which are rendered from the
+    // canonical constants and so carry no perspective at all — a three-point
+    // affine IS the right model, so it fits the QR marginally better than the
+    // homography AND predicts the mark it declined to within 0.08 mm. Scored on
+    // `max(residual, heldOut)` alone it wins, and the page is then reported as
+    // registering on three marks when four were found and usable. **Declining
+    // evidence that agrees with you costs nothing on a magnitude scale**, which
+    // is exactly the hole the old `DEGRADED_PENALTY_MM` was plugging by guess.
+    //
+    // A preference rather than an exclusion, so that a spurious duplicate blob
+    // beside a real mark cannot leave a page with no fit at all. Nothing in the
+    // 41 captures or the 12 synthetics exercises that fallback; it exists so
+    // that the strict form cannot cost a student a page it was never measured
+    // against.
+    const tier = evidence.corners.length > 0 ? 1 : 0;
+    if (!best || tier < best.tier || (tier === best.tier && score < best.score)) {
+      best = {
+        transform, residual, used, degraded, tier, score,
+        heldOut: evidence.worst, declined: evidence.corners,
+      };
+    }
   };
 
   /**
@@ -404,22 +563,23 @@ const registerAgainstQr = (
   const chosen: Fit | null = best;
   if (!chosen) {
     return fail('too_few_marks',
-      'The four corner squares could not all be found on this page. Get the whole sheet in the ' +
-      'picture and shoot it flat, from directly above.', qr);
+      'Not enough of the corner squares could be found on this page. Take it again with the whole ' +
+      'sheet in the picture, flat, from directly above.', qr);
   }
 
   const marksDetected = chosen.used.map(i => MARK_CORNER_NAMES[i]);
-  const missing = MARK_CORNER_NAMES.filter(n => !marksDetected.includes(n));
+  const marksDeclined = chosen.declined.map(i => MARK_CORNER_NAMES[i]);
   const budget = chosen.degraded ? DEGRADED_RESIDUAL_MAX_MM : RESIDUAL_MAX_MM;
 
   if (chosen.residual > budget) {
     return {
       ...fail('residual',
-        'This page did not line up accurately enough to cut the answers out of it. Retake it flat, ' +
-        'from directly above, with the whole sheet in the picture.', qr, marksDetected),
+        'This page did not line up well enough to cut the answers out of it. Take it again, flat ' +
+        'and from directly above, with the whole sheet in the picture.', qr, marksDetected, marksDeclined),
       // Kept on the failure too: it is how far out the best available fit was,
       // which is what tells a second sheet in frame apart from a bad photograph.
       residualMm: chosen.residual,
+      heldOutMm: chosen.heldOut,
     };
   }
 
@@ -430,10 +590,20 @@ const registerAgainstQr = (
     transform: chosen.transform,
     marksFound: marksDetected.length,
     marksDetected,
+    marksDeclined,
     residualMm: chosen.residual,
+    heldOutMm: chosen.heldOut,
+    // **Describes what happened, and claims no cause.** This used to read "Only
+    // 3 of the 4 corner squares were found (NW missing)", which on `ios2_05` was
+    // false — NW was found, measured, and declined — and which in every case
+    // asserts something about the photograph rather than about the fit. What
+    // the app knows is that the page lined up less precisely than usual. The
+    // instruction stays direct, and it asks for the page again rather than only
+    // inviting a look, because a page that registered imperfectly is the one
+    // most worth retaking while the sheet is still on the desk.
     message: chosen.degraded
-      ? `Only ${marksDetected.length} of the 4 corner squares were found (${missing.join(', ')} missing), ` +
-        'so the crops from this page may be slightly off. Check them below.'
+      ? 'This page did not line up as precisely as usual, so the crops may be slightly off. ' +
+        'Check them below and take this page again if any of them looks wrong.'
       : '',
   };
 };

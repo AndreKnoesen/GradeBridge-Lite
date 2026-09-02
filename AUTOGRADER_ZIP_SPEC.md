@@ -1,10 +1,13 @@
 # GradeBridge — submission ZIP interface
 
-**Version:** v4.1
+**Version:** v4.2
 **Date:** 2026-09-02
+**Supersedes:** v4.1, earlier the same day — `pages[]` has gained
+`marks_declined` and `held_out_mm`. Nothing was removed or renamed, so a v4.1
+or v4.0 reader still works.
 **Supersedes:** v4.0, 2026-09-01 — which is accurate except that `pages[]` has
 gained `marks_detected`, and a page may now report `marks_found: 3`. Both are in
-§3.2. Nothing was removed or renamed, so a v4.0 reader still works.
+§3.2.
 **Supersedes:** v3.1, 2026-04-08
 **Audience:** whoever writes the autograder
 
@@ -53,14 +56,14 @@ gives `Milestone_Zero_ENG17_submission`. DEFLATE, level 6.
 
 | bytes | entry |
 |---:|---|
-| 2,736 | `Milestone_Zero_ENG17_submission.json` |
+| 2,832 | `Milestone_Zero_ENG17_submission.json` |
 | 40,696 | `crops/p1a.jpg` |
 | 38,285 | `crops/p1b.jpg` |
 | 81,454 | `crops/p1c.jpg` |
 | 474,470 | `page_1.jpg` |
 | 501,463 | `page_2.jpg` |
 
-Archive total 1,117,417 bytes. The six entries are byte-identical between runs of
+Archive total 1,117,491 bytes. The six entries are byte-identical between runs of
 the same inputs; the total moves a byte or two because `last_saved` is a
 timestamp inside the encrypted payload.
 
@@ -190,11 +193,11 @@ v3.1 described.
   { "file": "page_1.jpg", "width": 1650, "height": 2200,
     "k": 2, "n": 16, "registration": "ok",
     "marks_found": 4, "marks_detected": ["NW", "NE", "SW", "SE"],
-    "residual_mm": 0.4958780733592441 },
+    "marks_declined": [], "residual_mm": 0.4958780733592441, "held_out_mm": 0 },
   { "file": "page_2.jpg", "width": 1650, "height": 2200,
     "k": 3, "n": 16, "registration": "ok",
     "marks_found": 4, "marks_detected": ["NW", "NE", "SW", "SE"],
-    "residual_mm": 0.34332017809218907 }
+    "marks_declined": [], "residual_mm": 0.34332017809218907, "held_out_mm": 0 }
 ]
 ```
 
@@ -206,7 +209,9 @@ v3.1 described.
 | `registration` | `"ok"` observed. `"degraded"` (a three-mark affine fit, crops may be slightly off) is declared but **not observed here**. |
 | `marks_found` | 4 observed. Since 2026-09-02 a page may legitimately register on **3**: the capture gate accepts a three-mark fit that meets the same 1.0 mm residual budget as a four-mark one. Such a page reads `"registration": "degraded"`. |
 | `marks_detected` | **Added 2026-09-02.** Which of `NW`, `NE`, `SW`, `SE` the fit was built on, in that order. `[]` when nothing fitted. On a `degraded` page the absent corner names the end of the sheet the transform **inferred rather than measured**, which is where to look first if a crop from that page is disputed. `marks_found` is this array's length. |
+| `marks_declined` | **Added 2026-09-02.** Corners where a mark **was detected and the chosen fit did not use it**. `[]` observed, and `[]` on every capture in the set. **This is not the complement of `marks_detected`:** a corner in neither list was never found, and a corner here was found, measured and set aside. Only the second means the app had better information about that end of the sheet than it used. |
 | `residual_mm` | QR reprojection error. Full float precision; do not expect it rounded. |
+| `held_out_mm` | **Added 2026-09-02.** Worst error, in millimetres, at a mark named in `marks_declined`. `0` observed, and `0` whenever `marks_declined` is empty. `residual_mm` is measured at the QR, which is one point in the NE corner; this is measured at the marks the fit threw away. A page with a small `residual_mm` and a large `held_out_mm` is a fit that has tilted itself to satisfy the symbol. |
 
 **`page_1.jpg` is page 2 of the sheet.** The filename counts position in the ZIP;
 `k` counts position on the paper. Always use `k`.
