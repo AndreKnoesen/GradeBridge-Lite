@@ -24,6 +24,9 @@ captures/
   REPORT_FIT_SCORING_2026-09-02.md     the third one, fixed: a fit is scored
                   against the evidence it declined, DEGRADED_PENALTY_MM is gone,
                   and no message asserts a cause the app has not measured
+  REPORT_THREE_MARK_LABELLING_2026-09-02.md  the last of the four: three marks
+                  are named the way four are. Note its §3 — cap02 and cap03
+                  moved, both keeping their verdict
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
@@ -36,7 +39,13 @@ so a measurement written only into `workorders/` exists on one machine. Anything
 whose conclusion a later session would otherwise have to re-derive by re-running
 the pipeline belongs in here, next to the evidence it was derived from.
 
-`REPORT_FIT_SCORING_2026-09-02.md` is the latest. It deletes
+`REPORT_THREE_MARK_LABELLING_2026-09-02.md` is the last of the four and closes
+the sequence. It gives the three-mark branch the geometric sort the four-mark
+path always had. **Read its §3 before trusting the `cap02` and `cap03` rows in
+any earlier report** — those two moved, both keeping their verdict, and the
+numbers they used to carry were meaningless.
+
+`REPORT_FIT_SCORING_2026-09-02.md` deletes
 `DEGRADED_PENALTY_MM` and scores a fit against every mark it declined near one
 of its own predicted corners, which is what finally gives `ios2_05` a four-mark
 fit. **Read its §1 before changing `HELDOUT_MAX_MM` and its §3 before changing

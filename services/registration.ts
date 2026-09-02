@@ -51,6 +51,13 @@
  * So every candidate a fit declines is also reprojected and measured, and the
  * score is the worst error over the QR and those. `HELDOUT_MAX_MM` keeps a
  * neighbouring sheet's marks out of it.
+ *
+ * ## Three points are named the same way four are
+ *
+ * `label()` sorts four points geometrically before assigning corners. The
+ * three-mark branch did not, and read its trio in the detector's fullest-first
+ * order. `labelTrio()` closes that: same two keys, restricted to whichever
+ * corners the hypothesis says are present.
  */
 
 import {
@@ -138,6 +145,69 @@ const MAX_CANDIDATES = 24;
  * four are scored and the QR decides.
  */
 const THREE_MARK_LABELLINGS: number[][] = [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]];
+
+/**
+ * The two keys that name a corner, defined once because two orderings that must
+ * agree are a defect waiting to happen.
+ *
+ * **NW and SE are the extremes of `x + y`; SW and NE the extremes of `x - y`.**
+ * That is exact rather than approximate for any rotation under 45 degrees, and
+ * the frame has already been turned by the QR's angle, so it holds. Writing the
+ * rotation out:
+ *
+ *     x' + y' = (cos t + sin t) * x + (cos t - sin t) * y
+ *     x' - y' = (cos t - sin t) * x - (cos t + sin t) * y
+ *
+ * Both coefficients of the first are positive below 45 degrees, so `x + y` is
+ * monotone increasing in both coordinates and its extremes are the corner
+ * nearest the origin and the one furthest from it. The second increases in x
+ * and decreases in y, so its extremes are the other diagonal.
+ */
+const sumKey = (p: Point): number => p.x + p.y;
+const difKey = (p: Point): number => p.x - p.y;
+
+/**
+ * Which printed corner each of these points is, for a trio.
+ *
+ * **This is `label()` restricted to three, and the restriction is the whole
+ * change.** Until 2026-09-02 the three-mark branch had the four hypotheses
+ * above and no geometric sort inside any of them: it passed
+ * `[squares[a], squares[b], squares[c]]` with `a < b < c`, which is the
+ * DETECTOR's order — fullest blob first — so a trio was read correctly only
+ * when the fill ranking happened to agree with reading order. On `ios2_05` it did
+ * not, and the correct reading of three real marks, which scores 0.54 mm, was
+ * never generated.
+ *
+ * The obvious repair is to try all 3! orders of each trio against each
+ * hypothesis, 24 readings instead of 4. That is unnecessary: **given three
+ * points and a hypothesis about which corner is absent, the three are
+ * determined**, exactly as four are, by the same two keys. So this stays at
+ * four fits per trio and nothing about the cost changes.
+ *
+ * The rules applied depend on which corners are present, and they have to:
+ * the sheet is taller than it is wide, so with NW absent the SW mark's
+ * `x + y` exceeds the NE mark's, and "least `x + y`" would name the wrong
+ * point. It is only ever asked when NW is one of the three.
+ *
+ * Returns null when two of the three tie on a deciding extreme, or the trio is
+ * collinear — nothing determines the labelling then, and an undetermined
+ * hypothesis must not be scored. Same check `label()` makes.
+ */
+export const labelTrio = (
+  used: number[], three: { x: number; y: number }[],
+): { x: number; y: number }[] | null => {
+  if (used.length !== 3 || three.length !== 3) return null;
+  const bySum = [...three].sort((a, b) => sumKey(a) - sumKey(b));
+  const byDif = [...three].sort((a, b) => difKey(a) - difKey(b));
+  const byCorner = [
+    bySum[0],                    // 0 NW — least x + y
+    byDif[byDif.length - 1],     // 1 NE — greatest x - y
+    byDif[0],                    // 2 SW — least x - y
+    bySum[bySum.length - 1],     // 3 SE — greatest x + y
+  ];
+  const out = used.map(c => byCorner[c]);
+  return new Set(out).size === used.length ? out : null;
+};
 
 /** The printed mark spacing: 186.9 mm across the sheet, 250.4 mm down it. */
 const MARK_SPAN_X_MM = MARK_CENTRES_MM[1][0] - MARK_CENTRES_MM[0][0];
@@ -526,8 +596,8 @@ const registerAgainstQr = (
    * correctly, and the combination that won was four wrong blobs.
    */
   const label = (four: MarkCandidate[]): MarkCandidate[] | null => {
-    const bySum = [...four].sort((a, b) => (a.x + a.y) - (b.x + b.y));
-    const byDif = [...four].sort((a, b) => (a.x - a.y) - (b.x - b.y));
+    const bySum = [...four].sort((a, b) => sumKey(a) - sumKey(b));
+    const byDif = [...four].sort((a, b) => difKey(a) - difKey(b));
     const nw = bySum[0], se = bySum[3], sw = byDif[0], ne = byDif[3];
     if (new Set([nw, ne, sw, se]).size !== 4) return null;
     return [nw, ne, sw, se];   // MARK_CENTRES_MM order
@@ -553,8 +623,14 @@ const registerAgainstQr = (
         }
         // The same three, read four ways: any one of the corners may be the one
         // that is missing, and which it is cannot be told from the three alone.
+        //
+        // **Which point is which, however, IS determined** — by the same two
+        // keys the four-mark path sorts on. Passing them in the detector's own
+        // order was the defect: it is fullest-blob-first, and a trio was read
+        // correctly only when that ranking happened to match reading order.
         for (const trio of THREE_MARK_LABELLINGS) {
-          consider(trio, [squares[a], squares[b], squares[c]]);
+          const three = labelTrio(trio, [squares[a], squares[b], squares[c]]);
+          if (three) consider(trio, three as MarkCandidate[]);
         }
       }
     }

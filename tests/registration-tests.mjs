@@ -123,6 +123,138 @@ await checkAsync('every field is read by column NAME, not by position', async ()
 });
 
 // =====================================================
+// Three marks are named the way four are
+// =====================================================
+// **No capture in the set exercises this**, which is why it is constructed.
+// `ios2_05` was the only real case and the padding fix removed it by giving the
+// page its fourth mark back. So the proof has to be built: a page under a known
+// perspective, one mark dropped, the remaining three handed over in an order
+// the OLD code would have read wrongly.
+//
+// The old code passed `[squares[a], squares[b], squares[c]]` with a < b < c —
+// the detector's own order, fullest blob first — and varied only WHICH corner
+// it supposed was missing. That is the identity mapping from position in the
+// input to corner, and it is right only when the fill ranking happens to agree
+// with reading order.
+
+/** The four printed mark centres, projected by an arbitrary perspective. */
+const projectedMarks = (narrow, lift, rollDeg) => {
+  // A trapezoid: the far edge shorter than the near one, plus a small roll —
+  // the shape a phone produces when it is not held parallel to the desk.
+  const W = 1000, H = 1340;
+  const shrink = (W * narrow) / 2;
+  const quad = [
+    { x: shrink, y: H * lift }, { x: W - shrink, y: H * lift },
+    { x: 0, y: H }, { x: W, y: H },
+  ];
+  const t = (rollDeg * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t);
+  const cx = W / 2, cy = H / 2;
+  const rolled = quad.map(p => ({
+    x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
+    y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
+  }));
+  const mmQuad = [
+    { x: 0, y: 0 }, { x: fmt.PAGE_W_MM, y: 0 },
+    { x: 0, y: fmt.PAGE_H_MM }, { x: fmt.PAGE_W_MM, y: fmt.PAGE_H_MM },
+  ];
+  const m = hom.homographyFromQuad(mmQuad, rolled);
+  if (!m) throw new Error('degenerate test quad');
+  // NW, NE, SW, SE — MARK_CENTRES_MM order.
+  return fmt.MARK_CENTRES_MM.map(([x, y]) => hom.applyMatrix(m, { x, y }));
+};
+
+/** NW, NE, SW, SE — MARK_CENTRES_MM order, for readable failure messages. */
+const CORNER_NAMES = ['NW', 'NE', 'SW', 'SE'];
+
+const PERMUTATIONS = [
+  [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+];
+
+check('three points and a missing-corner hypothesis determine the labelling', () => {
+  // Every hypothesis, every input order, over several perspectives including
+  // one steeper than anything in the capture set (cap04's foreshortening is
+  // 1.49; the last of these is well past that).
+  const cases = [
+    [0.00, 0.00, 0],      // square on
+    [0.06, 0.02, 1.0],    // mild, the shape `05-perspective-mild` renders
+    [0.20, 0.055, -3.0],  // strong, `06-perspective-strong`
+    [0.28, 0.09, 6.0],    // steeper than any real capture, and rolled
+    [0.10, 0.03, -12.0],  // a roll bigger than the QR should ever leave behind
+  ];
+  let checked = 0, wouldHaveBeenWrong = 0;
+
+  for (const [narrow, lift, roll] of cases) {
+    const marks = projectedMarks(narrow, lift, roll);
+    for (const used of [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]) {
+      const truth = used.map(i => marks[i]);          // the correct assignment
+      for (const perm of PERMUTATIONS) {
+        const presented = perm.map(k => truth[k]);
+        const got = reg.labelTrio(used, presented);
+        assert(got !== null,
+          `labelTrio returned null for ${used} at [${narrow}, ${lift}, ${roll}] ` +
+          `order ${perm}`);
+        for (let k = 0; k < 3; k++) {
+          assert(got[k] === truth[k],
+            `corner ${CORNER_NAMES[used[k]]} was assigned the wrong point ` +
+            `for missing ${CORNER_NAMES[[0, 1, 2, 3].find(c => !used.includes(c))]} ` +
+            `at [${narrow}, ${lift}, ${roll}], input order ${perm}`);
+        }
+        checked++;
+        // What the old code would have done with this input: take the three in
+        // the order given. Count the orders where that is wrong, so the fixture
+        // is known to discriminate rather than merely to pass.
+        if (presented.some((p, k) => p !== truth[k])) wouldHaveBeenWrong++;
+      }
+    }
+  }
+  assert(checked === cases.length * 4 * 6, `only ${checked} labellings checked`);
+  // Five of six orders per hypothesis are wrong under the old rule; one, the
+  // identity, is right. That is the luck `ios2_05` did not have and `ios2_01` did.
+  assert(wouldHaveBeenWrong === checked * 5 / 6,
+    `expected 5 of every 6 input orders to be misread by the old rule, got ` +
+    `${wouldHaveBeenWrong} of ${checked}`);
+});
+
+check('the old rule really does misread these, so the fixture has teeth', () => {
+  // The check above would pass on a `labelTrio` that simply returned its input,
+  // if the input happened to be in reading order every time. This one proves
+  // the fixture contains orders that a pass-through implementation fails, by
+  // running the pass-through and requiring it to be wrong.
+  const marks = projectedMarks(0.20, 0.055, -3.0);
+  const passThrough = (used, three) => three;      // the pre-2026-09-02 branch
+  let wrong = 0, total = 0;
+  for (const used of [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]) {
+    const truth = used.map(i => marks[i]);
+    for (const perm of PERMUTATIONS) {
+      const presented = perm.map(k => truth[k]);
+      total++;
+      const old = passThrough(used, presented);
+      if (old.some((p, k) => p !== truth[k])) wrong++;
+      // ...and the new one is right on every single one of them.
+      const now = reg.labelTrio(used, presented);
+      assert(now !== null && now.every((p, k) => p === truth[k]),
+        `labelTrio failed where the old rule also failed: ${used} order ${perm}`);
+    }
+  }
+  assert(wrong === 20 && total === 24,
+    `expected the old rule to misread 20 of 24, got ${wrong} of ${total}`);
+});
+
+check('an undetermined trio is refused rather than guessed at', () => {
+  // Two points on top of each other, and three in a line: nothing names the
+  // corners, and an undetermined hypothesis must not be scored. Same
+  // injectivity check `label()` makes for four.
+  const p = (x, y) => ({ x, y });
+  assert(reg.labelTrio([0, 1, 3], [p(10, 10), p(10, 10), p(90, 90)]) === null,
+    'a trio with two coincident points was labelled anyway');
+  assert(reg.labelTrio([0, 1, 3], [p(0, 0), p(50, 50), p(100, 100)]) === null,
+    'a collinear trio on the x+y diagonal was labelled anyway');
+  // Wrong arity is refused too — the corner list and the points must agree.
+  assert(reg.labelTrio([0, 1], [p(0, 0), p(1, 1)]) === null, 'a pair was labelled');
+  assert(reg.labelTrio([0, 1, 3], [p(0, 0), p(1, 1)]) === null, 'a mismatched trio was labelled');
+});
+
+// =====================================================
 // The rotation's padding must not enter a local statistic
 // =====================================================
 // `rotateGray` grows the canvas to hold the turned corners and has to put
@@ -585,6 +717,22 @@ check('the submission JSON carries the layout_id and the page set with k and N',
   }
 });
 
+check('the trio branch actually uses labelTrio', () => {
+  // `labelTrio` being correct is worth nothing if the enumeration does not call
+  // it. Deleting the call leaves every other check in this file green — that is
+  // measured, not assumed — so the call site is asserted directly.
+  const code = stripComments(readFileSync(join(REPO, 'services', 'registration.ts'), 'utf8'));
+  const i = code.indexOf('for (const trio of THREE_MARK_LABELLINGS)');
+  assert(i !== -1, 'the trio enumeration could not be located');
+  const branch = code.slice(i, i + 400);
+  assert(/labelTrio\(trio,/.test(branch),
+    'the trio branch no longer labels its three points geometrically — it is ' +
+    'back to the detector order, which is fullest-blob-first and right only by luck');
+  // ...and the raw triple must not reach `consider` on any path.
+  assert(!/consider\(trio, \[squares\[a\]/.test(branch),
+    'the trio branch still passes the detector-ordered triple to consider');
+});
+
 check('a fit is scored against the evidence it declined, not a constant', () => {
   const src = readFileSync(join(REPO, 'services', 'registration.ts'), 'utf8');
   const code = stripComments(src);
@@ -633,7 +781,13 @@ check('no student-facing message asserts a cause the app has not measured', () =
     }
     // A corner name in a student-facing string would name the mark it is
     // claiming something about.
-    const strings = code.match(/'[^']{20,}'/g) ?? [];
+    //
+    // `[^'\n]` rather than `[^']`: a literal cannot span lines, and a
+    // regex that lets it match from the closing quote of one array element
+    // to the opening quote of something forty lines later swallows all the
+    // code in between. Not hypothetical — it fired the first time a trailing
+    // `// NW` comment was added in registration.ts.
+    const strings = code.match(/'[^'\n]{20,}'/g) ?? [];
     for (const lit of strings) {
       assert(!/\b(NW|NE|SW|SE)\b/.test(lit), `${file} names a corner to the student: ${lit}`);
     }
