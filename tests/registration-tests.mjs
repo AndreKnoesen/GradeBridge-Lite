@@ -60,6 +60,8 @@ const qrd = await loadModule('services/qrDecode.ts', 'qrDecode.mjs');
 const reg = await loadModule('services/registration.ts', 'registration.mjs');
 const crop = await loadModule('services/cropRegions.ts', 'cropRegions.mjs');
 const bundle = await loadModule('services/assignmentBundle.ts', 'assignmentBundle.mjs');
+const ras = await loadModule('services/raster.ts', 'raster.mjs');
+const mdet = await loadModule('services/markDetect.ts', 'markDetect.mjs');
 
 console.log('\nStudent Submission — registration and crop\n');
 
@@ -118,6 +120,167 @@ await checkAsync('every field is read by column NAME, not by position', async ()
   assertEqual(other.rows.map(r => r.partId), parsed.rows.map(r => r.partId), 'part_id moved');
   assertEqual(other.rows.map(r => r.isDrawing), parsed.rows.map(r => r.isDrawing), 'is_drawing moved');
   assertEqual(other.rows.map(r => r.maxPoints), parsed.rows.map(r => r.maxPoints), 'max_points moved');
+});
+
+// =====================================================
+// The rotation's padding must not enter a local statistic
+// =====================================================
+// `rotateGray` grows the canvas to hold the turned corners and has to put
+// SOMETHING in the space it grew into. Whatever that is, it is not a
+// photograph, and `adaptiveInk` used to average it in: near a frame edge the
+// local-mean box is up to half padding, the mean rises, and blank paper is
+// declared ink. On `ios2_05` that erased a real registration mark by bridging it
+// into a component spanning the whole frame, which the area band then rejected.
+//
+// This is measured on a synthetic frame rather than a photograph, because the
+// photographs that show it are real student work and are not in this
+// repository. The geometry is chosen to match the real case rather than to be
+// convenient: the mark sits 30 px from the source edge with a local-mean radius
+// of 60, so the box is about a quarter padding — `ios2_05`'s SW mark is 46 px
+// from the edge with a radius of 95, about a third.
+const paddedFrame = () => {
+  const W = 825, H = 1100, side = 24, inset = 30;
+  const data = new Uint8Array(W * H).fill(150);          // paper
+  const cx = inset, cy = H - inset;                       // a mark near a corner
+  for (let y = cy - side / 2; y < cy + side / 2; y++) {
+    for (let x = cx - side / 2; x < cx + side / 2; x++) data[y * W + x] = 30;
+  }
+  const src = { data, width: W, height: H };
+  const up = ras.rotateGray(src, (2 * Math.PI) / 180);
+  const [ux, uy] = up.fromSource(cx, cy);
+  return { src, up, side, at: { x: ux, y: uy } };
+};
+
+check('rotateGray says which pixels it invented', () => {
+  const { src, up } = paddedFrame();
+  assert(up.valid instanceof Uint8Array, 'rotateGray returned no validity mask');
+  assertEqual(up.valid.length, up.width * up.height, 'the mask is not one entry per pixel');
+
+  let invented = 0, real = 0, wrong = 0;
+  for (let y = 0; y < up.height; y++) {
+    for (let x = 0; x < up.width; x++) {
+      const [sx, sy] = up.toSource(x + 0.5, y + 0.5);
+      const inSource = (sx | 0) >= 0 && (sy | 0) >= 0 && (sx | 0) < src.width && (sy | 0) < src.height;
+      const claimed = up.valid[y * up.width + x] === 1;
+      if (claimed !== inSource) wrong++;
+      if (claimed) real++; else invented++;
+    }
+  }
+  assertEqual(wrong, 0, `${wrong} pixels disagree with whether they came from the source`);
+  // The canvas grew, so there must be some of each — a mask that is all ones
+  // would silently restore the old behaviour and pass every other check here.
+  assert(invented > 0, 'no pixel is marked invented, yet the canvas grew');
+  assert(real > 0, 'no pixel is marked real');
+});
+
+check('the padding never becomes ink, and never bridges a mark to the frame', () => {
+  const { up, side, at } = paddedFrame();
+  const win = { x0: 0, y0: 0, x1: up.width, y1: up.height };
+
+  const ink = ras.adaptiveInk(up, 0, 0, up.width, up.height,
+    side * mdet.LOCAL_RADIUS_MARKS, mdet.INK_OFFSET);
+  let paddingInk = 0;
+  for (let i = 0; i < ink.length; i++) if (ink[i] && up.valid[i] !== 1) paddingInk++;
+  assertEqual(paddingInk, 0, `${paddingInk} invented pixels were classified as ink`);
+
+  const found = mdet.findMarksInWindow(up, win, side, { limit: 50 });
+  const near = found
+    .map(c => ({ ...c, d: Math.hypot(c.x - at.x, c.y - at.y) }))
+    .sort((a, b) => a.d - b.d)[0];
+  assert(near && near.d < side, `the mark near the frame edge was not found (${found.length} candidates)`);
+  const ratio = near.area / (side * side);
+  assert(ratio > 0.8 && ratio < 1.25,
+    `the mark was found but at ${ratio.toFixed(2)}x its area — it is merged with something`);
+
+  // The teeth. Hand the same bitmap over WITHOUT the mask, which is exactly the
+  // old code path, and the mark must disappear. If this ever stops failing, the
+  // check above has stopped testing anything.
+  const unmasked = mdet.findMarksInWindow(
+    { data: up.data, width: up.width, height: up.height }, win, side, { limit: 50 });
+  const stillThere = unmasked.some(c => Math.hypot(c.x - at.x, c.y - at.y) < side);
+  assert(!stillThere,
+    'the mark survives even without the validity mask, so this fixture no longer ' +
+    'reproduces the defect and proves nothing');
+});
+
+check('a box with no real pixel in it is declined, not guessed at', () => {
+  // Every pixel invented: there is no local paper level, so nothing may be
+  // called ink. The old code would have divided by the full box area and
+  // thresholded against a fabricated mean.
+  const W = 40, H = 40;
+  const gray = {
+    data: new Uint8Array(W * H).fill(200),
+    width: W, height: H,
+    valid: new Uint8Array(W * H),          // all zero — nothing is real
+  };
+  const ink = ras.adaptiveInk(gray, 0, 0, W, H, 5, 18);
+  assertEqual(ink.reduce((a, b) => a + b, 0), 0, 'ink was found in a frame with no real pixels');
+});
+
+check('an invented pixel is never ink, whatever value it was given', () => {
+  // `rotateGray` currently fills with 255, and white can never be `offset`
+  // below a local mean of paper — so on that fill alone this rule never binds
+  // and would look like dead code. It is not: it is what makes the fill value
+  // irrelevant, which is the whole point. "The fill value is not the fix"
+  // (WORKORDER_PADDING_MASK_2026-09-02) is only true if nothing downstream
+  // depends on which lie was chosen, and this is where that is enforced.
+  //
+  // So the fixture picks the value that WOULD fool the threshold: invented
+  // pixels are black. Under the rule they are still not ink.
+  const W = 80, H = 80;
+  const data = new Uint8Array(W * H).fill(180);
+  const valid = new Uint8Array(W * H).fill(1);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < 20; x++) {          // a dark invented strip down one side
+      data[y * W + x] = 0;
+      valid[y * W + x] = 0;
+    }
+  }
+  const ink = ras.adaptiveInk({ data, width: W, height: H, valid }, 0, 0, W, H, 8, 18);
+  let inventedInk = 0;
+  for (let i = 0; i < ink.length; i++) if (ink[i] && valid[i] !== 1) inventedInk++;
+  assertEqual(inventedInk, 0, `${inventedInk} invented pixels were called ink`);
+
+  // ...and the strip must not have dragged the real paper beside it into ink
+  // either, which is the same leak in the other direction: a dark fill pulls a
+  // local mean DOWN and erases real ink, where a white one pushes it up and
+  // manufactures ink.
+  let realInk = 0;
+  for (let i = 0; i < ink.length; i++) if (ink[i]) realInk++;
+  assertEqual(realInk, 0, `${realInk} pixels of blank paper were called ink beside a dark fill`);
+});
+
+check('a frame with no mask is unchanged, byte for byte', () => {
+  // Everything straight off the camera has no mask and must take the original
+  // path exactly. This is the guarantee that the sixteen calibration captures
+  // cannot move for a reason invented here.
+  const W = 120, H = 90;
+  const data = new Uint8Array(W * H);
+  for (let i = 0; i < data.length; i++) data[i] = (i * 37 + (i % 13) * 11) % 256;
+  const bare = { data, width: W, height: H };
+  const allValid = { data, width: W, height: H, valid: new Uint8Array(W * H).fill(1) };
+  const a = ras.adaptiveInk(bare, 0, 0, W, H, 7, 18);
+  const b = ras.adaptiveInk(allValid, 0, 0, W, H, 7, 18);
+  assertEqual(a.length, b.length, 'different lengths');
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
+  assertEqual(diff, 0, `${diff} pixels differ between the masked and unmasked paths`);
+});
+
+check('validity composes — rotating twice cannot launder invented pixels', () => {
+  const { up } = paddedFrame();
+  const twice = ras.rotateGray(up, (3 * Math.PI) / 180);
+  let laundered = 0;
+  for (let y = 0; y < twice.height; y++) {
+    for (let x = 0; x < twice.width; x++) {
+      if (twice.valid[y * twice.width + x] !== 1) continue;
+      const [sx, sy] = twice.toSource(x + 0.5, y + 0.5);
+      const ix = sx | 0, iy = sy | 0;
+      if (ix < 0 || iy < 0 || ix >= up.width || iy >= up.height) { laundered++; continue; }
+      if (up.valid[iy * up.width + ix] !== 1) laundered++;
+    }
+  }
+  assertEqual(laundered, 0, `${laundered} invented pixels were promoted to real by a second rotation`);
 });
 
 check('part_id, is_drawing and max_points come from the row, and region_id is never parsed', () => {

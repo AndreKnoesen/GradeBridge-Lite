@@ -18,6 +18,9 @@ captures/
   REPORT_THREE_MARK_FIT_2026-09-02.md  the three-mark change, and the two
                   defects that still reject ios2_05 — read before touching the
                   mark detector, registration.ts, or the legibility floor
+  REPORT_PADDING_MASK_2026-09-02.md    the validity mask that fixed the first
+                  of those two. ios2_05 passes; the permutation defect is still
+                  open, and a third one is now exposed
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
@@ -29,6 +32,12 @@ same reason the photographs are: **`GradeBridge2026\` is not a git repository**,
 so a measurement written only into `workorders/` exists on one machine. Anything
 whose conclusion a later session would otherwise have to re-derive by re-running
 the pipeline belongs in here, next to the evidence it was derived from.
+
+`REPORT_PADDING_MASK_2026-09-02.md` is the later of the two and supersedes the
+first report's §4: `rotateGray`'s white padding was entering `adaptiveInk`'s
+local mean and erasing real marks at the frame edge, and `Gray` now carries a
+validity mask so the mean averages only real pixels. **`ios2_05` passes.** Read
+its §5 before touching `DEGRADED_PENALTY_MM`.
 
 `REPORT_THREE_MARK_FIT_2026-09-02.md` answers
 `GradeBridge2026\workorders\WORKORDER_THREE_MARK_FIT_2026-09-02.md`. It records

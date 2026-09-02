@@ -139,7 +139,6 @@ for (const c of captures) {
   rows.push({ ...c, verdict, threw, wallMs });
 }
 
-// ---------- the two captures the gate currently gets wrong ----------
 //
 // Exact agreement with `LABELS.csv` is the criterion, and these two do not
 // agree. They are enumerated here rather than excused, and each entry asserts
@@ -148,14 +147,21 @@ for (const c of captures) {
 // fix is how a known bug becomes a permanent one.
 //
 // Anything not on this list must agree. A new disagreement fails.
+// ---------- the captures the gate currently gets wrong ----------
+//
+// Exact agreement with `LABELS.csv` is the criterion, and one capture does not
+// agree. It is enumerated here rather than excused, and the entry asserts the
+// CURRENT wrong verdict — so when the underlying cause is fixed this suite goes
+// RED and the entry has to be deleted. An exemption that outlives its own fix
+// is how a known bug becomes a permanent one.
+//
+// **`ios2_05` was here until 2026-09-02 and is gone because it was fixed**, which
+// is the mechanism working: the padding-mask change made it agree, this suite
+// failed on "it agrees now — delete this KNOWN_OPEN entry", and the entry was
+// deleted. Nothing else may leave this list any other way.
+//
+// Anything not on this list must agree. A new disagreement fails.
 const KNOWN_OPEN = {
-  ios2_05: {
-    got: 'FAIL', failed: 'corner_marks',
-    why: 'the NW mark is present, clean and inside the frame and the detector does '
-      + 'not return it; the remaining three fit at 42.33 mm. Reviewed PASS — flat, '
-      + 'well lit, whole page in frame. Diagnosed under '
-      + 'WORKORDER_THREE_MARK_FIT_2026-09-02 Part B',
-  },
   android04_p2_others_qr: {
     got: 'FAIL', failed: 'page_code',
     why: 'the target page is fully visible and readable, and no symbol on it '
@@ -261,50 +267,66 @@ check('a well-formed page payload parses',
     verdict !== null && verdict.pass === false && verdict.failed !== null && verdict.message !== '');
 }
 
-// ---------- the three-mark mechanism, WORKORDER_THREE_MARK_FIT_2026-09-02 ----------
+// ---------- registration mechanism, WORKORDER_PADDING_MASK_2026-09-02 ----------
 //
-// The verdicts above already come from `LABELS.csv`, which covers all 41. What
-// this asserts is the MECHANISM underneath four of them, which a pass/fail
-// column cannot express and which is the whole substance of the 2026-09-02
-// change: how many marks the fit used, which corners, how far out it landed,
-// and — for a page accepted on three — that the record says so.
+// The verdicts above come from `LABELS.csv`, which covers all 41. What this
+// asserts is the MECHANISM underneath five of them, which a pass/fail column
+// cannot express: how many marks the fit used, which corners, how far out it
+// landed, and — for a page accepted on three — that the record says so.
 //
-// The sixteen cannot hold this. Every one of them finds four marks, so a suite
-// built on them alone passes identically with the floor at three or at four.
-// `ios2_01` and `ios2_05` are the evidence: both three-mark fits, both from an
-// iPhone 17 Pro Max, 0.61 mm and 42.33 mm. `android01` and `android08` are the pair
-// that must not move — they find all four and are rejected on residual alone,
-// by a page physically bowed in the hand.
-//
-// **`ios2_01` is asserted at `corner_marks`, not at the overall verdict.** The
-// work order's acceptance said it must PASS. It does not, and the label was
-// corrected on 2026-09-02 to say so: it clears `corner_marks` on three marks at
-// 0.61 mm exactly as asked, and is then refused by `legibility` at a darkest
-// page tile of 55.0 against a floor of 70 — the photographer's own shadow, hard
-// edged, across the answer box. That floor is not moved to admit it: every
-// capture that passes measures 94.7 or brighter and the sixteen run 98.3 to
-// 155.5, so 55.0 is not a boundary case. This is also the first time the
-// legibility check has fired on any real photograph.
-const THREE_MARK_CASES = [
+// These five are where two changes met. `MARKS_MIN` went to 3 on 2026-09-02
+// because a three-mark fit at a good residual is worth accepting; the padding
+// mask landed the same day and gave two of these captures back the mark they
+// had been losing to `rotateGray`'s white fill. Both are asserted here, on the
+// same captures, because the interaction is the thing most likely to be broken
+// by a later edit to either.
+const MECHANISM_CASES = [
   {
     name: 'ios2_01', folder: 'students',
-    // What Part A actually changed, asserted directly rather than through the
-    // verdict — which is FAIL both before and after, for different reasons.
-    notRefusedAt: 'corner_marks', marks: 3, detected: ['NW', 'NE', 'SE'],
-    maxResidual: fmt.RESIDUAL_MAX_MM, degraded: true,
-    // Where it stops instead. Pinned so a change to the legibility floor has to
-    // come here and say so.
-    failed: 'legibility',
+    // Before the padding mask: 3 marks (NW+NE+SE) at 0.611 mm. After: the SW
+    // mark is recovered and it is an ordinary four-mark fit.
+    marks: 4, detected: ['NW', 'NE', 'SW', 'SE'], status: 'ok',
+    maxResidual: fmt.RESIDUAL_MAX_MM,
+    // And it is STILL refused, by a different check. The shadow is real: the
+    // photographer's own head and shoulders lie hard across the answer box.
+    // Recovering a corner mark does not make a page legible, and the two
+    // questions are meant to stay separate.
+    want: 'FAIL', failed: 'legibility',
   },
   {
-    name: 'ios2_05', folder: 'students', marks: 3, detected: ['NE', 'SW', 'SE'],
-    minResidual: 40.0, failed: 'corner_marks',
+    name: 'ios2_05', folder: 'students',
+    // The capture this work order was written for. It now PASSES.
+    //
+    // It registers on THREE marks, not four, and that is not a leftover of the
+    // padding defect — all four are found. The three-mark affine reprojects the
+    // QR to 0.416 mm and the four-mark homography to 0.756 mm, and
+    // `DEGRADED_PENALTY_MM` is 0.25, so the affine wins on score by 0.09 mm.
+    // See the report: measured against the marks themselves rather than the QR,
+    // that affine is 3.162 mm out at the NW mark it declined to use. The
+    // penalty is a threshold and this work order forbids moving one, so the
+    // behaviour is pinned here rather than changed.
+    want: 'PASS', marks: 3, detected: ['NE', 'SW', 'SE'], status: 'degraded',
+    maxResidual: fmt.RESIDUAL_MAX_MM, degraded: true,
   },
-  { name: 'android01_p2_straight', folder: 'android', marks: 4, minResidual: 1.0, failed: 'corner_marks' },
-  { name: 'android08_p3_straight', folder: 'android', marks: 4, minResidual: 2.0, failed: 'corner_marks' },
+  {
+    name: 'ios2_04', folder: 'students',
+    // The page is genuinely cut off at the right and the bottom: only NW and NE
+    // are on the paper that was photographed. Two candidates cannot make a fit,
+    // so `marksFound` is 0 — no fit was formed, which is not the same as no
+    // candidate being found, and the distinction is why this case is here.
+    want: 'FAIL', failed: 'corner_marks', marks: 0, status: 'too_few_marks',
+  },
+  {
+    name: 'android01_p2_straight', folder: 'android',
+    want: 'FAIL', failed: 'corner_marks', marks: 4, minResidual: 1.0,
+  },
+  {
+    name: 'android08_p3_straight', folder: 'android',
+    want: 'FAIL', failed: 'corner_marks', marks: 4, minResidual: 2.0,
+  },
 ];
 
-for (const c of THREE_MARK_CASES) {
+for (const c of MECHANISM_CASES) {
   const path = join(CAPTURE_DIR, c.folder, `${c.name}.jpg`);
   if (!existsSync(path)) {
     console.log(`  SKIP  ${c.name}: not checked out (${c.folder}/)`);
@@ -312,19 +334,23 @@ for (const c of THREE_MARK_CASES) {
   }
   const v = gate.runCaptureGate(ingestLikeApp(path));
   const m = v.measurements;
-  const seen = `${v.pass ? 'PASS' : `FAIL (${v.failed})`} on ${m.marksFound} marks, ` +
-    `residual ${m.residualMm === null ? 'none' : m.residualMm.toFixed(3)} mm` +
+  const seen = `${v.pass ? 'PASS' : `FAIL (${v.failed})`} on ${m.marksFound} marks` +
+    `${v.registration && v.registration.marksDetected.length ? ` (${v.registration.marksDetected.join('+')})` : ''}` +
+    `, residual ${m.residualMm === null ? 'none' : m.residualMm.toFixed(3)} mm` +
     `${m.minTileLuma === null ? '' : `, luma ${m.minTileLuma.toFixed(1)}`}`;
 
-  if (c.notRefusedAt) {
-    check(`${c.name}: no longer refused at ${c.notRefusedAt}`, v.failed !== c.notRefusedAt, seen);
-  }
-  check(`${c.name}: refused at ${c.failed}`, v.failed === c.failed, seen);
+  check(`${c.name}: ${c.want}`, (v.pass ? 'PASS' : 'FAIL') === c.want, seen);
+  if (c.failed) check(`${c.name}: refused at ${c.failed}`, v.failed === c.failed, seen);
   check(`${c.name}: registers on ${c.marks} marks`, m.marksFound === c.marks, seen);
   if (c.detected) {
     check(`${c.name}: on ${c.detected.join('+')}`,
       v.registration !== null && v.registration.marksDetected.join('+') === c.detected.join('+'),
-      v.registration ? v.registration.marksDetected.join('+') : 'none');
+      v.registration ? v.registration.marksDetected.join('+') || 'none' : 'none');
+  }
+  if (c.status) {
+    check(`${c.name}: registration status ${c.status}`,
+      v.registration !== null && v.registration.status === c.status,
+      v.registration ? v.registration.status : 'none');
   }
   if (typeof c.maxResidual === 'number') {
     check(`${c.name}: residual under ${c.maxResidual} mm`,
