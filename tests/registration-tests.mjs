@@ -422,6 +422,23 @@ check('the submission JSON carries the layout_id and the page set with k and N',
   }
 });
 
+check('the page set says how the page registered, and on which corners', () => {
+  // A page may register on three marks since 2026-09-02 (`captureGate.MARKS_MIN`),
+  // and then the crops from it are cut through a transform that INFERRED one
+  // corner rather than measuring it. Three fields carry that to the grader and
+  // all three have to be there: the status, the count, and — the one added with
+  // the change — which corners the fit actually used. `marks_found` alone says
+  // a corner was missing; only `marks_detected` says which end of the sheet it
+  // was, which is the first thing to look at when a crop is disputed.
+  const pages = pkgSrc.slice(pkgSrc.indexOf('submissionJson.pages'), pkgSrc.indexOf('submissionJson.crops'));
+  for (const key of ['registration:', 'marks_found:', 'marks_detected:', 'residual_mm:']) {
+    assert(pages.includes(key), `the page set omits ${key}`);
+  }
+  // ...and it must be the real corner list, not a placeholder.
+  assert(/marks_detected:\s*page\.registration\?\.marksDetected/.test(pages),
+    'marks_detected is not read from the registration');
+});
+
 check('every crop carries its map row, its source, the review and the flags', () => {
   const from = pkgSrc.indexOf('crops[crop.regionId] = {');
   assert(from !== -1, 'the crop payload could not be located');

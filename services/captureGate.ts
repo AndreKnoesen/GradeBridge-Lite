@@ -161,6 +161,52 @@ export const QR_DECODE_BUDGET_MS = 1400;
 export const SHARPNESS_MIN = 0.10;
 
 /**
+ * The fewest corner marks a fit may be built on.
+ *
+ * **Three, and the residual is what does the work.** This was four until
+ * 2026-09-02, on the reasoning that a three-mark fit is affine, cannot
+ * represent perspective, and is allowed a 3.0 mm budget in `registration.ts`
+ * because a flagged page in front of a student to judge is better than nothing
+ * — whereas this gate is what lets everything downstream assume clean input.
+ *
+ * That reasoning holds for the 3.0 mm budget and does not hold for the count.
+ * The two real photographs that settle it are both three-mark fits from the
+ * same phone: `ios2_01` finds NW, NE and SE and reprojects the QR to **0.61 mm**;
+ * `ios2_05` finds NE, SW and SE and reprojects it to **42.33 mm**. Three marks is
+ * sometimes excellent and sometimes catastrophic, and the residual already
+ * tells the two apart by a factor of seventy. A count cannot: it rejects both.
+ *
+ * **The residual is trustworthy on three points because it is not measured
+ * against them.** `registration.scoreFit` scores a fit by where it puts the
+ * decoded QR, which the fit never consumed, so a three-point solve is not
+ * self-satisfying here — an affine fit through three wrong points has nothing
+ * pulling it towards the symbol, which is exactly what `ios2_05`'s 42 mm is.
+ *
+ * So a count of four was redundant with the residual check and stricter in the
+ * wrong direction: it rejected a photograph that fits to 0.61 mm while adding
+ * nothing to the rejection of one that fits to 42 mm. `ios2_01` is the first time
+ * this gate told a real student to reshoot a photograph that was already
+ * correct, and a threshold that rejects good work is a defect of the same
+ * weight as one that accepts bad work.
+ *
+ * **What did NOT change, and is what keeps this safe.** The budget below three
+ * is unchanged — two marks or fewer cannot be fitted and the caller routes the
+ * student to direct capture. The gate's own residual budget stays at
+ * `RESIDUAL_MAX_MM` (1.0 mm) for three-mark fits and four-mark fits alike, so
+ * the 3.0 mm degraded budget in `registration.ts` never reaches a submission
+ * through here. The geometry gate on the accepted set stays, so a set that does
+ * not match the printed mark spacing is still refused outright. And the
+ * QR-anchored scoring stays, which is both what makes the residual meaningful
+ * on three points and what stops a neighbouring sheet supplying a mark.
+ *
+ * A page accepted on three is still recorded as such: `marksFound` is 3 and
+ * `registration.status` is `degraded`, both of which reach the submission
+ * manifest as `marks_found` and `registration`, so a grader looking at a
+ * disputed crop can see the page registered on three.
+ */
+export const MARKS_MIN = 3;
+
+/**
  * Legibility floor: the darkest tile of the page, as a mean grey level, over an
  * 8 by 11 grid sampled through the page transform.
  *
@@ -218,8 +264,13 @@ const MESSAGES: Record<GateCheckId, string> = {
     'hold the phone still, and take the photo again with the whole sheet in the picture.',
   sharpness:
     'Too blurry. Hold the phone steady and shoot again.',
+  // Aim, not rule: the gate accepts a fit on three marks that lands inside the
+  // residual budget (`MARKS_MIN`). A student who is being shown this message
+  // has fewer than three or a fit that does not hold, and getting all four into
+  // the frame is the action either way — but the sentence must not state a
+  // requirement the gate does not enforce.
   corner_marks:
-    'Get the whole page in the frame. All four corner squares have to be in the picture — ' +
+    'Get the whole page in the frame. Aim to get all four corner squares in the picture — ' +
     'shoot the whole sheet from directly above.',
   legibility:
     'Part of the page is in shadow. Move the light or the page and shoot again.',
@@ -409,19 +460,13 @@ export const runCaptureGate = (image: Rgba, options: GateOptions = {}): GateVerd
     if (sharpness < SHARPNESS_MIN) return done('sharpness', registration);
     if (now() - started > budget) return done('budget', registration);
 
-    // ---- 3. Four marks, one sheet, and a fit inside the budget ----
+    // ---- 3. Enough marks, one sheet, and a fit inside the budget ----
     // `registerPage` refuses a set whose sides do not match the printed mark
-    // spacing, and refuses a fit whose residual is over the budget, so what
-    // arrives here usable is four marks on one sheet at under 1.0 mm. It is
-    // never a confident fit with a large residual.
+    // spacing, and refuses a fit it cannot form, so what arrives here usable is
+    // three or four marks on one sheet. It is never a confident fit with a
+    // large residual.
     if (!registration.usable || !registration.transform) return done('corner_marks', registration);
-    // Four, not three. A three-mark fit is affine, cannot represent perspective,
-    // and is allowed a 3.0 mm budget elsewhere because a flagged page in front
-    // of a student to judge is better than nothing. This gate is not that
-    // place: it is the thing that lets everything downstream assume clean
-    // input, so it takes the full four and the 1.0 mm budget or it takes
-    // another photograph.
-    if (registration.marksFound < 4) return done('corner_marks', registration);
+    if (registration.marksFound < MARKS_MIN) return done('corner_marks', registration);
     if (registration.residualMm === null || registration.residualMm > RESIDUAL_MAX_MM) {
       return done('corner_marks', registration);
     }

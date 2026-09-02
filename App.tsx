@@ -288,7 +288,7 @@ const App: React.FC = () => {
       ? {
           status: 'layout_mismatch',
           k: fields?.k, n: fields?.n, layoutId: result.layoutMismatch.onPage,
-          marksFound: reg.marksFound,
+          marksFound: reg.marksFound, marksDetected: reg.marksDetected,
           message:
             'This page belongs to a different version of the assignment than the file you loaded, ' +
             'so nothing was cut from it. Load the assignment zip you printed these pages from.',
@@ -297,12 +297,14 @@ const App: React.FC = () => {
         ? {
             status: 'failed',
             k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
-            marksFound: reg.marksFound, message: reg.message,
+            marksFound: reg.marksFound, marksDetected: reg.marksDetected,
+            message: reg.message,
           }
         : {
             status: reg.status === 'degraded' ? 'degraded' : 'ok',
             k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
             marksFound: reg.marksFound,
+            marksDetected: reg.marksDetected,
             residualMm: reg.residualMm ?? undefined,
             message: reg.message,
           };

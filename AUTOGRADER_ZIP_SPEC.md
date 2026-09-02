@@ -1,7 +1,10 @@
 # GradeBridge — submission ZIP interface
 
-**Version:** v4.0
-**Date:** 2026-09-01
+**Version:** v4.1
+**Date:** 2026-09-02
+**Supersedes:** v4.0, 2026-09-01 — which is accurate except that `pages[]` has
+gained `marks_detected`, and a page may now report `marks_found: 3`. Both are in
+§3.2. Nothing was removed or renamed, so a v4.0 reader still works.
 **Supersedes:** v3.1, 2026-04-08
 **Audience:** whoever writes the autograder
 
@@ -22,7 +25,9 @@ filename, field, type, byte size and value below was read out of:
 GradeBridge2026\CaptureSet\milestone_zero\Milestone_Zero_ENG17_submission.zip
 ```
 
-produced on 2026-09-01 by `GradeBridge-Student-Submission/tests/milestone-zero.mjs`
+re-emitted on 2026-09-02 with `marks_detected` (every other entry byte-identical
+to the 2026-09-01 archive this document was first written from), by
+`GradeBridge-Student-Submission/tests/milestone-zero.mjs`
 (`npm run milestone:zero`), from ENG17 Homework 1 (`layout_id` **95438EDF**) and
 two phone photographs. Its three crops were inspected by eye and confirmed to
 land on their own regions with the right handwriting in each. Where this document
@@ -48,14 +53,14 @@ gives `Milestone_Zero_ENG17_submission`. DEFLATE, level 6.
 
 | bytes | entry |
 |---:|---|
-| 2,632 | `Milestone_Zero_ENG17_submission.json` |
+| 2,736 | `Milestone_Zero_ENG17_submission.json` |
 | 40,696 | `crops/p1a.jpg` |
 | 38,285 | `crops/p1b.jpg` |
 | 81,454 | `crops/p1c.jpg` |
 | 474,470 | `page_1.jpg` |
 | 501,463 | `page_2.jpg` |
 
-Archive total 1,117,339 bytes. The six entries are byte-identical between runs of
+Archive total 1,117,417 bytes. The six entries are byte-identical between runs of
 the same inputs; the total moves a byte or two because `last_saved` is a
 timestamp inside the encrypted payload.
 
@@ -184,10 +189,12 @@ v3.1 described.
 [
   { "file": "page_1.jpg", "width": 1650, "height": 2200,
     "k": 2, "n": 16, "registration": "ok",
-    "marks_found": 4, "residual_mm": 0.4958780733592441 },
+    "marks_found": 4, "marks_detected": ["NW", "NE", "SW", "SE"],
+    "residual_mm": 0.4958780733592441 },
   { "file": "page_2.jpg", "width": 1650, "height": 2200,
     "k": 3, "n": 16, "registration": "ok",
-    "marks_found": 4, "residual_mm": 0.34332017809218907 }
+    "marks_found": 4, "marks_detected": ["NW", "NE", "SW", "SE"],
+    "residual_mm": 0.34332017809218907 }
 ]
 ```
 
@@ -197,7 +204,8 @@ v3.1 described.
 | `width`, `height` | Pixels of the **stored** image, after the app's ingest. |
 | `k`, `n` | Page number and page count **read from that page's own QR**, never from upload order. |
 | `registration` | `"ok"` observed. `"degraded"` (a three-mark affine fit, crops may be slightly off) is declared but **not observed here**. |
-| `marks_found` | 4 observed. |
+| `marks_found` | 4 observed. Since 2026-09-02 a page may legitimately register on **3**: the capture gate accepts a three-mark fit that meets the same 1.0 mm residual budget as a four-mark one. Such a page reads `"registration": "degraded"`. |
+| `marks_detected` | **Added 2026-09-02.** Which of `NW`, `NE`, `SW`, `SE` the fit was built on, in that order. `[]` when nothing fitted. On a `degraded` page the absent corner names the end of the sheet the transform **inferred rather than measured**, which is where to look first if a crop from that page is disputed. `marks_found` is this array's length. |
 | `residual_mm` | QR reprojection error. Full float precision; do not expect it rounded. |
 
 **`page_1.jpg` is page 2 of the sheet.** The filename counts position in the ZIP;

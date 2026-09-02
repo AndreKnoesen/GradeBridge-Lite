@@ -78,6 +78,15 @@ export interface PageRegistrationInfo {
   /** `layout_id` as printed on the page. Compared against the loaded map's. */
   layoutId?: string;
   marksFound?: number;
+  /**
+   * Which of NW, NE, SW, SE the fit was actually built on.
+   *
+   * `marksFound` says how many; this says which, and on a three-mark fit the
+   * two are different questions. The missing corner is the end of the page the
+   * transform had to infer rather than measure, so it is the end a grader
+   * looking at a disputed crop should look at first. Empty when nothing fitted.
+   */
+  marksDetected?: string[];
   residualMm?: number;
   /** Student-facing, one sentence. */
   message?: string;

@@ -48,9 +48,18 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const SUITE = resolve(REPO, '..');
 
+// `Export (2)` was the folder on 2026-09-01 and is gone; `Export (4)` is the
+// same assignment re-exported after the target-points fix, same `layout_id`
+// 95438EDF, and it is the one that totals 200. Override with MILESTONE_EXPORT.
+//
+// **Do not point this at `CaptureSet/frozen_export/student`.** It carries the
+// same `layout_id` and the same geometry — points are outside the hash — but it
+// predates the 2026-09-01 target-points fix and its map totals 100, so every
+// `max_points` in the package comes out halved. It fails the points check here,
+// which is the only thing that catches it.
 const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? join(
   'C:', 'Users', 'aknoesen', 'Documents', 'Knoesen', 'ENG17-Assignments',
-  'Processed Assignments', 'ENG17_Homework_1_Export (2)', 'student');
+  'Processed Assignments', 'ENG17_Homework_1_Export (4)', 'student');
 const OUT_DIR = process.env.MILESTONE_OUT ?? join(SUITE, 'CaptureSet', 'milestone_zero');
 
 const STUDENT_NAME = 'Milestone Zero';
@@ -173,6 +182,7 @@ for (const [index, photo] of PHOTOS.entries()) {
       k, n: registration.qr.fields.n,
       layoutId: registration.qr.fields.layoutId,
       marksFound: registration.marksFound,
+      marksDetected: registration.marksDetected,
       residualMm: registration.residualMm ?? undefined,
       message: registration.message,
     },
@@ -416,7 +426,8 @@ for (const [k, v] of Object.entries(payload)) {
 console.log('\n  pages:');
 for (const p of payload.pages) {
   console.log(`    ${p.file}  k=${p.k}/${p.n}  ${p.width}x${p.height}  ` +
-    `${p.registration}  marks=${p.marks_found}  residual=${p.residual_mm?.toFixed(3)} mm`);
+    `${p.registration}  marks=${p.marks_found} (${(p.marks_detected ?? []).join('+') || 'none'})  ` +
+    `residual=${p.residual_mm?.toFixed(3)} mm`);
 }
 console.log('\n  crops:');
 for (const c of Object.values(payload.crops)) {

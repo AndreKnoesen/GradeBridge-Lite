@@ -157,6 +157,12 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
       n: page.registration?.n ?? null,
       registration: page.registration?.status ?? 'pending',
       marks_found: page.registration?.marksFound ?? 0,
+      // WHICH corners, not just how many. A page may be registered on three
+      // marks (`marks_found: 3`, `registration: "degraded"`), and then the one
+      // that is absent names the end of the sheet the transform inferred
+      // instead of measuring. That is the first thing to look at when a crop
+      // from such a page is disputed, and a count alone cannot say it.
+      marks_detected: page.registration?.marksDetected ?? [],
       residual_mm: page.registration?.residualMm ?? null,
     }));
     const crops: Record<string, unknown> = {};

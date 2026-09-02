@@ -8,8 +8,11 @@ captures/
   real/           eleven phone photographs, cap01..cap11
   stale/          five more of an older layout, stale01..stale05
   android/          thirteen from a Samsung Galaxy S22, android01..android13
-                  — unlabelled, and NOT YET TRACKED: they exist on one machine
-  LABELS.csv      the specification: what each of the sixteen should do
+                  — NOT YET TRACKED: they exist on one machine
+  students/       twelve real student photographs — six from an iPhone 13 Pro
+                  Max (ios1_01..ios1_06) and six from an iPhone 17 Pro Max
+                  (ios2_01..ios2_06). NOT YET TRACKED.
+  LABELS.csv      the specification: what each of the 41 should do
   BASELINE_2026-09-01.md   what the pipeline did before the gate was built
   REPORT_DECODER_ZXING_2026-09-01.md   the jsqr-vs-zxing decoder measurement
   layout_fixture.csv       the map the synthetic sheet was drawn from
@@ -64,10 +67,54 @@ stays legible; `cap09` was called acceptable clutter and is soft-focus enough
 that its QR does not decode at all. Where the two columns disagree the row says
 `DISAGREE:` and gives the reason.
 
-`tests/gate-tests.mjs` asserts **exact agreement** with that column: 12 pass, 4
-reject. Not a rate. A capture in the PASS set that the gate rejects is a failure
+`tests/gate-tests.mjs` asserts **exact agreement** with that column across all
+41 — of which the sixteen are 12 pass, 4 reject. Not a rate. A capture in the PASS set that the gate rejects is a failure
 of the same weight as one in the FAIL set that it passes — a threshold that
 rejects good work costs a student a photograph they should not have had to take.
+
+### All 41 are labelled, and the sixteen are still the calibration set
+
+`LABELS.csv` gained the other twenty-five rows on 2026-09-02, so
+`gate-tests.mjs` now holds the whole set to exact agreement. **The sixteen keep
+a separate assertion of their own 12/4 split**, because every threshold in the
+detector and in the gate is fitted to them and a change that moves that number
+has moved a calibration. No threshold is fitted to the other twenty-five; they
+are held to the labels and nothing more.
+
+Two rows to read before trusting the rest:
+
+- **`ios2_01` was reviewed PASS and corrected to FAIL the same day.** The eye said
+  legible; the measurement said 55.0 on the darkest page tile against a floor of
+  70, with every passing capture at 94.7 or brighter. It is the photographer's
+  own shadow, hard edged, across the answer box — and the first photograph in
+  the set ever to reach the legibility check, which until then had never fired
+  on anything.
+- **`ios2_05` is reviewed PASS and the gate rejects it.** That disagreement is
+  real and is pinned in `KNOWN_OPEN` in `gate-tests.mjs`, along with `android04`.
+
+### `KNOWN_OPEN` is a list that must shrink
+
+Where the gate disagrees with a label, the capture is named in `KNOWN_OPEN` with
+the reason — never quietly excluded. Each entry asserts the **current wrong
+verdict**, so fixing the cause turns the suite red and forces the entry out. A
+new disagreement, on any of the 41, fails.
+
+### Seeing all 41 with the numbers
+
+```bash
+node tests/gateProbe.mjs                  # every folder
+node tests/gateProbe.mjs students android   # just these
+node tests/gate-tests.mjs --table         # the suite, with its table
+```
+
+`gateProbe.mjs` is a diagnostic and asserts nothing. `gate-tests.mjs` is the
+suite.
+
+### Keeping the two copies in step
+
+`GradeBridge2026\CaptureSet\LABELS.csv` is the other copy. **Whichever you edit,
+copy it to the other in the same change** — the one in this folder is what the
+suite reads, and a stale copy elsewhere is how a corrected label gets lost.
 
 **Every threshold in the mark detector and the capture gate is set from these
 sixteen**, and each one carries the measurement that justifies it in the comment
