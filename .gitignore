@@ -74,6 +74,6 @@ tests/captures/synthetic/
 tests/captures/students/
 tests/captures/android/
 # ...and anything a probe renders FROM them.
-tests/captures/_probe/ios2_*
-tests/captures/_probe/ios1_*
+tests/captures/_probe/ios1*
+tests/captures/_probe/ios2*
 tests/captures/_probe/android*

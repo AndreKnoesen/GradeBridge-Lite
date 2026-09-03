@@ -38,7 +38,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FORBIDDEN_NAME_HASHES, hashName } from './forbiddenNames.mjs';
+import { FORBIDDEN_NAME_HASHES, hashName, normaliseName } from './forbiddenNames.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -286,27 +286,38 @@ const pngChunks = (buf) => {
 console.log(`  3. no personal names`);
 
 /**
- * Every letter run of at least `min`, from one decoding of the bytes.
+ * Every letter run whose NORMALISED form is at least `min` characters.
  *
  * **`min` is 3 in a text file and 4 in a binary one, and that is a measurement
- * rather than a preference.** A three-letter entry was added to the list on
- * 2026-09-03 — the shortened form of a name that had been used as a capture-set
- * prefix. Scanned at three letters over the 25 MB of compressed photographs in
- * this repository it collided by chance in six of the sixteen, twice each. The
- * alternative was excusing six of the sixteen photographs outright, which would
- * have switched the name scan off across most of the evidence in order to keep
- * a check that cannot work there: three letters of entropy do not survive 25 MB
- * of arithmetic-coded data.
+ * rather than a preference.** Three-letter entries went on the list on
+ * 2026-09-03 — shortened forms of names that had been used as capture-set
+ * prefixes. Three letters of entropy do not survive 25 MB of arithmetic-coded
+ * photograph: scanned at three, one such entry collided by chance in six of the
+ * sixteen tracked photographs and three of them collided in fifteen files. The
+ * alternative to a floor was excusing most of the evidence outright, which
+ * switches the name scan off exactly where a name would be hardest to see.
  *
  * So a short entry is enforced where a short identifier actually lives — in
  * source, in data files, in documentation — and not inside a JPEG's scan. Say
  * so plainly rather than tuning the number until the output is green.
+ *
+ * **THE FLOOR IS APPLIED AFTER NORMALISING, AND THE FIRST VERSION OF IT WAS
+ * NOT.** `hashName` drops everything that is not an unaccented letter, so a
+ * four-character run beginning with a character that folds to nothing — and a
+ * latin1 decode of compressed data is full of them — hashes as a three-letter
+ * name and walked straight past a floor of four. That version was measured
+ * against one entry, which happened not to collide that way, and it looked
+ * correct. Two more entries the next hour produced 46 findings across 15 files.
+ * A length test upstream of the normalisation it is protecting is not a length
+ * test.
  */
 const tokensOf = (text, min) => {
   const out = new Set();
-  const re = new RegExp(`\\p{L}{${min},}`, 'gu');
+  const re = /\p{L}{3,}/gu;
   let m;
-  while ((m = re.exec(text)) !== null) out.add(m[0]);
+  while ((m = re.exec(text)) !== null) {
+    if (normaliseName(m[0]).length >= min) out.add(m[0]);
+  }
   return out;
 };
 

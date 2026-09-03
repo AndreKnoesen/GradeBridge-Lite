@@ -91,6 +91,26 @@ for (const file of readdirSync(join(DIR, 'crops')).filter(f => f.endsWith('.png'
   });
 }
 
+// The whole comparison below is `truncated` against the rest, so a TRUNCATED
+// entry that matches no crop on disk silently empties one side of it and the
+// probe reports a separation between a population and nothing. That is exactly
+// what a rename does: these names were changed on 2026-09-03 and the crop files,
+// which live outside this repository, may still carry the old ones. Say so
+// rather than printing a confident table drawn from an empty set.
+{
+  const seen = new Set(rows.map(r => `${r.name}.png`));
+  const missing = [...TRUNCATED].filter(f => !seen.has(f));
+  if (missing.length) {
+    console.error(`\nSTOPPED: ${missing.length} of ${TRUNCATED.size} truncated crops ` +
+      `are not in ${DIR}:`);
+    for (const f of missing) console.error(`  ${f}`);
+    console.error('\nThese names were changed in this repository on 2026-09-03 and the ' +
+      'folder OCR_TRIAGE\npoints at was not. Rename the files there to match, or point ' +
+      'OCR_TRIAGE at a\nfolder that already does.\n');
+    process.exit(1);
+  }
+}
+
 const pc = (v) => (100 * v).toFixed(2).padStart(6);
 const worst = (e) => Math.max(...EDGES.map(k => e[k]));
 

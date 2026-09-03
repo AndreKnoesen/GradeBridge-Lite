@@ -1,0 +1,48 @@
+#!/bin/sh
+# =====================================================
+# pre-push — the fast feedback that stops a mistake leaving the machine
+# =====================================================
+# WHAT THIS IS FOR
+#
+#   Finding a published username, a colleague's name or an intact EXIF block
+#   before the push costs a minute. Finding it after the push costs a revert, a
+#   judgement about whether it counts as disclosed, and possibly a history
+#   rewrite. This hook exists to buy that minute.
+#
+# WHAT IT IS NOT
+#
+#   **It is not enforcement, and it must not be relied on as enforcement.**
+#
+#     - It does not exist in a fresh clone. `.git/hooks/` is not tracked, so
+#       this file does nothing until somebody runs the command below.
+#     - `git push --no-verify` skips it, silently and legitimately.
+#     - It runs on the machine of the person who already forgot.
+#
+#   **`.github/workflows/guards.yml` is the enforcement**, because it runs where
+#   the person who forgot cannot reach it. This hook is the convenience; CI is
+#   the guard. If the two ever disagree, CI is right.
+#
+# INSTALL (once per clone)
+#
+#   git config core.hooksPath .githooks
+#
+#   That is the whole installation. To undo it: `git config --unset
+#   core.hooksPath`. It is deliberately not automatic — a repository that
+#   rewrites your git config during `npm install` is worse than one that asks.
+#
+# WHY THE GUARDS AND NOT THE WHOLE SUITE
+#
+#   The full `npm test` takes minutes, most of it registration and capture work
+#   that CI will redo anyway. A hook slow enough to be resented is a hook that
+#   gets `--no-verify`d out of habit, and then it protects nothing. So this runs
+#   the two checks whose findings are expensive *specifically because a push
+#   makes them irreversible* — a name, a path, image metadata, a process record.
+#   Everything else is CI's job.
+set -e
+
+echo "pre-push: running the disclosure guards (CI runs the full suite)"
+
+node tests/no-personal-names.mjs
+node tests/no-process-records.mjs
+
+echo "pre-push: clean — pushing"

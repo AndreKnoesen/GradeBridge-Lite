@@ -1,0 +1,74 @@
+# =====================================================
+# The guards run on the server, not only when somebody remembers
+# =====================================================
+# WHAT THIS IS FOR
+#
+#   Every check in this repository — the personal-name, absolute-path,
+#   image-metadata and process-record guards, the math-delimiter mirror, the
+#   registration and capture suites — ran only when a person typed `npm test`.
+#   None of them stopped the five findings of 2026-09-03, because a guard nobody
+#   is obliged to run is a guard nobody runs.
+#
+# WHAT IT CANNOT DO, AND SAY IT PLAINLY
+#
+#   **This job runs AFTER the push. It does not prevent anything.** By the time
+#   it goes red the commit is on GitHub, and if the branch is public so is
+#   whatever the guard found. A green tick is not proof that nothing was ever
+#   published; it is proof that nothing is wrong with the tree as it stands now.
+#
+#   A finding caught here still needs the commit dealt with — reverted, and if
+#   the repository is public by then, treated as disclosed. The `pre-push` hook
+#   in `.githooks/` is the half that can actually prevent it, and it is the
+#   weaker half, because it is skippable and does not survive a fresh clone.
+#
+# WHY THE WHOLE SUITE AND NOT A PRIVACY-ONLY JOB
+#
+#   A second entry point can drift from the first. `npm test` is the one the
+#   guards already live in, so there is nothing here to keep in step with it.
+name: guards
+
+on:
+  push:
+  pull_request:
+
+# A second push to the same branch makes the first run's answer stale.
+concurrency:
+  group: guards-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guards read `git ls-files`, which needs the working tree and
+          # nothing else, so the default shallow fetch is enough. They scan the
+          # tree as it stands, never its history — clearing history is a
+          # separate, authorised operation.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The full suite. It expects only the sixteen tracked photographs: the
+      # other twenty-five are other people's work and are not in this
+      # repository, so `gate-tests.mjs` prints a SKIP for each and asserts
+      # exact agreement over the sixteen. Verified green in that shape.
+      - name: npm test
+        run: npm test
+
+      # In the acceptance criteria beside the suite, so a type error or a broken
+      # build cannot reach a branch with a green tick on it.
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+
+      - name: build
+        run: npm run build
