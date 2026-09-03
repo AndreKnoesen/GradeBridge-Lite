@@ -31,10 +31,32 @@ dist-ssr
 # They are how a session hands off to the next one, not part of the app, and
 # they date fast; the contracts they describe live in the tracked README and in
 # GradeBridge2026/CLAUDE.md. Keep them local.
+#
+# This block existed, with this reasoning, while nineteen process documents were
+# tracked anyway — nine of them REPORT_* under tests/captures/, which the list
+# did not name. So: no leading slash on any pattern, because these arrive in
+# subdirectories as often as at the root, and `tests/no-process-records.mjs`
+# fails the suite if one is ever tracked. An ignore file is not a guard; it does
+# nothing about a file somebody adds with `-f`, and that is how these got in.
 HANDOFF_*.md
 COMPLETION_*.md
 WORKORDER_*.md
+WORK_ORDERS_*.md
 CORRECTION_*.md
+REPORT_*.md
+DIRECTIVE_*.md
+DECISION_*.md
+SESSION_*.md
+MILESTONE_*.md
+NOTE_*.md
+PLAN_*.md
+SCHEDULE_*.md
+RESUME_*.md
+HANDOVER_*.md
+BRIEF_*.md
+START_HERE*.md
+*_Memo_*.md
+*_Test_Battery_*.md
 
 # Generated capture set for the registration suite (npm run captures rebuilds it).
 # Real photographs in tests/captures/real/ ARE tracked — they are the evidence.

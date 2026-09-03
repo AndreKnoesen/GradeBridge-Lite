@@ -1,7 +1,29 @@
 # GradeBridge — submission ZIP interface
 
-**Version:** v5.0
+**Version:** v5.1
 **Date:** 2026-09-03
+
+> ### v5.1 corrects v5.0. Read this if you started a consumer against v5.0.
+>
+> **The archive filename block in §1 was stale.** It read
+> `{StudentName}_{CourseCode}_submission.zip`, which has not been the pattern
+> since `b48fa36` — the prose four lines below it already said so, and the
+> observed manifest already showed the real name. **A consumer written against
+> that code block would glob for a student name that never arrives.** The stem
+> is `{assignment_id}_submission_{YYYYMMDD-HHMM}` and carries no name.
+>
+> Three more statements were stale for the same reason and are corrected here:
+> §3 said the filenames "keep the student's name in both cases"; §3 said an
+> electronic payload carries "the other seven keys", which is six now that
+> `student_name` has gone; and §1's sanitiser was described in a way that
+> implied it lowercases.
+>
+> **Nothing about the code changed in v5.1.** Only this document was wrong. The
+> audit that found these is in the completion note for the work order that
+> ordered it, and the filename claim is now checked by a test rather than by
+> proofreading — see §9.
+
+**Supersedes:** v5.0, earlier the same day
 
 > ## BREAKING. `student_name` is REMOVED from the payload.
 >
@@ -29,7 +51,7 @@
 > the contents cannot disagree; it is **UTC**, like `last_saved` itself, so a
 > late-evening submission can carry the next day's date.
 
-**Supersedes:** v4.3, earlier the same day
+**Also supersedes:** v4.3, 2026-09-03
 **Also supersedes:** v4.2, 2026-09-02 — **the `low-resolution` quality flag is
 retired and is never emitted again.** `quality_flags` is now `[]` on all three
 crops. Nothing else changed. A reader that switched on that string will simply
@@ -57,7 +79,7 @@ submitted nothing.
 filename, field, type, byte size and value below was read out of:
 
 ```
-GradeBridge2026\CaptureSet\milestone_zero\ENG17_Homework_1_submission_20260903-0303.zip
+GradeBridge2026\CaptureSet\milestone_zero\ENG17_Homework_1_submission_{timestamp}.zip
 ```
 
 re-emitted on 2026-09-02 with `marks_detected` (every other entry byte-identical
@@ -78,20 +100,25 @@ came off that ZIP.
 One file, uploaded to Gradescope:
 
 ```
-{StudentName}_{CourseCode}_submission.zip
+{assignment_id}_submission_{YYYYMMDD-HHMM}.zip
 ```
 
-Sanitised with `[^a-z0-9_\-] → _`. The stem is
-`{assignment_id}_submission_{YYYYMMDD-HHMM}` — no name, because the app does not
-have one, and a timestamp because without a discriminator every student in a
-class downloads an identically named file. The timestamp is `last_saved` in
-**UTC**. DEFLATE, level 6.
+**No name is in it**, because the app does not have one, and a timestamp because
+without a discriminator every student in a class downloads an identically named
+file. The timestamp is `last_saved`, in **UTC**, so a late-evening submission can
+carry the next day's date.
+
+Sanitised by replacing anything outside `a-z A-Z 0-9 _ -` with `_`. **Case is
+preserved** — `ENG17` stays `ENG17`.
+
+The `.json`, the `.pdf` where there is one, and the backup JSON all share this
+stem. DEFLATE, level 6.
 
 ### Observed manifest
 
 | bytes | entry |
 |---:|---|
-| 2,728 | `ENG17_Homework_1_submission_20260903-0303.json` |
+| 2,728 | `ENG17_Homework_1_submission_{timestamp}.json` |
 | 40,696 | `crops/p1a.jpg` |
 | 38,285 | `crops/p1b.jpg` |
 | 81,454 | `crops/p1c.jpg` |
@@ -164,9 +191,10 @@ four-character envelope tag.
 
 Read the first four characters and branch. Do not assume `gb1:`.
 
-A `gb2:` payload is **de-identified**: identity comes from Gradescope's
-authenticated submitter metadata, not from the payload. The archive's filenames
-keep the student's name in both cases.
+**Neither payload carries an identity field**, and neither do the filenames.
+Since v5.0 the app emits no `student_name` at all, and `gb2:` additionally strips
+that key and three others on the way out — belt and braces rather than the
+mechanism. Identity is the authenticated upload, not anything in the archive.
 
 ### Decrypted structure — all nine top-level keys, as observed
 
@@ -176,7 +204,7 @@ keep the student's name in both cases.
   "assignment_id":  "ENG17_Homework_1",
   "ai_feedback":    false,
   "submission_data": { "p0s0": { "answer": null, "images_submitted": 0 }, … },
-  "last_saved":     "2026-09-03T03:03:00.000Z",
+  "last_saved":     "2026-09-03T05:27:36.837Z",
   "input_mode":     "handwritten",
   "layout_id":      "95438EDF",
   "pages":          [ … ],
@@ -199,8 +227,10 @@ keep the student's name in both cases.
 | `crops` | object | §3.3. Handwritten only. |
 
 `input_mode`, `layout_id`, `pages` and `crops` are written **only** when the
-assignment is handwritten; an electronic payload carries the other seven keys and
-none of these four. See §8 for the one key that has been added since v3.1.
+assignment is handwritten; an electronic payload carries the other **six** keys
+— `course_code`, `assignment_id`, `pdf_filename`, `ai_feedback`,
+`submission_data`, `last_saved` — and none of these four. Measured on a real
+electronic build, not counted off this table. See §8 for the one key that has been added since v3.1.
 
 ### 3.1 `submission_data` — read this, then ignore it
 
@@ -505,7 +535,7 @@ carrying grading prompts shipped to students once already — see
 ## Provenance
 
 Every number, filename and value above was read out of
-`ENG17_Homework_1_submission_20260903-0303.zip`. Regenerate it with `npm run milestone:zero`
+`ENG17_Homework_1_submission_{timestamp}.zip`. Regenerate it with `npm run milestone:zero`
 in `GradeBridge-Student-Submission`; the harness re-derives the whole package from
 the assignment export and two photographs, and prints the manifest, the decrypted
 payload and the crop measurements.
