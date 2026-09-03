@@ -51,6 +51,24 @@
 //   form separately: the guard matches whole tokens, so "sam" does not cover
 //   "samuel" and a surname does not cover a given name.
 //
+// WHAT THIS LIST CANNOT DO, AND WHAT ACTUALLY WORKS
+//
+//   It matches whole tokens against hashes of names somebody has already
+//   written down here. **It cannot detect an arbitrary abbreviation of a name
+//   it has never seen.** A capture set keyed on the first three letters of a
+//   colleague's given name passed this guard for as long as it existed, in
+//   thirteen data rows, in two shipped source comments and in a contract
+//   document, because the shortened form is not the name and nothing hashed to
+//   it. Adding that fragment on 2026-09-03 is what refuses it from now on, and
+//   that is all adding a fragment ever does: it closes one hole after somebody
+//   noticed it. Do not read the list as a detector.
+//
+//   The control that works is upstream of this file: **a capture set, a
+//   fixture, a folder or a test identifier must not be named after a person in
+//   the first place.** Name it for what it is — the device class, the defect,
+//   the page. Then there is no fragment to abbreviate and nothing for this list
+//   to have missed.
+//
 // The same list, produced the same way, is used by the Assignment Maker
 // repository. Keep the two in step.
 
@@ -75,6 +93,7 @@ export const hashName = (name) => {
 /** One entry per forbidden name. No comments, no ordering that carries meaning. */
 export const FORBIDDEN_NAME_HASHES = new Set([
   '2f8a0c01f668bca7',
+  '5ca1b7b104433c8e',
   '386a85d8c88778b0',
   '710c3906ca8b54f8',
   'd9a31550033ee07d',

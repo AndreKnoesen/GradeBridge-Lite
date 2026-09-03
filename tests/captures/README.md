@@ -7,8 +7,9 @@ captures/
   synthetic/      generated, gitignored — `npm run captures` rebuilds it
   real/           eleven phone photographs, cap01..cap11
   stale/          five more of an older layout, stale01..stale05
-  android/            thirteen Android captures contributed by a colleague,
-                  android01..android13 — NOT TRACKED, see .gitignore
+  android/        thirteen captures from an Android phone, contributed
+                  for testing, android01..android13
+                  — NOT TRACKED, see .gitignore
   students/       twelve photographs of real submitted coursework, six from
                   each of two iPhones, ios1_01..ios1_06 and ios2_01..ios2_06
                   — NOT TRACKED, see .gitignore

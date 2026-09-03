@@ -42,9 +42,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const SUITE = resolve(REPO, '..');
 
-const EXPORT_DIR = process.env.FULL_EXPORT ?? join(
-  'C:', 'Users', 'aknoesen', 'Documents', 'Knoesen', 'ENG17-Assignments',
-  'Processed Assignments', 'ENG17_Homework_1_Export (4)', 'student');
+// FULL_EXPORT and FULL_PAGES are the only way to point this at data. There is
+// deliberately no default for either: a fallback path is a path into one
+// person's machine, and this repository is public.
+const EXPORT_DIR = process.env.FULL_EXPORT ?? '';
 const PAGE_DIR = process.env.FULL_PAGES ?? '';
 const OUT_DIR = process.env.FULL_OUT ?? join(SUITE, 'CaptureSet', 'full_assignment');
 // Kept to label the run, not to go into the package: the submission carries no
@@ -52,6 +53,19 @@ const OUT_DIR = process.env.FULL_OUT ?? join(SUITE, 'CaptureSet', 'full_assignme
 const HARNESS_LABEL = 'Full Assignment';
 const EXPECTED_LAYOUT_ID = '95438EDF';
 const SHUFFLE = process.argv.includes('--shuffle');
+
+// Nothing below runs without both folders, so name the variable that is missing
+// and stop cleanly rather than failing a run that was never pointed at anything.
+{
+  const unset = [
+    !EXPORT_DIR && "FULL_EXPORT (the assignment's student/ folder)",
+    !PAGE_DIR && 'FULL_PAGES (a folder of page_NN.jpg renders, one per sheet page)',
+  ].filter(Boolean);
+  if (unset.length) {
+    console.log(`\nSKIP: set ${unset.join(' and ')} to run this.\n`);
+    process.exit(0);
+  }
+}
 
 let failures = 0;
 const check = (name, ok, detail = '') => {
@@ -86,10 +100,10 @@ const pageCropsConst = await loadModule('services/pageCrops.ts', 'fa_pagecrops.m
 // 1. The assignment
 // =====================================================
 console.log('  1. the assignment zip');
-if (!existsSync(EXPORT_DIR)) fatal(`assignment export not found at ${EXPORT_DIR}`);
-if (!PAGE_DIR || !existsSync(PAGE_DIR)) {
-  fatal('FULL_PAGES is not set to a folder of rendered pages.\n' +
-    '  Render them first, e.g. with PyMuPDF at 300 dpi, one page_NN.jpg per sheet page.');
+if (!existsSync(EXPORT_DIR)) fatal(`FULL_EXPORT does not exist: ${EXPORT_DIR}`);
+if (!existsSync(PAGE_DIR)) {
+  fatal(`FULL_PAGES does not exist: ${PAGE_DIR}\n` +
+    '  Render the pages first, e.g. with PyMuPDF at 300 dpi, one page_NN.jpg per sheet page.');
 }
 
 const assignmentZip = new JSZip();

@@ -4,7 +4,10 @@
 // `workorders/WORKORDER_MILESTONE_ZERO_2026-09-01.md`. Everything else this app
 // does sits upstream of this path and until now nobody had run it end to end.
 //
-//   node tests/milestone-zero.mjs
+//   MILESTONE_EXPORT=<student/ folder> node tests/milestone-zero.mjs
+//
+//   MILESTONE_EXPORT   the assignment's student/ folder (required)
+//   MILESTONE_OUT      where to write the archive and the crops
 //
 // It drives the same functions the UI drives — `loadAssignmentBundle`,
 // `parseLayoutCsv`, `runCaptureGate`, `registerPage`, `cropRegions`,
@@ -49,24 +52,34 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const SUITE = resolve(REPO, '..');
 
-// `Export (2)` was the folder on 2026-09-01 and is gone; `Export (4)` is the
-// same assignment re-exported after the target-points fix, same `layout_id`
-// 95438EDF, and it is the one that totals 200. Override with MILESTONE_EXPORT.
+// MILESTONE_EXPORT is the only way to point this at an assignment. There is
+// deliberately no default: a fallback path is a path into one person's machine,
+// and this repository is public.
 //
-// **Do not point this at `CaptureSet/frozen_export/student`.** It carries the
-// same `layout_id` and the same geometry — points are outside the hash — but it
-// predates the 2026-09-01 target-points fix and its map totals 100, so every
-// `max_points` in the package comes out halved. It fails the points check here,
-// which is the only thing that catches it.
-const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? join(
-  'C:', 'Users', 'aknoesen', 'Documents', 'Knoesen', 'ENG17-Assignments',
-  'Processed Assignments', 'ENG17_Homework_1_Export (4)', 'student');
+// Point it at the `student/` folder of an ENG17 Homework 1 export made after the
+// 2026-09-01 target-points fix — same `layout_id` 95438EDF, and a map that
+// totals 200.
+//
+// **Do not point it at `CaptureSet/frozen_export/student`.** It carries the same
+// `layout_id` and the same geometry — points are outside the hash — but it
+// predates that fix and its map totals 100, so every `max_points` in the package
+// comes out halved. It fails the points check here, which is the only thing that
+// catches it.
+const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? '';
 const OUT_DIR = process.env.MILESTONE_OUT ?? join(SUITE, 'CaptureSet', 'milestone_zero');
 
 // The package carries no student name since 2026-09-03 — identity is
 // Gradescope's authenticated submitter. This is kept only to label the report.
 const HARNESS_LABEL = 'Milestone Zero';
 const EXPECTED_LAYOUT_ID = '95438EDF';
+
+// Nothing below runs without the assignment, so name the variable and stop
+// cleanly rather than failing a run that was never pointed at anything.
+if (!EXPORT_DIR) {
+  console.log('\nSKIP: set MILESTONE_EXPORT to the student/ folder of an ' +
+    'ENG17 Homework 1 export to run this.\n');
+  process.exit(0);
+}
 
 let failures = 0;
 const check = (name, ok, detail = '') => {
@@ -95,7 +108,7 @@ console.log('\nMilestone zero — one sheet, photographed, to a package that ope
 // =====================================================
 console.log('  1. the assignment zip');
 
-if (!existsSync(EXPORT_DIR)) fatal(`assignment export not found at ${EXPORT_DIR}`);
+if (!existsSync(EXPORT_DIR)) fatal(`MILESTONE_EXPORT does not exist: ${EXPORT_DIR}`);
 
 const assignmentZip = new JSZip();
 for (const name of readdirSync(EXPORT_DIR)) {

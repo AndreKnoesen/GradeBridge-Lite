@@ -15,9 +15,10 @@
 // Neither separates the populations, and they disagree about which crops are
 // extreme, so no `edge-contact` flag was built. See tests/captures/README.md.
 //
-//   node tests/edgeBandProbe.mjs [bandMm] [radiusMm] [offset]
+//   OCR_TRIAGE=<folder> node tests/edgeBandProbe.mjs [bandMm] [radiusMm] [offset]
 //
-// Needs GradeBridge2026/CaptureSet/ocr_triage, which is not in this repository.
+// OCR_TRIAGE points at the folder holding the triage crops and their
+// INDEX.json. They are not in this repository.
 import { webcrypto } from 'node:crypto';
 globalThis.crypto ??= webcrypto;
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -25,11 +26,13 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { loadModule } from './captureSet.mjs';
 
-const DIR = process.env.OCR_TRIAGE
-  ?? 'C:/Users/aknoesen/Documents/BridgeSuite/GradeBridge2026/CaptureSet/ocr_triage';
-if (!existsSync(join(DIR, 'INDEX.json'))) {
-  console.log(`SKIP: the OCR triage crops are not checked out at ${DIR}`);
-  console.log('Set OCR_TRIAGE to their folder to run this.');
+// OCR_TRIAGE is the only way to point this at the crops. There is deliberately
+// no default: a fallback path is a path into one person's machine, and this
+// repository is public.
+const DIR = process.env.OCR_TRIAGE;
+if (!DIR || !existsSync(join(DIR, 'INDEX.json'))) {
+  console.log('SKIP: set OCR_TRIAGE to the folder holding the OCR triage crops ' +
+    '(the one with INDEX.json in it) to run this.');
   process.exit(0);
 }
 

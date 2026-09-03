@@ -182,9 +182,11 @@ instructor's and the institution's choice.
 - **Photograph metadata is removed.** Phone photographs carry EXIF data naming
   the device, the software version and the time and sometimes the place of
   capture. The app decodes and re-encodes every page, and **all** of it goes,
-  not only EXIF: a source photograph in our test set carries an 8,912-byte EXIF
-  block plus two further metadata segments, and the corresponding image inside
-  the submission carries a 16-byte JFIF header and nothing else.
+  not only EXIF: measured on a photograph as it came off the phone, an
+  8,912-byte EXIF block plus two further metadata segments, against a 16-byte
+  JFIF header and nothing else in the corresponding image inside the
+  submission. (The photographs in this repository's own test set have since had
+  their metadata stripped, so that first figure cannot be reproduced from them.)
 
 ### For handwritten assignments
 

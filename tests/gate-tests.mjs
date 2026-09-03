@@ -85,10 +85,10 @@ const labels = new Map();
 // ---------- the captures ----------
 //
 // All four folders. `real/` and `stale/` are the original sixteen and are
-// tracked; `android/` (a colleague's Android captures) and `students/` (two
-// iPhones, real student work) are not, so they may be absent on a given
-// machine. The
-// suite says so rather than counting an absent photograph as agreement.
+// tracked; `android/` (thirteen captures from an Android phone) and `students/`
+// (two iPhones, real student work) are not, so they may be absent on a given
+// machine. The suite says so rather than counting an absent photograph as
+// agreement.
 const TRACKED = ['real', 'stale'];
 const UNTRACKED = ['android', 'students'];
 
@@ -402,7 +402,7 @@ if (table) {
     const m = v ? v.measurements : null;
     const num = (x, d) => (typeof x === 'number' ? x.toFixed(d) : '—');
     console.log(
-      (r.name + (KNOWN_OPEN[r.name] ? ' *' : '')).padEnd(19),
+      (r.name + (KNOWN_OPEN[r.name] ? ' *' : '')).padEnd(26),
       String(r.want).padEnd(5),
       (v ? (v.pass ? 'PASS' : 'FAIL') : 'THREW').padEnd(5),
       String(v && v.failed ? v.failed : '').padEnd(15),

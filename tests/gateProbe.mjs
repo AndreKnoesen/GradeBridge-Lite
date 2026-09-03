@@ -17,8 +17,9 @@ const FOLDERS = process.argv.slice(2).length
   : ['real', 'stale', 'students', 'android'];
 
 // The `review` column, where there is one. Only the sixteen in real/ and
-// stale/ are labelled; students/ and android/ print a blank `want`, which is the
-// honest thing to show — there is no ground truth for them to disagree with.
+// stale/ are labelled; students/ and android/ print a blank `want`, which is
+// the honest thing to show — there is no ground truth for them to disagree
+// with.
 const labels = new Map();
 {
   const labelPath = join(CAPTURE_DIR, 'LABELS.csv');
