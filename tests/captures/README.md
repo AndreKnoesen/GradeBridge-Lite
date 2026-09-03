@@ -33,6 +33,9 @@ captures/
   REPORT_CROP_FLAGS_2026-09-03.md      low-resolution retired on measurement;
                   edge-contact NOT built, because the populations do not
                   separate. Its §3 is the formulation that would work
+  REPORT_FULL_ASSIGNMENT_2026-09-03.md  sixteen pages and seventeen crops
+                  through the whole path. Read its §3 before quoting an archive
+                  size and its §4 before trusting the memory picture
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
