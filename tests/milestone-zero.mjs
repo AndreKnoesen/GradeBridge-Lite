@@ -62,7 +62,9 @@ const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? join(
   'Processed Assignments', 'ENG17_Homework_1_Export (4)', 'student');
 const OUT_DIR = process.env.MILESTONE_OUT ?? join(SUITE, 'CaptureSet', 'milestone_zero');
 
-const STUDENT_NAME = 'Milestone Zero';
+// The package carries no student name since 2026-09-03 — identity is
+// Gradescope's authenticated submitter. This is kept only to label the report.
+const HARNESS_LABEL = 'Milestone Zero';
 const EXPECTED_LAYOUT_ID = '95438EDF';
 
 let failures = 0;
@@ -280,7 +282,6 @@ let built = null;
 try {
   built = await pkgSvc.buildSubmissionPackage(
     {
-      studentName: STUDENT_NAME,
       assignment,
       submissionData: {},
       isHandwritten: assignment.inputMode === 'handwritten',
@@ -463,7 +464,7 @@ writeFileSync(join(OUT_DIR, 'README.txt'),
     '',
     `assignment : ENG17 HW1, layout_id ${EXPECTED_LAYOUT_ID}, 16 pages, 17 regions, 200 points`,
     `photographs: cap01 (page 2), cap11 (page 3) — 2 of 16 pages, a deliberate partial submission`,
-    `student    : ${STUDENT_NAME}`,
+    `student    : none — the package carries no name (${HARNESS_LABEL} harness)`,
     `envelope   : ${built.format}`,
     '',
     'Full report: MILESTONE_ZERO_REPORT_2026-09-01.md — manifest, decrypted payload,',

@@ -36,6 +36,8 @@ captures/
   REPORT_FULL_ASSIGNMENT_2026-09-03.md  sixteen pages and seventeen crops
                   through the whole path. Read its §3 before quoting an archive
                   size and its §4 before trusting the memory picture
+  REPORT_NO_STUDENT_NAME_2026-09-03.md  student_name removed from the payload.
+                  BREAKING — ZIP spec v5.0. Filenames changed with it
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 

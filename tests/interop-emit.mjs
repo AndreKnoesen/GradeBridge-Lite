@@ -42,12 +42,18 @@ await build({
 });
 const svc = await import(pathToFileURL(outFile).href);
 
-// The exact payload shape App.tsx builds on the gb2 path.
+// **This deliberately carries `student_name`, which App.tsx no longer emits.**
+//
+// Since 2026-09-03 the app builds no such field: identity is Gradescope's
+// authenticated submitter. `deidentifyForGb2` is kept anyway, and so is this
+// fixture, because the stripper is the belt to that decision's braces — if the
+// field ever returns by accident, the gb2 path must still remove it. Feeding it
+// a payload that already lacks the field would prove nothing.
 const appPayload = svc.deidentifyForGb2({
   student_name: 'Jane Smith',
   course_code: 'TEST',
   assignment_id: 'TEST_ASSIGNMENT_1',
-  pdf_filename: 'Jane_Smith_TEST_submission.pdf',
+  pdf_filename: 'TEST_ASSIGNMENT_1_submission_20260810-0000.pdf',
   submission_data: {
     p0s0: { answer: 'The quick brown fox', images_submitted: 0 },
     p1s0: { answer: '42', images_submitted: 1 },

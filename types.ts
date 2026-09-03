@@ -185,7 +185,6 @@ export interface StoredLayoutMap {
 }
 
 export interface AppState {
-  studentName: string;
   assignment: Assignment | null;
   submissionData: SubmissionData;
   /** Handwritten page pool — metadata only; the bitmaps live in IndexedDB. */
@@ -200,7 +199,6 @@ export interface AppState {
 }
 
 export interface BackupData {
-  student_name: string;
   submission_data: SubmissionData;
   assignment_title: string;
   course_code: string;

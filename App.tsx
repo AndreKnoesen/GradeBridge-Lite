@@ -22,7 +22,7 @@ import { BundleError, loadAssignmentBundle } from './services/assignmentBundle';
 import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
 import { registerAndCropPage } from './services/pageCrops';
 import {
-  SUBMISSION_ZIP_OPTIONS, buildSubmissionPackage, cropBlobKey, cropList,
+  SUBMISSION_ZIP_OPTIONS, buildSubmissionPackage, cropBlobKey, cropList, submissionBaseName,
 } from './services/submissionPackage';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
@@ -74,7 +74,6 @@ const cropFileName = (regionId: string): string =>
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
-    studentName: '',
     assignment: null,
     submissionData: {},
     pages: [],
@@ -196,7 +195,6 @@ const App: React.FC = () => {
              parsed.crops && typeof parsed.crops === 'object' ? parsed.crops : {};
            setState(prev => ({
              ...prev,
-             studentName: parsed.studentName || '',
              assignment: parsed.assignment || null,
              submissionData: parsed.submissionData || {},
              pages,
@@ -224,9 +222,8 @@ const App: React.FC = () => {
   // hundred bytes a page instead of a few hundred kilobytes.
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (state.studentName || Object.keys(state.submissionData).length > 0 || state.pages.length > 0) {
+      if (Object.keys(state.submissionData).length > 0 || state.pages.length > 0) {
         const toSave = {
-          studentName: state.studentName,
           assignment: state.assignment,
           submissionData: state.submissionData,
           pages: state.pages,
@@ -247,13 +244,9 @@ const App: React.FC = () => {
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [state.studentName, state.submissionData, state.assignment, state.pages, state.layout, state.crops]);
+  }, [state.submissionData, state.assignment, state.pages, state.layout, state.crops]);
 
   // Handlers
-  const handleUpdateStudent = (field: string, value: string) => {
-    setState(prev => ({ ...prev, [field]: value }));
-  };
-
   const handleSubmissionChange = (id: string, data: SubmissionData['key']) => {
     setState(prev => ({
       ...prev,
@@ -652,7 +645,6 @@ const App: React.FC = () => {
   const handleExportWork = async () => {
     if (!state.assignment) return;
     const backup: BackupData = {
-      student_name: state.studentName,
       submission_data: state.submissionData,
       assignment_title: state.assignment.title,
       course_code: state.assignment.courseCode,
@@ -685,7 +677,10 @@ const App: React.FC = () => {
     }
 
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const fileName = `${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
+    const fileName = `${submissionBaseName(
+      `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`,
+      backup.exported_at,
+    )}_backup.json`;
     downloadBlob(blob, fileName);
     // Nothing here knows whether the file was written — on iOS the download is
     // still behind a confirmation the student has not seen yet. Tell them what
@@ -787,7 +782,6 @@ const App: React.FC = () => {
 
         setState(prev => ({
           ...prev,
-          studentName: backupData.student_name,
           submissionData: backupData.submission_data,
           pages: restoredPages.length > 0 ? renumberPages(restoredPages) : prev.pages,
           layout: backupData.layout ?? prev.layout,
@@ -814,7 +808,6 @@ const App: React.FC = () => {
          dropAllPageUrls();
          dropAllCropUrls();
          setState({
-            studentName: '',
             assignment: null,
             submissionData: {},
             pages: [],
@@ -909,11 +902,6 @@ const App: React.FC = () => {
 
   const handleDownloadForGradescope = async () => {
     if (!state.assignment) return;
-    if (!state.studentName.trim()) {
-      alert("Please enter your name before submitting.");
-      return;
-    }
-
     setPdfProgress({ active: true, phase: 'pdf', current: 0, total: 0 });
     setStatusMessage("Generating submission package...");
 
@@ -948,7 +936,6 @@ const App: React.FC = () => {
 
       const built = await buildSubmissionPackage(
         {
-          studentName: state.studentName,
           assignment: state.assignment,
           submissionData: state.submissionData,
           isHandwritten,
@@ -1083,7 +1070,6 @@ const App: React.FC = () => {
       {/* Sidebar */}
       <Sidebar
         state={state}
-        onUpdateStudent={handleUpdateStudent}
         onLoadAssignment={handleLoadAssignment}
         onLoadDemo={handleLoadDemo}
         onLoadWork={handleLoadWork}
@@ -1103,29 +1089,23 @@ const App: React.FC = () => {
             {!state.assignment ? (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center text-gray-400 py-8">
                 <h2 className="text-xl font-semibold text-gray-600 mb-6">
-                  {!state.studentName.trim()
-                    ? "Welcome! Let's Get Started"
-                    : "Ready to Load Your Assignment"}
+                  Welcome — let's get started
                 </h2>
 
                 {/* How-To Guide */}
                 <div className="max-w-lg mb-8 text-left bg-blue-50 border border-blue-200 rounded-lg p-5 shadow-sm">
                   <h3 className="font-bold text-blue-800 mb-3 text-center">How to Submit Your Assignment</h3>
                   <ol className="space-y-3 text-sm text-blue-900">
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.studentName.trim() ? 'bg-green-50' : 'bg-blue-100'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.studentName.trim() ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
-                      <span><strong>Enter your name</strong> - Type your Full Name in the sidebar (left panel)</span>
-                    </li>
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : 'bg-blue-100'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
                       <span><strong>Load assignment</strong> - Upload the assignment file your instructor provided — the zip you printed your pages from (or try the demo)</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
-                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                       <span><strong>Complete your work</strong> - Fill in answers for each problem</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
-                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                       <span><strong>Download &amp; Submit</strong> - Click <em>Download for Gradescope</em> to get a single ZIP file, then upload that ZIP to Gradescope</span>
                     </li>
                   </ol>
@@ -1134,8 +1114,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {state.studentName.trim() ? (
-                  <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-3">
                     <p className="text-sm text-gray-600 font-medium">Upload your assignment file from the sidebar, or try the demo:</p>
                     <button
                       onClick={handleLoadDemo}
@@ -1150,12 +1129,6 @@ const App: React.FC = () => {
                       Explore all features with a sample math assignment
                     </p>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-amber-700 font-medium">Please enter your name first</p>
-                    <p className="text-sm text-amber-600">Complete Step 1 in the sidebar (left panel) to continue</p>
-                  </div>
-                )}
               </div>
             ) : (
               <>
@@ -1263,7 +1236,6 @@ const App: React.FC = () => {
                            <PrintView
                              assignment={state.assignment}
                              submissionData={state.submissionData}
-                             studentName={state.studentName}
                            />
                        </div>
                    </div>

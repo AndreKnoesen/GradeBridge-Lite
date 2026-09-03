@@ -62,6 +62,8 @@ const crop = await loadModule('services/cropRegions.ts', 'cropRegions.mjs');
 const bundle = await loadModule('services/assignmentBundle.ts', 'assignmentBundle.mjs');
 const ras = await loadModule('services/raster.ts', 'raster.mjs');
 const mdet = await loadModule('services/markDetect.ts', 'markDetect.mjs');
+const pkg = await loadModule('services/submissionPackage.ts', 'submissionPackage.mjs');
+const crypto = await loadModule('cryptoService.ts', 'cryptoService2.mjs');
 
 console.log('\nStudent Submission — registration and crop\n');
 
@@ -731,6 +733,146 @@ check('the trio branch actually uses labelTrio', () => {
   // ...and the raw triple must not reach `consider` on any path.
   assert(!/consider\(trio, \[squares\[a\]/.test(branch),
     'the trio branch still passes the detector-ordered triple to consider');
+});
+
+// =====================================================
+// The app no longer asks a student who they are
+// =====================================================
+// 2026-09-03. Identity is Gradescope's authenticated submitter; a name typed
+// into a box is unverified and is PII carried for no gain. `student_name` is
+// GONE from the payload — absent, not empty.
+//
+// The silent-failure route is a backup written before today. It carries
+// `student_name`, the loader reads it happily, and if anything still copied
+// that field into state it would travel straight back into the next package
+// with nobody the wiser. So that route is the one that gets a test.
+
+await checkAsync('a legacy backup restores, and its package carries no student_name', async () => {
+  // A backup file as the app wrote them yesterday.
+  const legacy = JSON.parse(JSON.stringify({
+    student_name: 'Jane Smith',
+    // Internal keys are `p{i}_s{j}`; the autograder key `p0s0` is derived at
+    // export. A backup carries the internal form.
+    submission_data: { p0_s0: { textAnswer: 'the answer' } },
+    assignment_title: 'Lab 1',
+    course_code: 'EEC1',
+    exported_at: '2026-09-01T10:00:00.000Z',
+    version: 'v3.7.7',
+  }));
+  assert(legacy.student_name === 'Jane Smith', 'the fixture is not a legacy backup');
+
+  // What the restore handler now puts into state. `studentName` is not a field
+  // of AppState any more, so there is nothing for the value to land in — the
+  // key is simply not read.
+  const restored = {
+    submissionData: legacy.submission_data,
+    lastSaved: new Date().toISOString(),
+  };
+  assert(!('studentName' in restored), 'the restore path reintroduced a student name');
+
+  const built = await pkg.buildSubmissionPackage(
+    {
+      assignment: {
+        id: 'a1', courseCode: 'EEC1', title: 'Lab 1',
+        problems: [{
+          id: 'p0', title: 'P', description: '', subsections: [
+            { id: 's0', title: 'a', description: '', points: 10, submissionType: 'Text' },
+          ],
+        }],
+      },
+      submissionData: restored.submissionData,
+      isHandwritten: false,
+      layoutId: null,
+      pages: [],
+      crops: {},
+      now: '2026-09-03T12:34:56.000Z',
+    },
+    {
+      // The electronic path writes a PDF; its contents are irrelevant here.
+      pdfBytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      readBlob: async () => null,
+      downsampleImage: async (uri) => uri,
+    },
+  );
+
+  // Asserted on the decrypted object. A grep of the gb1 envelope would pass
+  // whatever the payload said.
+  const jsonEntry = Object.keys(built.zip.files).find(n => n.endsWith('.json'));
+  const text = await built.zip.file(jsonEntry).async('string');
+  const payload = await crypto.decryptJson(text);
+
+  assert(!('student_name' in payload),
+    `student_name survived a legacy restore: ${Object.keys(payload).join(', ')}`);
+  for (const f of ['email', 'sid', 'student_id']) {
+    assert(!(f in payload), `${f} is in the payload`);
+  }
+  // ...and the answer did survive, so the test is not passing by producing nothing.
+  assert(payload.submission_data && payload.submission_data.p0s0
+    && payload.submission_data.p0s0.answer === 'the answer',
+    'the restored answer did not reach the package');
+  // The PDF this path does write is named the same way, so no filename in the
+  // archive carries a person either.
+  assert(!/jane|smith/i.test(String(payload.pdf_filename)),
+    `pdf_filename still carries a name: ${payload.pdf_filename}`);
+  assert(/^EEC1_Lab_1_submission_\d{8}-\d{4}\.pdf$/.test(String(payload.pdf_filename)),
+    `unexpected pdf_filename: ${payload.pdf_filename}`);
+});
+
+check('nothing in the app reads or writes a student name', () => {
+  const appCode = stripComments(readFileSync(join(REPO, 'App.tsx'), 'utf8'));
+  const sidebar = stripComments(readFileSync(join(REPO, 'components', 'Sidebar.tsx'), 'utf8'));
+  const printView = stripComments(readFileSync(join(REPO, 'components', 'PrintView.tsx'), 'utf8'));
+  const types = stripComments(readFileSync(join(REPO, 'types.ts'), 'utf8'));
+  for (const [name, code] of [['App.tsx', appCode], ['Sidebar.tsx', sidebar],
+                              ['PrintView.tsx', printView], ['types.ts', types]]) {
+    assert(!/studentName/.test(code), `${name} still references studentName`);
+    assert(!/student_name/.test(code), `${name} still references student_name`);
+  }
+  // The package builder must not emit the key either.
+  const code = stripComments(pkgSrc);
+  assert(!/student_name:/.test(code), 'submissionPackage still writes student_name');
+  assert(!/studentName/.test(code), 'submissionPackage still takes a studentName');
+});
+
+check('nothing in the sidebar is gated behind a field the app no longer has', () => {
+  // The acceptance is "usable the moment it loads". The two mechanisms that
+  // made it not so were an `opacity-50 pointer-events-none` wrapper on the
+  // first step and `disabled` on the buttons inside it.
+  const sidebar = stripComments(readFileSync(join(REPO, 'components', 'Sidebar.tsx'), 'utf8'));
+  assert(!/pointer-events-none/.test(sidebar),
+    'the sidebar still disables a step behind something');
+  // Not a blanket ban on `disabled`: "Save Backup" is correctly disabled until
+  // an assignment is loaded, and always was. What must not return is a control
+  // gated on the student having identified themselves.
+  assert(!/disabled=\{!hasStudentInfo/.test(sidebar),
+    'a sidebar control is disabled behind the student-name gate again');
+  // ...and the first step is the one the student can act on.
+  const first = sidebar.indexOf('>1</span>');
+  // The heading itself, not `assignmentInputRef`, which appears earlier.
+  const heading = sidebar.indexOf('>Assignment</h3>');
+  assert(first !== -1 && heading !== -1 && heading > first && heading - first < 400,
+    'step 1 is no longer the assignment step');
+  assert(!/>Student Info</.test(sidebar), 'the Student Info step is back');
+});
+
+check('the filename carries the assignment and the moment, not a person', () => {
+  const code = stripComments(pkgSrc);
+  assert(/submissionBaseName = \(assignmentId: string, isoTimestamp: string\)/.test(code),
+    'submissionBaseName no longer takes the assignment and a timestamp');
+  // Derived from last_saved rather than a second clock read, so the filename and
+  // the payload cannot disagree about when the submission was made.
+  assert(/submissionBaseName\(\s*submissionJson\.assignment_id as string, submissionJson\.last_saved as string\)/
+    .test(code.replace(/\s+/g, ' ')) || /submissionJson\.last_saved as string/.test(code),
+    'the archive name is no longer derived from last_saved');
+});
+
+check('GB2_PII_FIELDS still strips student_name', () => {
+  // The belt to this work order's braces. If the field ever comes back by
+  // accident, the gb2 path removes it anyway. Do not shorten this list.
+  const code = stripComments(readFileSync(join(REPO, 'cryptoService.ts'), 'utf8'));
+  for (const f of ['student_name', 'email', 'sid', 'student_id']) {
+    assert(new RegExp(`'${f}'`).test(code), `GB2_PII_FIELDS no longer lists ${f}`);
+  }
 });
 
 check('low-resolution is retired and does not come back by accident', () => {

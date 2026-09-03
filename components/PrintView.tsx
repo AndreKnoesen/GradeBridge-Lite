@@ -6,7 +6,6 @@ import { LatexContent } from './KatexRenderer';
 interface PrintViewProps {
   assignment: Assignment;
   submissionData: SubmissionData;
-  studentName: string;
 }
 
 const AI_GRADED_STRINGS = new Set([
@@ -49,7 +48,7 @@ const calculateProblemPoints = (problem: Problem): number => {
   return problem.subsections.reduce((sum, sub) => sum + sub.points, 0);
 };
 
-const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, studentName }) => {
+const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData }) => {
   const totalPoints = calculateTotalPoints(assignment.problems);
 
   // --- Internal Components ---
@@ -80,10 +79,7 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
     >
       {/* Header Section - Always at top */}
       {!isTitlePage && title && subtitle && (
-        <div className="border-b-4 border-gray-900 pb-4 mb-6 flex justify-between items-end w-full flex-none">
-          <div className="flex flex-col">
-            <span className="text-xl font-bold text-black uppercase tracking-tight">{studentName}</span>
-          </div>
+        <div className="border-b-4 border-gray-900 pb-4 mb-6 flex justify-end items-end w-full flex-none">
           <div className="text-right">
             <div className="text-lg font-bold text-black uppercase">{title}</div>
             <div className="text-sm text-gray-600 font-medium">{subtitle}</div>
@@ -162,10 +158,6 @@ const PrintView: React.FC<PrintViewProps> = ({ assignment, submissionData, stude
           <div className="w-48 h-2 bg-black mx-auto mb-10"></div>
 
           <div className="text-left inline-block mx-auto space-y-6 text-2xl">
-            <div className="grid grid-cols-[180px_1fr] gap-4 items-baseline">
-               <span className="font-bold text-gray-600 uppercase text-lg">Student Name</span>
-               <span className="font-bold text-black border-b-2 border-gray-300 pb-1">{studentName}</span>
-            </div>
             <div className="grid grid-cols-[180px_1fr] gap-4 items-baseline">
                <span className="font-bold text-gray-600 uppercase text-lg">Total Points</span>
                <span className="font-bold text-black">{totalPoints}</span>

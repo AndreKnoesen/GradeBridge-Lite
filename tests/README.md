@@ -15,7 +15,9 @@ the same WebCrypto API the browser uses. 28 checks covering
   `0x01 0x00` length prefix for a 2048-bit key, standard padded base64
 - de-identification — `student_name` / `email` / `sid` / `student_id` gone from
   the *decrypted* payload, `assignment_id` / `submission_data` / `ai_feedback`
-  still there
+  still there. **Since 2026-09-03 the app emits none of those four in the first
+  place**; the fixtures feed them in deliberately, because a stripper tested
+  against a payload that never had the field proves nothing.
 - bad course keys throw `Gb2KeyError` and never return output (no silent
   downgrade to gb1)
 - gb1 regression — prefix, round trip, envelope length, `isEncoded()`

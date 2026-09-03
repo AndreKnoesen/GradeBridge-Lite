@@ -60,12 +60,30 @@ export const cropBlobKey = (regionId: string): string => `crop_${regionId}`;
 export const cropList = (crops: Record<string, CropRef>): CropRef[] =>
   Object.keys(crops).map((regionId) => crops[regionId]);
 
-/** Filenames are built from this, so it strips anything a filesystem might object to. */
-export const submissionBaseName = (studentName: string, courseCode: string): string =>
-  `${studentName}_${courseCode}_submission`.replace(/[^a-z0-9_\-]/gi, '_');
+/**
+ * The stem every file in the download shares.
+ *
+ * **No name is in it, because the app no longer has one** (2026-09-03). What
+ * replaces it is the moment: without a discriminator every student in a class
+ * downloads an identically named file, and a second attempt lands beside the
+ * first as `(1)` in a Downloads folder rather than as something a student can
+ * recognise.
+ *
+ * `assignmentId` already begins with the course code — it is built as
+ * `${courseCode}_${title}` — so the course code is not repeated here. The work
+ * order specified `{course_code}_{assignment_id}_…`, which would have read
+ * `ENG17_ENG17_Homework_1_…`; this keeps the intent and drops the stutter.
+ *
+ * The timestamp is `last_saved` from the payload, so the filename and the
+ * contents cannot disagree about when the submission was made.
+ */
+export const submissionBaseName = (assignmentId: string, isoTimestamp: string): string => {
+  const t = isoTimestamp.replace(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/, '$1$2$3-$4$5');
+  return `${assignmentId}_submission_${t}`.replace(/[^a-z0-9_\-]/gi, '_');
+};
 
 export interface SubmissionSources {
-  studentName: string;
   assignment: Assignment;
   submissionData: SubmissionData;
   /** `assignment.inputMode === 'handwritten'` — passed in so the caller owns the rule. */
@@ -73,6 +91,8 @@ export interface SubmissionSources {
   /** The map's recomputed `layout_id`. Null for an electronic assignment. */
   layoutId: string | null;
   pages: PageRef[];
+  /** Injectable clock, for tests that need a stable filename. Defaults to now. */
+  now?: string;
   crops: Record<string, CropRef>;
 }
 
@@ -118,11 +138,20 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
   });
 
   const assignmentId = `${s.assignment.courseCode}_${s.assignment.title.replace(/\s+/g, '_')}`;
-  const pdfFilename = `${s.studentName}_${s.assignment.courseCode}_submission.pdf`
-    .replace(/[^a-z0-9_\-\.]/gi, '_');
+  const lastSaved = s.now ?? new Date().toISOString();
+  const pdfFilename = `${submissionBaseName(assignmentId, lastSaved)}.pdf`;
 
+  // **`student_name` is not here, and its absence is the point** (2026-09-03).
+  //
+  // Identity comes from Gradescope's authenticated submitter. A name typed into
+  // a box is unverified, trivially wrong, and PII carried through an encrypted
+  // envelope for no gain — `cryptoService.GB2_PII_FIELDS` had already reached
+  // that conclusion for the gb2 path and this finishes it for gb1.
+  //
+  // What is given up, deliberately: the spec used to say "compare against
+  // Gradescope's submitter; a mismatch is for instructor review". That check is
+  // gone. A self-typed name never caught an impostor, only a typo.
   const submissionJson: Record<string, unknown> = {
-    student_name: s.studentName,
     course_code: s.assignment.courseCode,
     assignment_id: assignmentId,
     pdf_filename: pdfFilename,
@@ -130,7 +159,7 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
     // never has to tell "off" apart from "an older app version".
     ai_feedback: s.assignment.aiFeedback === true,
     submission_data: convertedData,
-    last_saved: new Date().toISOString(),
+    last_saved: lastSaved,
   };
 
   // Handwritten: the pages, the crops and what the student said about each.
@@ -287,7 +316,10 @@ export const buildSubmissionPackage = async (
   const encoded = await encodeSubmissionJson(submissionJson, sources.assignment.coursePublicKey);
 
   const zip = new JSZip();
-  const baseName = submissionBaseName(sources.studentName, sources.assignment.courseCode);
+  // The same stem the payload names itself by, so the archive, the PDF and the
+  // JSON inside it cannot disagree.
+  const baseName = submissionBaseName(
+    submissionJson.assignment_id as string, submissionJson.last_saved as string);
   const entries: string[] = [];
   const add = (
     name: string, data: Blob | Uint8Array | string, options?: JSZip.JSZipFileOptions,

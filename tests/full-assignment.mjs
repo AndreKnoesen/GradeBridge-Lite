@@ -46,7 +46,9 @@ const EXPORT_DIR = process.env.FULL_EXPORT ?? join(
   'Processed Assignments', 'ENG17_Homework_1_Export (4)', 'student');
 const PAGE_DIR = process.env.FULL_PAGES ?? '';
 const OUT_DIR = process.env.FULL_OUT ?? join(SUITE, 'CaptureSet', 'full_assignment');
-const STUDENT_NAME = 'Full Assignment';
+// Kept to label the run, not to go into the package: the submission carries no
+// student name since 2026-09-03.
+const HARNESS_LABEL = 'Full Assignment';
 const EXPECTED_LAYOUT_ID = '95438EDF';
 const SHUFFLE = process.argv.includes('--shuffle');
 
@@ -228,7 +230,7 @@ let built = null;
 try {
   built = await pkgSvc.buildSubmissionPackage(
     {
-      studentName: STUDENT_NAME, assignment: spec, submissionData: {},
+      assignment: spec, submissionData: {},
       isHandwritten: spec.inputMode === 'handwritten',
       layoutId: layout.computedLayoutId, pages, crops,
     },
@@ -265,6 +267,16 @@ check('submission_data covers all 17 regions',
   Object.keys(payload.submission_data ?? {}).length === 17,
   String(Object.keys(payload.submission_data ?? {}).length));
 check('every crop is signed off', Object.values(payload.crops).every(c => c.student_review === 'signed_off'));
+
+// **Asserted on the decrypted object, not on a grep of the envelope.** A
+// substring search over gb1 ciphertext would pass for the wrong reason.
+check('the payload carries no student_name key',
+  !('student_name' in payload), Object.keys(payload).join(', '));
+check('...and no other identity field either',
+  !['email', 'sid', 'student_id'].some(f => f in payload));
+// The filename identifies the assignment and the moment, and nothing else.
+check('the archive is named for the assignment and the time, not a person',
+  /^ENG17_Homework_1_submission_\d{8}-\d{4}$/.test(built.baseName), built.baseName);
 
 mkdirSync(OUT_DIR, { recursive: true });
 const zipPath = join(OUT_DIR, `${built.baseName}.zip`);
