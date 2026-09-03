@@ -733,6 +733,34 @@ check('the trio branch actually uses labelTrio', () => {
     'the trio branch still passes the detector-ordered triple to consider');
 });
 
+check('low-resolution is retired and does not come back by accident', () => {
+  // Retired 2026-09-03. All four firings across the 23 OCR triage crops were
+  // false, and the controlled pair settles it: android09 p1b at 118 dpi and android10
+  // p1b at 194 dpi are the same region and read identically. There is no
+  // evidence in that set for any threshold, so a lower one would be invention.
+  //
+  // Guarded because a resolution floor is an obvious thing to reach for, and
+  // because two of its four firings were actively harmful — they blamed image
+  // quality for a writer working outside the box.
+  const src = readFileSync(join(REPO, 'services', 'cropRegions.ts'), 'utf8');
+  const code = stripComments(src);
+  assert(!/CROP_FLAG_LOW_RESOLUTION|LOW_RES_PX_PER_MM/.test(code),
+    'the low-resolution flag is back — it must not return without a capture as its evidence');
+  assert(!/'low-resolution'/.test(code), 'cropRegions still emits the low-resolution string');
+  const ui = stripComments(readFileSync(join(REPO, 'components', 'CropReview.tsx'), 'utf8'));
+  assert(!/low-resolution/.test(ui), 'CropReview still renders a low-resolution message');
+
+  // ...and the reason survives in the source, where the next person to propose
+  // a resolution floor will meet it.
+  assert(/118 dpi/.test(src) && /194 dpi/.test(src),
+    'the measurement that retired low-resolution is no longer recorded beside the code');
+
+  // looks-empty is untouched: it fired twice on the 23 and both were correct.
+  assert(/CROP_FLAG_LOOKS_EMPTY/.test(code), 'looks-empty was removed too — it was correct, keep it');
+  // pxPerMm stays. The number was real; only the threshold on it was not.
+  assert(/pxPerMm/.test(code), 'pxPerMm was removed with the flag — it is still wanted');
+});
+
 check('a fit is scored against the evidence it declined, not a constant', () => {
   const src = readFileSync(join(REPO, 'services', 'registration.ts'), 'utf8');
   const code = stripComments(src);

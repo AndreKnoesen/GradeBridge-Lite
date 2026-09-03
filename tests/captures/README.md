@@ -30,6 +30,9 @@ captures/
   REPORT_THREE_MARK_LABELLING_2026-09-02.md  the last of the four: three marks
                   are named the way four are. Note its §3 — cap02 and cap03
                   moved, both keeping their verdict
+  REPORT_CROP_FLAGS_2026-09-03.md      low-resolution retired on measurement;
+                  edge-contact NOT built, because the populations do not
+                  separate. Its §3 is the formulation that would work
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 

@@ -1,10 +1,14 @@
 # GradeBridge — submission ZIP interface
 
-**Version:** v4.2
-**Date:** 2026-09-02
-**Supersedes:** v4.1, earlier the same day — `pages[]` has gained
-`marks_declined` and `held_out_mm`. Nothing was removed or renamed, so a v4.1
-or v4.0 reader still works.
+**Version:** v4.3
+**Date:** 2026-09-03
+**Supersedes:** v4.2, 2026-09-02 — **the `low-resolution` quality flag is
+retired and is never emitted again.** `quality_flags` is now `[]` on all three
+crops. Nothing else changed. A reader that switched on that string will simply
+stop seeing it; one that displayed it verbatim shows nothing. See §6.
+**Supersedes:** v4.1, 2026-09-02 — `pages[]` gained `marks_declined` and
+`held_out_mm`. Nothing was removed or renamed, so a v4.1 or v4.0 reader still
+works.
 **Supersedes:** v4.0, 2026-09-01 — which is accurate except that `pages[]` has
 gained `marks_detected`, and a page may now report `marks_found: 3`. Both are in
 §3.2.
@@ -56,14 +60,14 @@ gives `Milestone_Zero_ENG17_submission`. DEFLATE, level 6.
 
 | bytes | entry |
 |---:|---|
-| 2,832 | `Milestone_Zero_ENG17_submission.json` |
+| 2,768 | `Milestone_Zero_ENG17_submission.json` |
 | 40,696 | `crops/p1a.jpg` |
 | 38,285 | `crops/p1b.jpg` |
 | 81,454 | `crops/p1c.jpg` |
 | 474,470 | `page_1.jpg` |
 | 501,463 | `page_2.jpg` |
 
-Archive total 1,117,491 bytes. The six entries are byte-identical between runs of
+Archive total 1,117,442 bytes. The six entries are byte-identical between runs of
 the same inputs; the total moves a byte or two because `last_saved` is a
 timestamp inside the encrypted payload.
 
@@ -223,7 +227,7 @@ v3.1 described.
   "p1a": { "region_id": "p1a", "part_id": "1(a)", "page_k": 2,
            "is_drawing": false, "max_points": 5,
            "crop_source": "registration", "student_review": "signed_off",
-           "quality_flags": ["low-resolution"],
+           "quality_flags": [],
            "file": "crops/p1a.jpg", "width": 842, "height": 542 },
   "p1b": { …, "part_id": "1(b)", "page_k": 3, "file": "crops/p1b.jpg",
            "width": 1033, "height": 324 },
@@ -244,7 +248,7 @@ parsed out of `region_id`, which is opaque and must stay so.
 | `max_points` | 5 | From the map. |
 | `crop_source` | `registration` | Cut from a declared rectangle on a registered page. `direct_capture` — the student framed the answer themselves, no rectangle, no registration, framing is theirs — is declared but **not observed here**. Do not assume `registration`. |
 | `student_review` | `signed_off` | What the student said after looking at it. `flagged` and `not_reviewed` are declared but **not observed here**. |
-| `quality_flags` | `["low-resolution"]` | Advisory, never blocks. `looks-empty` is declared but **not observed here**. See §6. |
+| `quality_flags` | `[]` | Advisory, never blocks. `looks-empty` is the only flag the app now emits and is **not observed here**. `low-resolution` was retired on 2026-09-03 and is never emitted again — see §6. |
 | `file` | `crops/p1a.jpg` | Path **including the `crops/` prefix**. Use it as given. |
 | `width`, `height` | see above | Pixels. |
 
@@ -353,13 +357,23 @@ regions reintroduces exactly the attribution problem the declared rectangles hav
 already solved, and it is the step most likely to put one part's answer under
 another part's mark.
 
-On `low-resolution`: every crop in this archive carries it, and that is
-structural rather than a comment on these photographs. The flag fires below
-150 dpi (5.906 px/mm); the app's ingest caps the long edge at 2200 px, which
-yields 7.87 px/mm only if the page fills the frame exactly, so the page must
-occupy about 75% of the long edge to clear it. `cap11` is the cleanest capture in
-the whole set at 0.34 mm residual and still trips it. **Treat this flag as
-advisory and expect it to be on.** It never blocks submission.
+On `low-resolution`: **retired 2026-09-03, never emitted again.** Until then
+every crop in this archive carried it, which was structural rather than a comment
+on these photographs — the flag fired below 150 dpi and the app's ingest caps the
+long edge at 2200 px, so even `cap11`, the cleanest capture in the set at 0.34 mm
+residual, tripped it.
+
+It was retired because it was measured and found false. The OCR triage of 23 real
+crops caught all four of its firings and **every one of those crops read
+completely**. The controlled pair: `android09_p3_angle__p1b` at **118 dpi** and
+`android10_p3_dim__p1b` at **194 dpi** are the same answer region, and 65% more
+linear resolution changed nothing about the reading. On two of the four the flag
+was actively harmful — it reported an image-quality problem when the real problem
+was that the writer had worked outside the box, sending the student to reshoot a
+page that was never the issue.
+
+**`px_per_mm` is unaffected and stays.** The measurement was real; the threshold
+on it was not. Use it directly if you want to reason about a crop's resolution.
 
 ---
 

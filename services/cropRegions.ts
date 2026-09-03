@@ -21,7 +21,37 @@ import { Rgba, sampleRgba } from './raster';
 
 /** Advisory only. A flagged crop is still submitted; see the work order, section 6. */
 export const CROP_FLAG_LOOKS_EMPTY = 'looks-empty';
-export const CROP_FLAG_LOW_RESOLUTION = 'low-resolution';
+
+/**
+ * ## `low-resolution` was retired on 2026-09-03, and it does not come back
+ * ## without a photograph as its evidence
+ *
+ * It fired when a crop came in under 150 dpi. The OCR triage of 23 real crops
+ * measured every one of its four firings and **all four were false** — each of
+ * those crops read completely.
+ *
+ * The controlled pair settles it. `android09_p3_angle__p1b` at **118 dpi** and
+ * `android10_p3_dim__p1b` at **194 dpi** are the same answer region on the same
+ * sheet: same reading, same content, same two edges failing. **65% more linear
+ * resolution changed nothing.** An independent hand comparison found the same,
+ * one line cut at 195 dpi being indistinguishable from the same line at full
+ * camera resolution.
+ *
+ * **Do not lower the threshold instead.** 118 dpi read cleanly, so this set
+ * contains no evidence for any value, and choosing one would be the
+ * split-the-difference this project has refused three times.
+ *
+ * Worse than useless on two of the four: the flag said the problem was image
+ * quality when the actual problem was that the writer worked outside the box.
+ * **A flag that misdescribes the defect sends the student to fix the wrong
+ * thing** — they reshoot a page that was never the issue.
+ *
+ * `pxPerMm` below stays, on the region and in the submission manifest. The
+ * number is real and useful; the threshold on it was not.
+ *
+ * If a capture is ever genuinely defeated by resolution, this comes back **with
+ * that capture as its evidence** and not before.
+ */
 
 export interface CroppedRegion {
   row: LayoutRow;
@@ -31,8 +61,6 @@ export interface CroppedRegion {
   flags: string[];
 }
 
-/** Below this the crop is smaller than a 150 dpi scan and worth a word to the student. */
-const LOW_RES_PX_PER_MM = 150 / 25.4;
 /** Fraction of pixels darker than the local paper that counts as "something is written here". */
 const INK_FRACTION_EMPTY = 0.004;
 
@@ -87,7 +115,6 @@ export const cropRegion = (page: Rgba, transform: Matrix3, row: LayoutRow): Crop
 
   const image: Rgba = { data, width, height };
   const flags: string[] = [];
-  if (available < LOW_RES_PX_PER_MM) flags.push(CROP_FLAG_LOW_RESOLUTION);
   if (inkFraction(image) < INK_FRACTION_EMPTY) flags.push(CROP_FLAG_LOOKS_EMPTY);
 
   return { row, image, pxPerMm, flags };

@@ -188,9 +188,7 @@ const CropReview: React.FC<CropReviewProps> = ({
                       <span>
                         {flag === 'looks-empty'
                           ? 'This looks blank. If you wrote an answer here, check the picture above shows it.'
-                          : flag === 'low-resolution'
-                            ? 'This came out small and may be hard to read. A closer photo of the page would help.'
-                            : flag}
+                          : flag}
                       </span>
                     </li>
                   ))}
