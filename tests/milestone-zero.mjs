@@ -34,6 +34,7 @@
 import { webcrypto } from 'node:crypto';
 globalThis.crypto ??= webcrypto;
 
+import { createPrivateKey, privateDecrypt, constants as cryptoConstants } from 'node:crypto';
 import {
   cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
@@ -407,11 +408,112 @@ for (const [label, re] of FORBIDDEN) {
 }
 
 // =====================================================
+// 6b. The same package with a course key — real photographs, sealed
+// =====================================================
+// `workorders/WORKORDER_STUDENT_ENCRYPT_IMAGES_2026-09-03.md`. The ENG17 spec
+// carries no `coursePublicKey`, so what this archive shows is the gb1 case; the
+// gb2 case is built here from the same bytes with a keypair generated for this
+// run and never written down.
+//
+// **This is the honest size measurement.** `full-assignment.mjs` runs on pages
+// RENDERED from the PDF, and a render deflates to about half its size inside
+// the ZIP, so sealing it — ciphertext does not compress — nearly doubles that
+// archive. These two are real phone photographs, which is what a student
+// actually uploads.
+console.log('\n  6b. the same package, sealed with a test course key');
+
+const mzPair = await webcrypto.subtle.generateKey(
+  { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true, ['encrypt', 'decrypt']);
+const mzPem = (label, der) =>
+  `-----BEGIN ${label}-----\n${Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n').trimEnd()}\n-----END ${label}-----\n`;
+const MZ_PUBLIC = mzPem('PUBLIC KEY', await webcrypto.subtle.exportKey('spki', mzPair.publicKey));
+const MZ_PRIVATE = mzPem('PRIVATE KEY', await webcrypto.subtle.exportKey('pkcs8', mzPair.privateKey));
+
+const mzOpen = async (raw) => {
+  const wrappedKeyLen = (raw[0] << 8) | raw[1];
+  const iv = raw.subarray(2 + wrappedKeyLen, 2 + wrappedKeyLen + 12);
+  const contentKey = privateDecrypt(
+    { key: createPrivateKey(MZ_PRIVATE), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(raw.subarray(2, 2 + wrappedKeyLen)));
+  const key = await webcrypto.subtle.importKey('raw', contentKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  return {
+    iv: Buffer.from(iv).toString('hex'),
+    bytes: new Uint8Array(await webcrypto.subtle.decrypt(
+      { name: 'AES-GCM', iv }, key, raw.subarray(2 + wrappedKeyLen + 12))),
+  };
+};
+
+const sealedBuild = await pkgSvc.buildSubmissionPackage(
+  {
+    assignment: { ...assignment, coursePublicKey: MZ_PUBLIC },
+    submissionData: {},
+    isHandwritten: assignment.inputMode === 'handwritten',
+    layoutId: layout.computedLayoutId,
+    pages,
+    crops,
+  },
+  { readBlob: async (key) => blobStore.get(key) ?? null, downsampleImage: async (uri) => uri },
+);
+const sealedZip = await sealedBuild.zip.generateAsync({
+  type: 'nodebuffer', ...pkgSvc.SUBMISSION_ZIP_OPTIONS });
+const sealedOpened = await JSZip.loadAsync(sealedZip);
+const sealedManifest = [];
+const sealedIvs = new Set();
+let sealedMismatch = [];
+for (const name of Object.keys(sealedOpened.files).sort()) {
+  if (sealedOpened.files[name].dir) continue;
+  const bytes = await sealedOpened.files[name].async('nodebuffer');
+  sealedManifest.push({ name, bytes: bytes.length });
+  if (!name.endsWith('.gb2')) continue;
+  const opened = await mzOpen(new Uint8Array(bytes));
+  sealedIvs.add(opened.iv);
+  const plain = manifest.find(m => m.name === name.replace(/\.gb2$/, ''));
+  const plainBytes = await reopened.file(name.replace(/\.gb2$/, '')).async('nodebuffer');
+  if (!plain || Buffer.compare(Buffer.from(opened.bytes), plainBytes) !== 0) {
+    sealedMismatch.push(name);
+  }
+}
+const sealedImages = sealedManifest.filter(m => m.name.endsWith('.gb2'));
+check('every page and crop is sealed', sealedImages.length === 5, `${sealedImages.length} of 5`);
+check('no plain .jpg survives', !sealedManifest.some(m => m.name.endsWith('.jpg')),
+  sealedManifest.filter(m => m.name.endsWith('.jpg')).map(m => m.name).join(', '));
+check('each decrypts to the byte-identical JPEG of the plain build',
+  sealedMismatch.length === 0, sealedMismatch.join(', '));
+check('no IV repeats', sealedIvs.size === sealedImages.length, `${sealedIvs.size} distinct`);
+
+const sealedJson = sealedManifest.find(m => m.name.endsWith('.json'));
+const sealedJsonText = await sealedOpened.file(sealedJson.name).async('string');
+check('the payload is a gb2 envelope', sealedJsonText.startsWith('gb2:'), sealedJsonText.slice(0, 4));
+const sealedPayload = JSON.parse(Buffer.from((await mzOpen(
+  new Uint8Array(Buffer.from(sealedJsonText.slice(4), 'base64')))).bytes).toString('utf8'));
+check('it declares gb2 image encryption', sealedPayload.image_encryption === 'gb2',
+  String(sealedPayload.image_encryption));
+check('the declared list matches the archive',
+  JSON.stringify([...sealedPayload.encrypted_entries].sort()) ===
+  JSON.stringify(sealedImages.map(m => m.name).sort()),
+  `${sealedPayload.encrypted_entries.length} declared, ${sealedImages.length} present`);
+check('every page and crop names an entry that is in the archive',
+  sealedPayload.pages.every(p => sealedManifest.some(m => m.name === p.file)) &&
+  Object.values(sealedPayload.crops).every(c => sealedManifest.some(m => m.name === c.file)));
+
+// =====================================================
 // 7. Report
 // =====================================================
 console.log('\n=== ZIP MANIFEST ===');
 for (const m of manifest) console.log(`  ${String(m.bytes).padStart(9)}  ${m.name}`);
 console.log(`  ${String(zipBytes.length).padStart(9)}  (the archive itself)`);
+
+console.log('\n=== THE SAME PACKAGE, SEALED (test key, gb2) ===');
+for (const m of sealedManifest) console.log(`  ${String(m.bytes).padStart(9)}  ${m.name}`);
+console.log(`  ${String(sealedZip.length).padStart(9)}  (the archive itself)`);
+console.log(`\n  archive ${zipBytes.length.toLocaleString()} -> ${sealedZip.length.toLocaleString()} bytes ` +
+  `(${sealedZip.length - zipBytes.length >= 0 ? '+' : ''}${(sealedZip.length - zipBytes.length).toLocaleString()}, ` +
+  `${((sealedZip.length - zipBytes.length) / zipBytes.length * 100).toFixed(2)}%)`);
+console.log(`  per file 286 bytes: 258 wrapped key + 12 IV + 16 tag`);
+console.log(`  encryption step ${sealedBuild.imageEncryptionMs} ms for ` +
+  `${(sealedBuild.imagePlainBytes / 1048576).toFixed(2)} MB of image bytes`);
+console.log(`  peak RSS ${(process.memoryUsage().rss / 1048576).toFixed(1)} MB at the end of the run`);
 
 console.log('\n=== PAYLOAD ===');
 console.log(`  envelope: ${built.format}`);

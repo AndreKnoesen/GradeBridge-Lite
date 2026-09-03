@@ -675,17 +675,77 @@ const zipStart = pkgSrc.indexOf('const zip = new JSZip()');
 const zipEnd = pkgSrc.indexOf('return { zip', zipStart);
 const zipBlock = pkgSrc.slice(zipStart, zipEnd);
 
-check('the ZIP builder writes the page images', () => {
-  assert(zipStart !== -1 && zipEnd > zipStart,
-    'the ZIP builder could not be located in services/submissionPackage.ts');
-  assert(/for \(const page of sources\.pages\)/.test(zipBlock),
-    'the ZIP builder does not iterate the pages — the pages do not ship');
-  assert(/add\(page\.file,/.test(zipBlock), 'the ZIP builder does not write page.file');
+// **These two were source-level and are now behavioural**, because on
+// 2026-09-03 the image writes moved: the builder collects the pages and the
+// crops before it opens the ZIP, so that the payload can list the entries it
+// actually sealed. `add(page.file, ...)` — the string the old check matched —
+// no longer appears anywhere, and the old check would have failed on a builder
+// that ships every page correctly. A regex over the source cannot tell those
+// two apart; building a package and looking in it can.
+const packageFixture = (over = {}) => ({
+  assignment: {
+    id: 'a1', courseCode: 'ENG17', title: 'Homework 1', inputMode: 'handwritten',
+    problems: [{
+      id: 'p0', title: 'P', description: '', subsections: [
+        { id: 's0', title: 'a', description: '', points: 10, submissionType: 'Text' },
+      ],
+    }],
+    ...(over.assignment ?? {}),
+  },
+  submissionData: {},
+  isHandwritten: true,
+  layoutId: 'ABCD1234',
+  now: '2026-09-03T12:34:56.000Z',
+  pages: [
+    { id: 'pg0', file: 'page_1.jpg', width: 1650, height: 2200 },
+    { id: 'pg1', file: 'page_2.jpg', width: 1650, height: 2200 },
+  ],
+  crops: {
+    p1a: {
+      regionId: 'p1a', partId: '1(a)', pageK: 2, isDrawing: false, maxPoints: 5,
+      cropSource: 'registration', review: 'signed_off', qualityFlags: [],
+      file: 'crops/p1a.jpg', width: 100, height: 60, bytes: 4,
+    },
+  },
 });
 
-check('the ZIP builder writes the crop images', () => {
-  assert(/cropList\(sources\.crops\)/.test(zipBlock), 'the ZIP builder does not iterate the crops');
-  assert(/add\(crop\.file,/.test(zipBlock), 'the ZIP builder does not write crop.file');
+/** Distinct bytes per key, so an entry written from the wrong blob is visible. */
+const fixtureBlobs = new Map([
+  ['pg0', Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x01])],
+  ['pg1', Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x02])],
+  [pkg.cropBlobKey('p1a'), Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x03])],
+]);
+const fixtureAssets = {
+  readBlob: async (key) => fixtureBlobs.get(key) ?? null,
+  downsampleImage: async (uri) => uri,
+};
+
+await checkAsync('the ZIP builder writes the page images', async () => {
+  const built = await pkg.buildSubmissionPackage(packageFixture(), fixtureAssets);
+  for (const [name, key] of [['page_1.jpg', 'pg0'], ['page_2.jpg', 'pg1']]) {
+    const entry = built.zip.file(name);
+    assert(entry !== null, `${name} is not in the archive — the pages do not ship`);
+    const bytes = await entry.async('uint8array');
+    assertEqual([...bytes], [...fixtureBlobs.get(key)], `${name} is not the stored page bytes`);
+  }
+});
+
+await checkAsync('the ZIP builder writes the crop images', async () => {
+  const built = await pkg.buildSubmissionPackage(packageFixture(), fixtureAssets);
+  const entry = built.zip.file('crops/p1a.jpg');
+  assert(entry !== null, 'crops/p1a.jpg is not in the archive — the crops do not ship');
+  const bytes = await entry.async('uint8array');
+  assertEqual([...bytes], [...fixtureBlobs.get(pkg.cropBlobKey('p1a'))],
+    'crops/p1a.jpg is not the stored crop bytes');
+});
+
+check('the builder still reads the pages and the crops from the sources', () => {
+  // The collection loops moved out of the ZIP block; they are still the only
+  // thing that puts an image into a submission.
+  const code = stripComments(pkgSrc);
+  assert(/for \(const page of sources\.pages\)/.test(code),
+    'the builder does not iterate the pages');
+  assert(/cropList\(sources\.crops\)/.test(code), 'the builder does not iterate the crops');
 });
 
 check('the ZIP always carries the JSON', () => {

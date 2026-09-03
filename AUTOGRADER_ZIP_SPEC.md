@@ -1,9 +1,50 @@
 # GradeBridge — submission ZIP interface
 
-**Version:** v5.1
+**Version:** v6.0
 **Date:** 2026-09-03
 
-> ### v5.1 corrects v5.0. Read this if you started a consumer against v5.0.
+> ## BREAKING, on a course that has a key. **Every image in the archive is encrypted.**
+>
+> On a course whose assignment spec carries a `coursePublicKey`, the page
+> photographs, the answer crops and the electronic path's image answers are each
+> written as a **gb2 envelope over the raw JPEG bytes**, under a name ending
+> `.gb2`:
+>
+> ```
+> page_1.jpg.gb2      crops/p1a.jpg.gb2      p0s1_image_0.jpg.gb2
+> ```
+>
+> A consumer that opens `crops/p1a.jpg` on such a course finds nothing there.
+> **The envelope is the one this autograder already decrypts** — the same
+> `wrappedKeyLen | wrappedKey | iv | ciphertext+tag` as the payload — so opening
+> an image is the existing decrypt called once per file, over bytes instead of
+> over a base64 string. §4.2 gives the layout and §10 a reference implementation.
+>
+> **Why.** Until today the archive encrypted exactly one entry, the payload —
+> and on the handwritten path the payload contains **no answers at all**: every
+> `submission_data` entry is `null`, because the graded artefact is the crop
+> images. A hardened course was encrypting the envelope and shipping the letter
+> in the clear beside it. §3.1 has said the payload is empty since v4.0; what
+> changed is that the images are now covered too.
+>
+> **Two consequences that are not optional to plan for:**
+>
+> 1. **The autograder needs the course private key in the container** — the same
+>    key it already needs for a gb2 payload, used once more per image entry.
+> 2. **Adjudication now requires the private key.** The page images exist
+>    expressly so "I wrote it and the tool cut it off" can be settled by looking.
+>    Nobody can eyeball a disputed page without the key any more. §10.
+>
+> **A course with no key does not move.** Same entry names, same bytes, same
+> payload keys, `gb1:` as before — verified byte-for-byte against a package
+> built by the previous code (§1). A course with no key had no protection to
+> weaken, and the answer to that is to issue a key rather than to invent a
+> weaker scheme.
+
+**Supersedes:** v5.1, 2026-09-03 — which corrected four stale statements in v5.0
+and changed no code. Everything it says still holds for a course with no key.
+
+> ### v5.1 corrected v5.0. Read this if you started a consumer against v5.0.
 >
 > **The archive filename block in §1 was stale.** It read
 > `{StudentName}_{CourseCode}_submission.zip`, which has not been the pattern
@@ -23,7 +64,7 @@
 > ordered it, and the filename claim is now checked by a test rather than by
 > proofreading — see §9.
 
-**Supersedes:** v5.0, earlier the same day
+**Also supersedes:** v5.0, 2026-09-03
 
 > ## BREAKING. `student_name` is REMOVED from the payload.
 >
@@ -90,6 +131,16 @@ two phone photographs. Its three crops were inspected by eye and confirmed to
 land on their own regions with the right handwriting in each. Where this document
 states something that archive does not contain, it says so explicitly.
 
+**v6.0 was written from two runs of that harness on the same two photographs**,
+one with no course key and one with a test keypair generated for the run — so
+every sealed size below is a measurement of the same bytes, not an estimate of
+them. The keypair was ephemeral and is not written down anywhere; the sealed
+archive was measured and opened in memory and deliberately not kept, because a
+file nobody can ever open is a support question waiting to happen.
+
+The scale numbers in §4.3 come from a second harness,
+`tests/full-assignment.mjs`, over all sixteen pages and all seventeen regions.
+
 **Nothing here is aspirational.** If a statement is not marked as unobserved, it
 came off that ZIP.
 
@@ -125,9 +176,34 @@ stem. DEFLATE, level 6.
 | 474,470 | `page_1.jpg` |
 | 501,463 | `page_2.jpg` |
 
-Archive total 1,117,435 bytes. The six entries are byte-identical between runs of
+Archive total 1,117,431 bytes. The six entries are byte-identical between runs of
 the same inputs; the total moves a byte or two because `last_saved` is a
-timestamp inside the encrypted payload.
+timestamp inside the encrypted payload. (v5.x recorded 1,117,435 for the same
+reason.)
+
+### The same submission on a course WITH a key
+
+Same two photographs, same crops, same pixels — only the course key differs.
+
+| bytes | entry | plain equivalent |
+|---:|---|---:|
+| 3,284 | `ENG17_Homework_1_submission_{timestamp}.json` | 2,728 |
+| 40,982 | `crops/p1a.jpg.gb2` | 40,696 |
+| 38,571 | `crops/p1b.jpg.gb2` | 38,285 |
+| 81,740 | `crops/p1c.jpg.gb2` | 81,454 |
+| 474,756 | `page_1.jpg.gb2` | 474,470 |
+| 501,749 | `page_2.jpg.gb2` | 501,463 |
+
+Archive total **1,141,466 bytes, up 24,035 (+2.15%)**.
+
+**Every image entry is exactly 286 bytes larger than its plaintext**: 258 bytes
+of wrapped key, a 12-byte IV and a 16-byte GCM tag. Five images is 1,430 bytes.
+The rest of the 24,035 is not overhead in the envelope — it is **DEFLATE giving
+up**: a photograph deflates by a percent or two inside the ZIP and ciphertext
+deflates by nothing, so the archive loses the compression it used to get.
+
+The payload entry grew 556 bytes: the gb2 envelope is bigger than the gb1 one
+(the wrapped key rides inside it) and the payload gained the two keys of §3.
 
 **There is no PDF.** See §5 — this is a decision, not an omission.
 
@@ -138,11 +214,31 @@ gives you. See §7.
 
 ### Entry kinds
 
+On a course with **no** key — the archive above:
+
 | pattern | count here | magic | what it is |
 |---|---|---|---|
 | `*_submission.json` | 1 | `67 62 31 3a` (`gb1:`) | the payload, §3 |
 | `crops/{region_id}.jpg` | 3 | `ff d8 ff e0` | **the grader's input**, §4 |
 | `page_{n}.jpg` | 2 | `ff d8 ff e0` | **retained, not consumed**, §4 |
+
+On a course **with** a key, every image entry takes a `.gb2` suffix and the
+JPEG magic moves inside the envelope:
+
+| pattern | count here | first bytes | what it is |
+|---|---|---|---|
+| `*_submission.json` | 1 | `67 62 32 3a` (`gb2:`) | the payload, §3 |
+| `crops/{region_id}.jpg.gb2` | 3 | `01 00` | a sealed crop, §4.2 |
+| `page_{n}.jpg.gb2` | 2 | `01 00` | a sealed page, §4.2 |
+
+`01 00` is `wrappedKeyLen` — 256, big-endian, for the RSA-2048 test key; a
+4096-bit course key makes it `02 00`. **Do not identify a sealed entry by those
+bytes.** The payload's `encrypted_entries` (§3) is the list, and the `.gb2`
+suffix is the human-readable half of the same statement.
+
+**A file that is not a JPEG is not named `.jpg`.** The suffix is appended rather
+than replacing the extension, so `page_1.jpg.gb2` still says what comes out of
+the envelope.
 
 **Consumed is not the same as retained.** The crops are the interface; the page
 images are the record of what the student photographed, kept so a dispute can be
@@ -153,7 +249,15 @@ adjudicated. Do not feed the pages to a grader. §4 says why both exist.
 **Not present in this archive, and declared by the app rather than observed:**
 `p{i}s{j}_image_{n}.jpg` at the archive root, written only for an *electronic*
 assignment's `Image` or `Text and Image` parts. A handwritten submission has
-none.
+none. **These are sealed too** on a course with a key — `p0s1_image_0.jpg.gb2` —
+and that path is covered by `tests/package-encryption-tests.mjs` rather than by
+an archive on disk.
+
+**The electronic `*_submission.pdf` is NOT sealed.** It is not an image entry and
+the work order that sealed the images did not name it, so on an electronic gb2
+course the PDF still carries the student's written answers in the clear beside a
+payload that carries the same answers encrypted. Stated here because it is the
+kind of thing a reader would otherwise assume either way.
 
 `{n}` in `page_{n}.jpg` is **the position in the ZIP, counting from 1**. It is
 not the page of the sheet. See §4.
@@ -187,9 +291,13 @@ four-character envelope tag.
 | observed | `gb1:` |
 |---|---|
 | meaning | AES-256-GCM, the shared key already in the autograder |
-| alternative | `gb2:` — used when the assignment spec carries a `coursePublicKey`. **Not observed here**; the ENG17 spec carries none. A spec that asks for gb2 never downgrades to gb1. |
+| alternative | `gb2:` — used when the assignment spec carries a `coursePublicKey`. The ENG17 spec carries none, so the archive of §1 is gb1; the sealed archive in §1 is the same submission with a test key. A spec that asks for gb2 never downgrades to gb1. |
 
 Read the first four characters and branch. Do not assume `gb1:`.
+
+**The envelope tag is on the JSON entry only.** An image entry is the envelope
+itself, starting at `wrappedKeyLen`, with no tag and no base64 — see §4.2 for
+why. Branch on the payload's `image_encryption`, not on a file's first bytes.
 
 **Neither payload carries an identity field**, and neither do the filenames.
 Since v5.0 the app emits no `student_name` at all, and `gb2:` additionally strips
@@ -225,9 +333,17 @@ mechanism. Identity is the authenticated upload, not anything in the archive.
 | `layout_id` | string | The map the app recomputed. Must equal the `layout_id` in every page's QR; the app refuses to crop when it does not. |
 | `pages` | array | §3.2. Handwritten only. |
 | `crops` | object | §3.3. Handwritten only. |
+| `image_encryption` | string | **Added v6.0.** `"gb2"`, and only ever that today. **Absent when the course has no key** — absent, not `null` and not `"none"`, so test for presence. Both paths carry it: an electronic assignment's image answers are sealed too. |
+| `encrypted_entries` | array | **Added v6.0.** Every sealed entry name, in archive order — `["page_1.jpg.gb2", …, "crops/p1a.jpg.gb2", …]`. Absent when the course has no key. **It lists what was actually written**, so a partial submission's list is short rather than wrong: a page the app could not read from its own store is in neither the archive nor this list. |
+
+The `file` field of every `pages[]` and `crops` entry **names the entry as it
+appears in the archive**, so on a sealed course it ends `.gb2`. Open what the
+payload names; never reconstruct a name by appending or stripping a suffix.
 
 `input_mode`, `layout_id`, `pages` and `crops` are written **only** when the
-assignment is handwritten; an electronic payload carries the other **six** keys
+assignment is handwritten, and `image_encryption` / `encrypted_entries` only
+when the course has a key; an electronic payload with no key carries the other
+**six** keys
 — `course_code`, `assignment_id`, `pdf_filename`, `ai_feedback`,
 `submission_data`, `last_saved` — and none of these four. Measured on a real
 electronic build, not counted off this table. See §8 for the one key that has been added since v3.1.
@@ -267,7 +383,7 @@ v3.1 described.
 
 | field | note |
 |---|---|
-| `file` | Entry name in this archive. |
+| `file` | Entry name in this archive. `page_1.jpg.gb2` on a sealed course. |
 | `width`, `height` | Pixels of the **stored** image, after the app's ingest. |
 | `k`, `n` | Page number and page count **read from that page's own QR**, never from upload order. |
 | `registration` | `"ok"` observed. `"degraded"` (a three-mark affine fit, crops may be slightly off) is declared but **not observed here**. |
@@ -309,14 +425,91 @@ parsed out of `region_id`, which is opaque and must stay so.
 | `crop_source` | `registration` | Cut from a declared rectangle on a registered page. `direct_capture` — the student framed the answer themselves, no rectangle, no registration, framing is theirs — is declared but **not observed here**. Do not assume `registration`. |
 | `student_review` | `signed_off` | What the student said after looking at it. `flagged` and `not_reviewed` are declared but **not observed here**. |
 | `quality_flags` | `[]` | Advisory, never blocks. `looks-empty` is the only flag the app now emits and is **not observed here**. `low-resolution` was retired on 2026-09-03 and is never emitted again — see §6. |
-| `file` | `crops/p1a.jpg` | Path **including the `crops/` prefix**. Use it as given. |
+| `file` | `crops/p1a.jpg` | Path **including the `crops/` prefix**, and including the `.gb2` suffix on a sealed course. Use it as given. |
 | `width`, `height` | see above | Pixels. |
 
 ---
 
 ## 4. The images
 
-### The crops — measured off this archive
+### 4.1 On a sealed course they are not JPEGs
+
+Everything in §4.2 through §4.4 describes the JPEG that comes **out** of the
+envelope. On a course with a key the entry on disk is the envelope; decrypt
+first, then everything below applies unchanged — the pixels, the dimensions and
+the bytes are identical to what a course with no key ships. That is asserted on
+every entry of a sixteen-page run, not argued: §4.3.
+
+### 4.2 The envelope on an image entry
+
+```
+wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag
+```
+
+**Byte for byte the same envelope as the payload**, which is the point: this is
+the format the autograder already decrypts. Two differences from the JSON entry,
+both about packaging rather than cryptography:
+
+- **No `gb2:` tag and no base64.** The JSON entry is text, so it is tagged and
+  base64'd; an image entry is a raw byte stream in a ZIP. Base64 would have
+  added a third to a multi-megabyte archive for nothing. **Parse from offset 0.**
+- **The result is JPEG bytes, not JSON.** Do not `json.loads` it.
+
+**One content key per file**, freshly generated, RSA-OAEP-wrapped with the course
+public key (SHA-256, MGF1-SHA256, empty label) — exactly as for the payload. An
+earlier draft of this change shared one content key across the submission to save
+sixteen RSA operations; it was withdrawn, because it would be a second format for
+this autograder to implement and seventeen RSA-2048 unwraps cost a few
+milliseconds. **Sixteen page entries therefore carry sixteen different wrapped
+keys, and that is correct, not a bug.**
+
+**A fresh 12-byte IV per file**, from the platform CSPRNG. Asserted distinct
+across all 33 entries of the sixteen-page run.
+
+**Overhead: exactly 286 bytes per file** — 258 wrapped key (RSA-2048; 514 with a
+4096-bit course key), 12 IV, 16 GCM tag. Measured on every entry, not computed.
+
+Worked example, from `crops/p1a.jpg.gb2` in §1 — 40,982 bytes on disk, 40,696
+bytes of JPEG:
+
+| offset | length | what |
+|---:|---:|---|
+| 0 | 2 | `01 00` — `wrappedKeyLen` = 256 |
+| 2 | 256 | the wrapped content key |
+| 258 | 12 | the IV |
+| 270 | 40,712 | ciphertext (40,696) followed by the 16-byte tag |
+
+§10 is the code.
+
+### 4.3 What sealing costs, measured
+
+Two runs, both real, and they disagree by a lot for a reason worth knowing.
+
+| run | images | plain archive | sealed archive | delta |
+|---|---:|---:|---:|---:|
+| two phone photographs, 3 crops (§1) | 5 | 1,117,431 | 1,141,466 | **+24,035 (+2.15%)** |
+| sixteen RENDERED pages, 17 crops | 33 | 2,594,920 | 4,998,140 | +2,403,220 (+92.6%) |
+
+**The second number is an artefact of the fixture and must not be quoted as the
+cost.** Those sixteen pages are rendered from the assignment PDF rather than
+photographed, and a render deflates to **51.9%** of its size inside the ZIP.
+Ciphertext deflates to 100%. So sealing does not add 2.4 MB — it stops DEFLATE
+removing 2.4 MB that a real photograph never offers in the first place. A phone
+photograph is already entropy-dense, which is why the honest measurement is the
+first row: **about 2%, plus 286 bytes a file.**
+
+**Time and memory**, on the sixteen-page run: the encryption step took **24 and
+26 ms** on two runs, for 4.7 MB of image bytes — **180 to 200 MB/s** — so a full
+~9 MB photographic submission is well under 100 ms of AES on a laptop, and the
+prediction that WebCrypto would be fast enough is confirmed rather than assumed.
+That is 33 RSA-2048 wraps inside the same 25 ms, which is why the per-file
+content key of §4.2 cost nothing worth trading a second format for. Peak RSS was
+**391 and 393 MB** across both builds, against **395 MB** for the plain build
+alone: sealing did not move it, because the work is one image at a time and the
+archive is already held. (Archive totals move a byte or two between runs — the
+payload carries a timestamp.)
+
+### 4.4 The crops — measured off this archive
 
 | region | pixels | declared rectangle | mm per pixel | px per mm | ink | bytes |
 |---|---|---|---|---|---|---|
@@ -339,7 +532,7 @@ exact.
 rectified, with the right handwriting in it; `p1b` and `p1c` are not swapped
 (aspect ratios 0.314 and 0.550 against declared 0.3138 and 0.5492).
 
-### The page photographs — retained, not consumed
+### 4.5 The page photographs — retained, not consumed
 
 `page_1.jpg`, `page_2.jpg` — 1650 × 2200 each, the student's own pictures after
 the app's ingest (EXIF-uprighted, long edge stepped to 2200 px, JPEG 0.85).
@@ -476,9 +669,18 @@ Then:
 ```python
 payload = decrypt(open(glob.glob(SUBMISSION_DIR + '*_submission.json')[0]).read())
 
+# v6.0: on a course with a key every image entry is a gb2 envelope over the
+# JPEG. `crop['file']` already names the entry as it is — 'crops/p1a.jpg.gb2' —
+# so nothing here appends or strips a suffix.
+sealed = payload.get('image_encryption') == 'gb2'
+
+def image_bytes(entry):
+    raw = open(os.path.join(SUBMISSION_DIR, entry), 'rb').read()
+    return decrypt_gb2_bytes(raw) if sealed else raw     # §10
+
 if payload.get('input_mode') == 'handwritten':
     for region_id, crop in payload['crops'].items():
-        image = os.path.join(SUBMISSION_DIR, crop['file'])   # 'crops/p1a.jpg'
+        jpeg = image_bytes(crop['file'])
         # crop['part_id']      -> the label a human recognises
         # crop['max_points']   -> from the map
         # crop['page_k']       -> which sheet page
@@ -486,6 +688,9 @@ if payload.get('input_mode') == 'handwritten':
 else:
     ...                                   # v3.1 behaviour, unchanged
 ```
+
+`payload['encrypted_entries']` is the same statement as a list, for a consumer
+that would rather check the archive against the payload than trust a suffix.
 
 ---
 
@@ -498,6 +703,7 @@ Unchanged from v3.1, and still true:
 | `submission.zip`, electronic | Extracts, `input_mode` absent, grade from `submission_data` exactly as before |
 | `submission.zip`, handwritten | Extracts, `input_mode == "handwritten"`, grade from `crops`. **No PDF, and no `pdf_filename`** |
 | `submission.json` + `submission.pdf` (v3.0) | No ZIP found, proceeds as before |
+| any of the above from a course **with a key** | The payload is `gb2:` and every image entry is sealed. **Needs the course private key, which the same course's autograder image already carries for the payload.** v6.0 |
 
 Nothing in this document changes the electronic path: `input_mode`, `layout_id`,
 `pages` and `crops` are written only for a handwritten assignment, and an
@@ -518,7 +724,15 @@ key has to be in it.
   autograder by its own route and never travels in a student's ZIP.
 - **`results.json`** — unchanged.
 - **The decryption keys** — unchanged; `gb1:` uses the shared AES-256-GCM key
-  already in the image.
+  already in the image, and `gb2:` the course private key installed at
+  `/etc/gradebridge/course_private_key.pem` (or `GB2_PRIVATE_KEY_PEM` /
+  `GB2_PRIVATE_KEY_PATH`). **v6.0 does not introduce a key, a key format or a
+  key path** — it uses the one that is already there for one more thing.
+- **Key generation and custody** — unchanged, and settled in
+  `Encryption/GB2_KEY_MANAGEMENT_DECISION_2026-08-10.md`: the autograder author
+  generates the pair per offering with `Encryption/gen_course_keypair.py`, keeps
+  the private half in that course's image, and sends the instructor only the
+  public half.
 - **Anything about how to grade.** This document says what is in the box.
 
 ### One thing to check on arrival
@@ -532,13 +746,103 @@ carrying grading prompts shipped to students once already — see
 
 ---
 
+## 10. Opening a sealed submission by hand
+
+**A person holding the course private key must still be able to look at a page.**
+That is not a nicety: §4.5 keeps the page photographs for exactly one purpose,
+settling "I wrote it and the tool cut it off", and v6.0 removes the ability to
+do that by double-clicking. **Adjudication now requires the private key.** An
+instructor discovering that in the middle of a grade dispute is the failure this
+section exists to prevent.
+
+Where such a tool lives — inside the autograder repository or beside it — is the
+autograder author's call. What follows is the contract it has to implement.
+
+### The order of operations
+
+1. Read the payload entry, `*_submission.json`. Its first four bytes say `gb2:`;
+   base64-decode the rest into the envelope.
+2. Unwrap: `RSA-OAEP(SHA-256, MGF1-SHA-256, empty label)` over `wrappedKey` with
+   the course private key gives 32 bytes — the content key for **that entry**.
+3. `AES-256-GCM` decrypt `ciphertext+tag` under that key and `iv`, no AAD. The
+   result is UTF-8 JSON.
+4. If `image_encryption == "gb2"`, every name in `encrypted_entries` is an
+   envelope on disk. Repeat 2 and 3 **per entry, starting at offset 0** — no
+   base64, no tag to strip — and the result is JPEG bytes. Each entry has its own
+   content key and its own IV; nothing is shared, and nothing is cached between
+   entries.
+5. Write them out under the same names without `.gb2` and open them normally.
+
+### Reference
+
+```python
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+def decrypt_gb2_bytes(raw: bytes, private_key) -> bytes:
+    """Open one gb2 envelope over raw bytes. The image half of crypto_utils.
+
+    Identical to _decrypt_gb2() except that it takes bytes rather than a
+    'gb2:'-tagged base64 string, and returns bytes rather than json.loads().
+    """
+    wrapped_len = int.from_bytes(raw[0:2], 'big')
+    if len(raw) < 2 + wrapped_len + 12 + 16:
+        raise ValueError('gb2: envelope too short')
+    wrapped     = raw[2:2 + wrapped_len]
+    iv          = raw[2 + wrapped_len:2 + wrapped_len + 12]
+    ct_and_tag  = raw[2 + wrapped_len + 12:]
+
+    content_key = private_key.decrypt(wrapped, padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+        algorithm=hashes.SHA256(), label=None))
+    return AESGCM(content_key).decrypt(iv, ct_and_tag, None)
+```
+
+`AESGCM.decrypt` raises `InvalidTag` on a tampered or truncated entry. **Let it
+raise.** A crop that fails authentication is not a crop to grade leniently; it is
+an archive to escalate.
+
+### Worked numbers to check an implementation against
+
+From `crops/p1a.jpg.gb2` in §1, with an RSA-2048 key:
+
+```
+len(raw)              40,982
+raw[0:2]              01 00            -> wrapped_len = 256
+raw[2:258]            wrapped content key
+raw[258:270]          iv, 12 bytes
+raw[270:]             40,712 bytes = 40,696 ciphertext + 16 tag
+len(plaintext)        40,696           -> starts ff d8 ff e0 (JPEG)
+len(raw) - len(plain) 286              -> 258 + 12 + 16, on every entry
+```
+
+A 4096-bit course key changes `wrapped_len` to 512 and the overhead to 542. Read
+the length; never assume it.
+
+### What the student app can and cannot do
+
+The app **encodes only**. It holds no private key, generates none, and cannot
+open anything it has written — asserted in
+`tests/package-encryption-tests.mjs` §5, which fails if `cryptoService.ts` ever
+grows PKCS#8 material or a decrypt on the gb2 path. A student's browser cannot
+read another student's submission, and cannot read its own.
+
+---
+
 ## Provenance
 
 Every number, filename and value above was read out of
 `ENG17_Homework_1_submission_{timestamp}.zip`. Regenerate it with `npm run milestone:zero`
 in `GradeBridge-Student-Submission`; the harness re-derives the whole package from
 the assignment export and two photographs, and prints the manifest, the decrypted
-payload and the crop measurements.
+payload and the crop measurements — and, since v6.0, the same package sealed with
+a keypair it generates for the run, its manifest beside the plain one and every
+entry decrypted and compared byte for byte.
+
+The §4.3 scale numbers come from `FULL_PAGES=… npm run full:assignment`, which
+does the same over sixteen pages and seventeen regions and reports the archive
+sizes, the encryption wall clock and peak RSS.
 
 Full report on how the package was produced, including §6's `low-resolution`,
 which is still open:

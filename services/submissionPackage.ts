@@ -35,7 +35,7 @@
 import JSZip from 'jszip';
 import { Assignment, CropRef, PageRef, SubmissionData } from '../types';
 import { AI_GRADED_TYPES } from '../constants';
-import { deidentifyForGb2, encryptJson, encryptJsonGb2 } from '../cryptoService';
+import { deidentifyForGb2, encryptBytesGb2, encryptJson, encryptJsonGb2 } from '../cryptoService';
 
 /**
  * Key a crop's bitmap is stored under. Pages use their own `PageRef.id`; crops
@@ -83,6 +83,26 @@ export const submissionBaseName = (assignmentId: string, isoTimestamp: string): 
   return `${assignmentId}_submission_${t}`.replace(/[^a-z0-9_\-]/gi, '_');
 };
 
+/**
+ * What an encrypted entry is called: `page_01.jpg.gb2`, `crops/p1a.jpg.gb2`.
+ *
+ * **A file that is not a JPEG must not be named `.jpg`** (work order ITEM 3).
+ * Someone double-clicks it, sees corruption, and concludes the submission is
+ * broken. The suffix is added to the whole name rather than replacing `.jpg`,
+ * so the entry still says what comes out of the envelope.
+ */
+export const ENCRYPTED_ENTRY_SUFFIX = '.gb2';
+
+export const encryptedEntryName = (entry: string): string => `${entry}${ENCRYPTED_ENTRY_SUFFIX}`;
+
+/** What the payload declares about its image entries when they are sealed. */
+export interface ImageEncryption {
+  /** The envelope. `'gb2'` is the only value today. */
+  format: 'gb2';
+  /** Every sealed entry name, in archive order. */
+  entries: string[];
+}
+
 export interface SubmissionSources {
   assignment: Assignment;
   submissionData: SubmissionData;
@@ -103,7 +123,15 @@ export interface SubmissionSources {
  * electronic payload is byte-for-byte what it was; the handwritten keys are
  * only ever added when `isHandwritten`.
  */
-export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknown> => {
+export const buildSubmissionJson = (
+  s: SubmissionSources, images?: ImageEncryption | null,
+): Record<string, unknown> => {
+  // Where the images are sealed, the payload must name the entries that are
+  // actually in the archive — `page_01.jpg.gb2`, not `page_01.jpg`. The `file`
+  // field is the string a consumer opens; a payload that names a file the
+  // archive does not have is the defect, not a courtesy.
+  const entryName = (file: string): string => (images ? encryptedEntryName(file) : file);
+
   const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
 
   s.assignment.problems.forEach((problem, pIdx) => {
@@ -179,7 +207,7 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
     submissionJson.layout_id = s.layoutId;
     // `k` and `N` come from each page's own QR, never from upload order.
     submissionJson.pages = s.pages.map(page => ({
-      file: page.file,
+      file: entryName(page.file),
       width: page.width,
       height: page.height,
       k: page.registration?.k ?? null,
@@ -220,12 +248,29 @@ export const buildSubmissionJson = (s: SubmissionSources): Record<string, unknow
         // is neither signed off nor flagged.
         student_review: crop.review,
         quality_flags: crop.qualityFlags,
-        file: crop.file,
+        file: entryName(crop.file),
         width: crop.width,
         height: crop.height,
       };
     }
     submissionJson.crops = crops;
+  }
+
+  // **Which entries are sealed, declared rather than inferred from a filename**
+  // (work order ITEM 3). Both keys are absent on a course with no key, so a gb1
+  // payload is exactly what it was.
+  //
+  // Two keys and not one: `encrypted_entries` says *which*, and
+  // `image_encryption` says *what*. An image entry is raw bytes, so unlike the
+  // JSON entry it carries no `gb2:` tag to read the format off — the
+  // declaration is the only place a consumer can branch on it.
+  //
+  // Set here, after the handwritten branch, because it is the one field that
+  // belongs to BOTH paths: an electronic assignment's `p{i}s{j}_image_{n}`
+  // entries are sealed too.
+  if (images) {
+    submissionJson.image_encryption = images.format;
+    submissionJson.encrypted_entries = images.entries;
   }
 
   return submissionJson;
@@ -294,7 +339,50 @@ export interface BuiltPackage {
   entries: string[];
   /** The payload before encoding, so a caller can report on it without decrypting. */
   submissionJson: Record<string, unknown>;
+  /** What was sealed, or null on a course with no key. The same object the payload declares. */
+  imageEncryption: ImageEncryption | null;
+  /**
+   * Milliseconds spent sealing the images, and the plaintext bytes that went
+   * through it. Reported rather than predicted: "AES-GCM over 9 MB is fast" is
+   * an assumption until a real archive has been through it.
+   */
+  imageEncryptionMs: number;
+  imagePlainBytes: number;
 }
+
+/** One image on its way into the archive, before anything is sealed. */
+interface PlainImage {
+  name: string;
+  /** A blob or bytes from the store, or -- for the electronic path -- base64 text. */
+  data: Blob | Uint8Array | string;
+  base64?: boolean;
+}
+
+interface SealedImage {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * An image as bytes, whatever the caller had.
+ *
+ * The electronic path holds its answers as base64 in React state and hands them
+ * to JSZip to decode; encryption needs the real bytes, so that decode happens
+ * here instead. `atob` is a browser global and is also global in Node 18+,
+ * which is what the harnesses run on.
+ */
+const imageBytes = async (image: PlainImage): Promise<Uint8Array> => {
+  const { data } = image;
+  if (typeof data === 'string') {
+    const binary = atob(data);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+    return out;
+  }
+  // A Node Buffer is a Uint8Array, so a harness's bytes take this branch too.
+  if (data instanceof Uint8Array) return data;
+  return new Uint8Array(await data.arrayBuffer());
+};
 
 /**
  * Assemble the submission ZIP.
@@ -312,7 +400,92 @@ export interface BuiltPackage {
 export const buildSubmissionPackage = async (
   sources: SubmissionSources, assets: PackageAssets,
 ): Promise<BuiltPackage> => {
-  const submissionJson = buildSubmissionJson(sources);
+  // **On a gb2 course the images are sealed too, one standard envelope each.**
+  //
+  // Until 2026-09-03 this function encrypted exactly one thing, the payload —
+  // and for a handwritten submission the payload contains no answers at all:
+  // every `submission_data` entry is `null`, because the graded artefact is the
+  // crop images. So a hardened course encrypted the envelope and shipped the
+  // letter in the clear beside it, as plain JPEGs.
+  //
+  // Three decisions, all from
+  // `workorders/WORKORDER_STUDENT_ENCRYPT_IMAGES_2026-09-03.md`:
+  //
+  //   * **The standard gb2 envelope per file, each with its own content key.**
+  //     An earlier draft shared one content key across the submission to save
+  //     sixteen RSA operations. That would be a format the autograder does not
+  //     implement; this one it already does, so opening an image is its
+  //     existing decrypt, called once more.
+  //   * **Raw bytes into the ZIP entry, never base64.** A real submission is
+  //     megabytes and base64 would add a third of them for nothing. The
+  //     overhead is the 258-byte wrapped key, the 12-byte IV and the 16-byte
+  //     tag, per file.
+  //   * **Every image, not only the handwritten ones.** Page photographs, crops
+  //     and the electronic path's `p{i}s{j}_image_{n}` alike. None of them was
+  //     ever encrypted.
+  //
+  // **A course with no key is untouched, byte for byte** — same entry names,
+  // same bytes, same payload keys. A course with no key had no protection to
+  // weaken, and inventing a weaker scheme for it is not the answer; issuing a
+  // key is.
+  const courseKey = sources.assignment.coursePublicKey?.trim() || null;
+
+  // 1. Collect every image the archive will carry, in archive order.
+  //
+  // Collected BEFORE the payload is built, which is the reordering this work
+  // needed: the payload has to list the sealed entries, and a list built from
+  // what the app INTENDED to write would name entries a partial submission does
+  // not have. `readBlob` returning null is a real case — see the note on
+  // partial submissions below — so the list is built from what was read.
+  const plain: PlainImage[] = [];
+  for (const page of sources.pages) {
+    const pageBlob = await assets.readBlob(page.id);
+    if (pageBlob) plain.push({ name: page.file, data: pageBlob });
+  }
+  for (const crop of cropList(sources.crops)) {
+    const cropBlob = await assets.readBlob(cropBlobKey(crop.regionId));
+    if (cropBlob) plain.push({ name: crop.file, data: cropBlob });
+  }
+  for (let pIdx = 0; pIdx < sources.assignment.problems.length; pIdx++) {
+    const problem = sources.assignment.problems[pIdx];
+    for (let sIdx = 0; sIdx < problem.subsections.length; sIdx++) {
+      const sub = problem.subsections[sIdx];
+      if (sub.submissionType === 'Image' || sub.submissionType === 'Text and Image') {
+        const autograderKey = `p${pIdx}s${sIdx}`;
+        const images = sources.submissionData[`p${pIdx}_s${sIdx}`]?.imageAnswers ?? [];
+        for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
+          const downsampled = await assets.downsampleImage(images[imgIdx]);
+          plain.push({
+            name: `${autograderKey}_image_${imgIdx}.jpg`,
+            data: downsampled.replace(/^data:[^;]+;base64,/, ''),
+            base64: true,
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Seal them, if the course has a key.
+  const sealStarted = Date.now();
+  let sealed: SealedImage[] | null = null;
+  let plainBytes = 0;
+  if (courseKey) {
+    sealed = [];
+    for (const image of plain) {
+      const bytes = await imageBytes(image);
+      plainBytes += bytes.length;
+      sealed.push({
+        name: encryptedEntryName(image.name),
+        bytes: await encryptBytesGb2(bytes, courseKey),
+      });
+    }
+  }
+  const imageEncryptionMs = courseKey ? Date.now() - sealStarted : 0;
+  const imageEncryption: ImageEncryption | null =
+    sealed ? { format: 'gb2', entries: sealed.map(e => e.name) } : null;
+
+  // 3. The payload, which now knows what was sealed and under what names.
+  const submissionJson = buildSubmissionJson(sources, imageEncryption);
   const encoded = await encodeSubmissionJson(submissionJson, sources.assignment.coursePublicKey);
 
   const zip = new JSZip();
@@ -344,6 +517,13 @@ export const buildSubmissionPackage = async (
   //
   // Removing a thing that can be wrong beats maintaining a second copy of
   // something already kept. The electronic path is untouched.
+  //
+  // **The PDF is not sealed**, and that is the 2026-09-03 work order's scope
+  // rather than a finding that it need not be: the order names the page
+  // photographs, the crops and the image answers. On an ELECTRONIC gb2 course
+  // the PDF still carries the student's written answers in the clear, beside a
+  // payload that carries the same answers encrypted. Flagged in the completion
+  // note; it is the same defect one file along.
   if (!sources.isHandwritten) {
     if (!assets.pdfBytes) {
       throw new Error('An electronic submission needs a PDF, and none was supplied.');
@@ -351,37 +531,27 @@ export const buildSubmissionPackage = async (
     add(`${baseName}.pdf`, assets.pdfBytes);
   }
 
-  // The pages and the crops. Until this landed the ZIP builder never referenced
-  // the pages at all, so a handwritten student submitted a PDF of the blank
+  // The pages, the crops, then any electronic image answers.
+  //
+  // Until the handwritten work landed the ZIP builder never referenced the
+  // pages at all, so a handwritten student submitted a PDF of the blank
   // question paper and a JSON in which every answer was null — and nothing
   // anywhere said so.
-  for (const page of sources.pages) {
-    const pageBlob = await assets.readBlob(page.id);
-    if (pageBlob) add(page.file, pageBlob);
-  }
-  for (const crop of cropList(sources.crops)) {
-    const cropBlob = await assets.readBlob(cropBlobKey(crop.regionId));
-    if (cropBlob) add(crop.file, cropBlob);
-  }
-
-  for (let pIdx = 0; pIdx < sources.assignment.problems.length; pIdx++) {
-    const problem = sources.assignment.problems[pIdx];
-    for (let sIdx = 0; sIdx < problem.subsections.length; sIdx++) {
-      const sub = problem.subsections[sIdx];
-      if (sub.submissionType === 'Image' || sub.submissionType === 'Text and Image') {
-        const autograderKey = `p${pIdx}s${sIdx}`;
-        const images = sources.submissionData[`p${pIdx}_s${sIdx}`]?.imageAnswers ?? [];
-        for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
-          const downsampled = await assets.downsampleImage(images[imgIdx]);
-          add(
-            `${autograderKey}_image_${imgIdx}.jpg`,
-            downsampled.replace(/^data:[^;]+;base64,/, ''),
-            { base64: true },
-          );
-        }
-      }
+  if (sealed) {
+    for (const image of sealed) add(image.name, image.bytes);
+  } else {
+    // Byte-identical to what a course with no key produced before any of this:
+    // the blob straight through, and the electronic answers still handed to
+    // JSZip as base64 for it to decode.
+    for (const image of plain) {
+      add(image.name, image.data as Blob | Uint8Array | string,
+        image.base64 ? { base64: true } : undefined);
     }
   }
 
-  return { zip, baseName, format: encoded.format, entries, submissionJson };
+  return {
+    zip, baseName, format: encoded.format, entries, submissionJson,
+    imageEncryption, imageEncryptionMs, imagePlainBytes: plainBytes,
+  };
 };
+

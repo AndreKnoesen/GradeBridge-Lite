@@ -29,6 +29,7 @@
 import { webcrypto } from 'node:crypto';
 globalThis.crypto ??= webcrypto;
 
+import { createPrivateKey, privateDecrypt, constants as cryptoConstants } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -283,6 +284,119 @@ const zipPath = join(OUT_DIR, `${built.baseName}.zip`);
 writeFileSync(zipPath, zipBytes);
 
 // =====================================================
+// 3b. The same package, with a course key: every image sealed
+// =====================================================
+// `workorders/WORKORDER_STUDENT_ENCRYPT_IMAGES_2026-09-03.md` ITEM 6 asks for
+// measurement rather than prediction — archive bytes before and after, the
+// wall clock of the encryption step, and peak memory — on the full sixteen-page
+// run and not on a fixture.
+//
+// **The keypair is generated here and never written anywhere.** The real course
+// key is the autograder author's; nothing this harness produces may be mistaken
+// for one. The sealed archive is measured and opened in memory and deliberately
+// NOT written to disk: nobody could open it after this process exits, and a
+// file in CaptureSet that nobody can read is a support question waiting to
+// happen.
+console.log('\n  3b. the same package, sealed with a test course key');
+
+const testPair = await webcrypto.subtle.generateKey(
+  { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true, ['encrypt', 'decrypt']);
+const pemOf = (label, der) =>
+  `-----BEGIN ${label}-----\n${Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n').trimEnd()}\n-----END ${label}-----\n`;
+const TEST_PUBLIC = pemOf('PUBLIC KEY', await webcrypto.subtle.exportKey('spki', testPair.publicKey));
+const TEST_PRIVATE = pemOf('PRIVATE KEY', await webcrypto.subtle.exportKey('pkcs8', testPair.privateKey));
+
+/** The autograder's side of the contract, over raw bytes. */
+const openSealed = async (raw) => {
+  const wrappedKeyLen = (raw[0] << 8) | raw[1];
+  const contentKey = privateDecrypt(
+    { key: createPrivateKey(TEST_PRIVATE), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    Buffer.from(raw.subarray(2, 2 + wrappedKeyLen)));
+  const key = await webcrypto.subtle.importKey('raw', contentKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  return {
+    iv: Buffer.from(raw.subarray(2 + wrappedKeyLen, 2 + wrappedKeyLen + 12)).toString('hex'),
+    contentKey: contentKey.toString('hex'),
+    bytes: new Uint8Array(await webcrypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: raw.subarray(2 + wrappedKeyLen, 2 + wrappedKeyLen + 12) },
+      key, raw.subarray(2 + wrappedKeyLen + 12))),
+  };
+};
+
+let sealedBuilt = null;
+try {
+  sealedBuilt = await pkgSvc.buildSubmissionPackage(
+    {
+      assignment: { ...spec, coursePublicKey: TEST_PUBLIC }, submissionData: {},
+      isHandwritten: spec.inputMode === 'handwritten',
+      layoutId: layout.computedLayoutId, pages, crops,
+    },
+    { readBlob: async (key) => blobStore.get(key) ?? null, downsampleImage: async (uri) => uri },
+  );
+} catch (err) {
+  fatal(`the sealed package could not be built: ${err.message}`);
+}
+sampleRss();
+const sealedZipBytes = await sealedBuilt.zip.generateAsync({
+  type: 'nodebuffer', ...pkgSvc.SUBMISSION_ZIP_OPTIONS });
+sampleRss();
+
+const sealedArchive = await JSZip.loadAsync(sealedZipBytes);
+const sealedEntries = Object.keys(sealedArchive.files).filter(n => !sealedArchive.files[n].dir).sort();
+const sealedBlobs = new Map();
+for (const name of sealedEntries) sealedBlobs.set(name, await sealedArchive.file(name).async('uint8array'));
+
+check('the sealed archive holds the same 33 images, all named as encrypted',
+  sealedEntries.filter(n => n.endsWith('.gb2')).length === 33,
+  `${sealedEntries.filter(n => n.endsWith('.gb2')).length} sealed of 33`);
+check('no plain .jpg survives in the sealed archive',
+  !sealedEntries.some(n => n.endsWith('.jpg')),
+  sealedEntries.filter(n => n.endsWith('.jpg')).join(', '));
+
+// The acceptance: decrypting with the private key returns byte-identical JPEGs
+// to the plain build. Asserted on the bytes, entry by entry, all 33.
+const plainBlobs = new Map();
+for (const name of entries) plainBlobs.set(name, await archive.file(name).async('uint8array'));
+const ivs = new Set();
+const contentKeys = new Set();
+let mismatched = [];
+for (const name of sealedEntries) {
+  if (!name.endsWith('.gb2')) continue;
+  const opened = await openSealed(sealedBlobs.get(name));
+  ivs.add(opened.iv);
+  contentKeys.add(opened.contentKey);
+  const plainName = name.replace(/\.gb2$/, '');
+  const expected = plainBlobs.get(plainName);
+  if (!expected || Buffer.compare(Buffer.from(opened.bytes), Buffer.from(expected)) !== 0) {
+    mismatched.push(plainName);
+  }
+}
+check('all 33 decrypt to the plain build\'s bytes, byte for byte',
+  mismatched.length === 0, mismatched.join(', '));
+check('no IV repeats across the submission', ivs.size === 33, `${ivs.size} distinct IVs`);
+check('each entry has its own content key — no shared-key design crept back',
+  contentKeys.size === 33, `${contentKeys.size} distinct content keys`);
+
+const sealedJsonName = sealedEntries.find(n => n.endsWith('.json'));
+const sealedJsonText = Buffer.from(sealedBlobs.get(sealedJsonName)).toString('utf8');
+check('the payload itself is a gb2 envelope', sealedJsonText.startsWith('gb2:'),
+  sealedJsonText.slice(0, 4));
+const sealedPayload = JSON.parse(Buffer.from((await openSealed(
+  new Uint8Array(Buffer.from(sealedJsonText.slice(4), 'base64')))).bytes).toString('utf8'));
+check('the payload declares gb2 image encryption', sealedPayload.image_encryption === 'gb2',
+  String(sealedPayload.image_encryption));
+check('the declared entry list is exactly the archive\'s',
+  JSON.stringify([...sealedPayload.encrypted_entries].sort()) ===
+  JSON.stringify(sealedEntries.filter(n => n.endsWith('.gb2'))),
+  `${sealedPayload.encrypted_entries.length} declared, ` +
+  `${sealedEntries.filter(n => n.endsWith('.gb2')).length} in the archive`);
+check('every page and crop names an entry that is in the archive',
+  sealedPayload.pages.every(p => sealedBlobs.has(p.file)) &&
+  Object.values(sealedPayload.crops).every(c => sealedBlobs.has(c.file)));
+check('the sealed payload still carries no identity field',
+  !['student_name', 'email', 'sid', 'student_id'].some(f => f in sealedPayload));
+
+// =====================================================
 // 4. The numbers
 // =====================================================
 const pageTotal = pages.reduce((s, p) => s + p.bytes, 0);
@@ -296,6 +410,19 @@ console.log(`    wall clock            ${(runMs / 1000).toFixed(1)} s for the 16
 console.log(`    per page              ${(runMs / 16 / 1000).toFixed(2)} s`);
 console.log(`    peak RSS              ${mb(peakRss)}`);
 console.log(`    written to            ${zipPath}`);
+
+// ITEM 6, measured on this run rather than predicted.
+const sealedOverhead = sealedZipBytes.length - zipLen;
+const sealMs = sealedBuilt.imageEncryptionMs;
+const sealedBytes = sealedBuilt.imagePlainBytes;
+console.log('\n    with a course key (gb2, images sealed)');
+console.log(`    ARCHIVE               ${sealedZipBytes.length.toLocaleString()} bytes = ${mb(sealedZipBytes.length)}`);
+console.log(`    archive delta         ${sealedOverhead >= 0 ? '+' : ''}${sealedOverhead.toLocaleString()} bytes ` +
+  `(${(sealedOverhead / zipLen * 100).toFixed(2)}% of the plain archive)`);
+console.log(`    per-file overhead     286 bytes x 33 = ${(286 * 33).toLocaleString()} bytes before DEFLATE`);
+console.log(`    encryption step       ${sealMs} ms for ${mb(sealedBytes)} of image bytes ` +
+  `(${sealMs > 0 ? (sealedBytes / 1048576 / (sealMs / 1000)).toFixed(0) : 'inf'} MB/s)`);
+console.log(`    peak RSS (both runs)  ${mb(peakRss)}`);
 
 console.log('\n  Rendered pages compress far smaller than photographs of the same pages.');
 console.log('  Real captures in this set average 488 KB a page after the app\'s own ingest;');

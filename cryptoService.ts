@@ -22,6 +22,12 @@
 //     `coursePublicKey`. Encode-only here — this app never holds a private
 //     key and never decrypts gb2.
 //
+//     The envelope is defined over BYTES (`encryptBytesGb2`) and the JSON form
+//     is that function plus `JSON.stringify` plus base64 plus the tag. The
+//     images in a submission use the byte form directly and are written into
+//     the ZIP raw: base64 would add a third to a ~9 MB archive for nothing.
+//     **One implementation of the envelope, not two that must agree.**
+//
 // KEY
 //   The gb1 key must match GradeBridge-Assignment-Maker/services/cryptoService.ts
 //   and CCAssignmentMaker/crypto_utils.py exactly.
@@ -112,12 +118,29 @@ export const deidentifyForGb2 = (payload: object): Record<string, unknown> => {
 };
 
 /**
- * Encode an object as a gb2: public-key envelope.
+ * The gb2 envelope, over raw bytes.
  *
- * @param obj                 Plain JSON payload (must already be de-identified).
+ *   wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag
+ *
+ * **This is the whole format.** `encryptJsonGb2` is this function with
+ * `JSON.stringify`, base64 and the `gb2:` tag around it, and an image entry in
+ * a submission ZIP is these bytes with nothing around them at all. There is one
+ * implementation because two would have to be kept in agreement by whoever
+ * remembered, and the consumer that opens both is the same consumer.
+ *
+ * **A fresh content key and a fresh IV every call.** The alternative — one
+ * content key for the whole submission, one RSA operation instead of seventeen
+ * — was specified and then withdrawn: it is a format the autograder does not
+ * implement, and it trades a few milliseconds of RSA for an interop contract
+ * that has to be written, agreed and tested. Seventeen RSA-2048 unwraps is a
+ * few milliseconds.
+ *
+ * @param plaintext           The bytes to seal. Not copied, not inspected.
  * @param coursePublicKeyPem  RSA public key in SPKI PEM form, from the spec.
  */
-export const encryptJsonGb2 = async (obj: unknown, coursePublicKeyPem: string): Promise<string> => {
+export const encryptBytesGb2 = async (
+  plaintext: Uint8Array, coursePublicKeyPem: string,
+): Promise<Uint8Array> => {
   // 1. Import the course public key (RSA-OAEP; WebCrypto ties MGF1 to the OAEP hash).
   let publicKey: CryptoKey;
   try {
@@ -136,11 +159,15 @@ export const encryptJsonGb2 = async (obj: unknown, coursePublicKeyPem: string): 
   const contentKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
   const rawContentKey = await crypto.subtle.exportKey('raw', contentKey);
 
-  // 3-4. AES-256-GCM encrypt the payload (12-byte IV, 128-bit tag appended, no AAD).
+  // 3-4. AES-256-GCM encrypt (12-byte IV, 128-bit tag appended, no AAD).
+  //
+  // The IV is generated HERE and cannot be passed in. Reusing a GCM IV under
+  // one key is catastrophic rather than merely weak — it leaks the XOR of the
+  // two plaintexts and, with it, the authentication subkey — so there is no
+  // parameter for a caller to get wrong.
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify(obj));
   const ciphertextPlusTag = new Uint8Array(
-    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, contentKey, plaintext)
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, contentKey, plaintext as BufferSource)
   );
 
   // 5. RSA-OAEP wrap the raw 32 content-key bytes.
@@ -160,7 +187,19 @@ export const encryptJsonGb2 = async (obj: unknown, coursePublicKeyPem: string): 
   envelope.set(wrappedKey, 2);
   envelope.set(iv, 2 + wrappedKey.length);
   envelope.set(ciphertextPlusTag, 2 + wrappedKey.length + iv.length);
+  return envelope;
+};
 
+/**
+ * Encode an object as a gb2: public-key envelope — `encryptBytesGb2` over the
+ * serialised object, base64'd and tagged.
+ *
+ * @param obj                 Plain JSON payload (must already be de-identified).
+ * @param coursePublicKeyPem  RSA public key in SPKI PEM form, from the spec.
+ */
+export const encryptJsonGb2 = async (obj: unknown, coursePublicKeyPem: string): Promise<string> => {
+  const envelope = await encryptBytesGb2(
+    new TextEncoder().encode(JSON.stringify(obj)), coursePublicKeyPem);
   // 7. Standard padded base64, gb2: prefix.
   return GB2_PREFIX + uint8ToBase64(envelope);
 };
