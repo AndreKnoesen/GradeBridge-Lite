@@ -512,4 +512,4 @@ payload and the crop measurements.
 
 Full report on how the package was produced, including §6's `low-resolution`,
 which is still open:
-`GradeBridge-Student-Submission/MILESTONE_ZERO_REPORT_2026-09-01.md`.
+the harness output itself; re-run `npm run milestone:zero` to reproduce it.

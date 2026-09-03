@@ -40,12 +40,15 @@ CORRECTION_*.md
 # Real photographs in tests/captures/real/ ARE tracked — they are the evidence.
 tests/captures/synthetic/
 
-# Real student work. The students' photographs are of their OWN graded
-# homework, and this repository is public. They are the best evidence the
-# capture pipeline has — LABELS.csv specifies all 41 — but they are not ours to
-# publish, so they stay on the machines that need them and the suite reports
-# them as not checked out. The android/ set are a colleague's test shots and are held to
-# the same rule until she says otherwise.
+# Photographs of other people's work. This repository is public and these images
+# are not ours to publish: the `students/` captures are real submitted coursework
+# and the `android/` set was contributed by a colleague for testing. They are the
+# best evidence the capture pipeline has — LABELS.csv specifies all 41 rows —
+# so the suite names the ones it cannot see rather than counting an absent
+# photograph as agreement.
+#
+# The photographs that ARE tracked, in real/ and stale/, are the maintainer's
+# own blank template with his own handwriting on it. See tests/captures/README.md.
 tests/captures/students/
 tests/captures/android/
 # ...and anything a probe renders FROM them.

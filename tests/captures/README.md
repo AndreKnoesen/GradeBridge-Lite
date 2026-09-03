@@ -7,87 +7,24 @@ captures/
   synthetic/      generated, gitignored — `npm run captures` rebuilds it
   real/           eleven phone photographs, cap01..cap11
   stale/          five more of an older layout, stale01..stale05
-  android/          thirteen from a Samsung Galaxy S22, android01..android13
-                  — NOT YET TRACKED: they exist on one machine
-  students/       twelve real student photographs — six from an iPhone 13 Pro
-                  Max (ios1_01..ios1_06) and six from an iPhone 17 Pro Max
-                  (ios2_01..ios2_06). NOT YET TRACKED.
+  android/            thirteen Android captures contributed by a colleague,
+                  android01..android13 — NOT TRACKED, see .gitignore
+  students/       twelve photographs of real submitted coursework, six from
+                  each of two iPhones, ios1_01..ios1_06 and ios2_01..ios2_06
+                  — NOT TRACKED, see .gitignore
   LABELS.csv      the specification: what each of the 41 should do
-  REPORT_SEQUENCE_2026-09-02.md  START HERE for anything about registration.
-                  The five reports below were written in one day, three of them
-                  interact, and the order is not recoverable from this listing.
   BASELINE_2026-09-01.md   what the pipeline did before the gate was built
-  REPORT_DECODER_ZXING_2026-09-01.md   the jsqr-vs-zxing decoder measurement
-  REPORT_THREE_MARK_FIT_2026-09-02.md  the three-mark change, and the two
-                  defects that still reject ios2_05 — read before touching the
-                  mark detector, registration.ts, or the legibility floor
-  REPORT_PADDING_MASK_2026-09-02.md    the validity mask that fixed the first
-                  of those two. ios2_05 passes; the permutation defect is still
-                  open, and a third one is now exposed
-  REPORT_FIT_SCORING_2026-09-02.md     the third one, fixed: a fit is scored
-                  against the evidence it declined, DEGRADED_PENALTY_MM is gone,
-                  and no message asserts a cause the app has not measured
-  REPORT_THREE_MARK_LABELLING_2026-09-02.md  the last of the four: three marks
-                  are named the way four are. Note its §3 — cap02 and cap03
-                  moved, both keeping their verdict
-  REPORT_CROP_FLAGS_2026-09-03.md      low-resolution retired on measurement;
-                  edge-contact NOT built, because the populations do not
-                  separate. Its §3 is the formulation that would work
-  REPORT_FULL_ASSIGNMENT_2026-09-03.md  sixteen pages and seventeen crops
-                  through the whole path. Read its §3 before quoting an archive
-                  size and its §4 before trusting the memory picture
-  REPORT_NO_STUDENT_NAME_2026-09-03.md  student_name removed from the payload.
-                  BREAKING — ZIP spec v5.0. Filenames changed with it
   layout_fixture.csv       the map the synthetic sheet was drawn from
 ```
 
-## Why a measurement report is tracked here
+**Only `real/` and `stale/` are in this repository.** The other twenty-five
+photographs are of other people's work and are not ours to publish. `LABELS.csv`
+still specifies all 41, and the suite reports the ones it cannot see rather than
+counting an absent photograph as agreement — so a fresh clone runs the sixteen
+and prints a SKIP line for the rest.
 
-`BASELINE_2026-09-01.md` and `REPORT_DECODER_ZXING_2026-09-01.md` are the two
-records of what this capture set actually measured, and they are tracked for the
-same reason the photographs are: **`GradeBridge2026\` is not a git repository**,
-so a measurement written only into `workorders/` exists on one machine. Anything
-whose conclusion a later session would otherwise have to re-derive by re-running
-the pipeline belongs in here, next to the evidence it was derived from.
-
-**`REPORT_SEQUENCE_2026-09-02.md` is the way in.** It puts the five 2026-09-02
-reports in the order they were written, says which constants may not be moved
-and why, and lists what is still open. Read it before any of the others.
-
-`REPORT_THREE_MARK_LABELLING_2026-09-02.md` is the last of the four and closes
-the sequence. It gives the three-mark branch the geometric sort the four-mark
-path always had. **Read its §3 before trusting the `cap02` and `cap03` rows in
-any earlier report** — those two moved, both keeping their verdict, and the
-numbers they used to carry were meaningless.
-
-`REPORT_FIT_SCORING_2026-09-02.md` deletes
-`DEGRADED_PENALTY_MM` and scores a fit against every mark it declined near one
-of its own predicted corners, which is what finally gives `ios2_05` a four-mark
-fit. **Read its §1 before changing `HELDOUT_MAX_MM` and its §3 before changing
-`consider`** — §3 records why a magnitude alone was not enough, which is not
-obvious and cost four synthetic captures to find.
-
-`REPORT_PADDING_MASK_2026-09-02.md` supersedes the
-first report's §4: `rotateGray`'s white padding was entering `adaptiveInk`'s
-local mean and erasing real marks at the frame edge, and `Gray` now carries a
-validity mask so the mean averages only real pixels. **`ios2_05` passes.** Read
-its §5 before touching `DEGRADED_PENALTY_MM`.
-
-`REPORT_THREE_MARK_FIT_2026-09-02.md` answers
-`GradeBridge2026\workorders\WORKORDER_THREE_MARK_FIT_2026-09-02.md`. It records
-why the gate stopped requiring four corner marks, why `ios2_01` is refused anyway
-and why its legibility floor must not be moved, and — its §4 and §5 — **two
-unfixed defects that reject `ios2_05`, a photograph whose label is PASS and whose
-label is right**. Either one alone is enough to reject it. Read it before
-touching `markDetect.ts`, `registration.ts` or `LEGIBILITY_MIN_TILE_LUMA`.
-
-The decoder report answers
-`GradeBridge2026\workorders\WORKORDER_DECODER_ZXING_2026-09-01.md`, which asked
-whether zxing-cpp's wasm build should replace jsQR. **The answer taken on
-2026-09-01 was not yet**, and the report carries the numbers, the two verdict
-changes, and — in its section 10 — the two triggers that would make it worth
-asking again. Read those before re-opening the question; the evaluation cost an
-afternoon and does not need repeating from scratch.
+The tracked photographs are the maintainer's own blank template with his own
+handwriting on it.
 
 ## What is in `synthetic/` and what it is worth
 
@@ -101,10 +38,10 @@ same canonical constants the Assignment Maker prints from, so the marks, the QR
 and the answer boxes are where a real sheet would put them. Only the degradation
 is synthetic.
 
-**This is not the section 8 evidence, and no threshold is set from it.** The
-gap is not small and it is measured: this detector once scored 12 of 12 on these
-synthetics and 4 of 11 on the real photographs. What a renderer cannot produce is
-precisely what breaks registration in the field:
+**No threshold is set from it, and the gap is measured rather than assumed:**
+this detector once scored 12 of 12 on these synthetics and 4 of 11 on the real
+photographs. What a renderer cannot produce is precisely what breaks
+registration in the field:
 
 - paper curl, which bends the page out of the plane the transform assumes
 - a specular highlight off a ballpoint line
@@ -112,28 +49,29 @@ precisely what breaks registration in the field:
 - whatever a particular phone's image pipeline does with sharpening and noise
 - a thumb, a desk edge, or a second sheet in frame
 
+The synthetics do hold one thing the photographs cannot: they carry **no
+perspective**, so on them a three-point affine is the correct model. That is why
+four of them caught a scoring defect no photograph would have — see *the tier
+rule* below.
+
 ## LABELS.csv is the specification
 
-The sixteen photographs are labelled, and **the `review` column is the target**
-— not the `verdict` column, which is the first-pass judgement by eye and is
-wrong twice. `cap05` was called a shadow failure and is a soft gradient that
-stays legible; `cap09` was called acceptable clutter and is soft-focus enough
-that its QR does not decode at all. Where the two columns disagree the row says
-`DISAGREE:` and gives the reason.
+Its **`review` column is the target** — not the `verdict` column, which is the
+first-pass judgement by eye and is wrong twice. `cap05` was called a shadow
+failure and is a soft gradient that stays legible; `cap09` was called acceptable
+clutter and is soft-focus enough that its QR does not decode at all. Where the
+two columns disagree the row says `DISAGREE:` and gives the reason.
 
 `tests/gate-tests.mjs` asserts **exact agreement** with that column across all
-41 — of which the sixteen are 12 pass, 4 reject. Not a rate. A capture in the PASS set that the gate rejects is a failure
-of the same weight as one in the FAIL set that it passes — a threshold that
-rejects good work costs a student a photograph they should not have had to take.
+41. Not a rate. A capture in the PASS set that the gate rejects is a failure of
+the same weight as one in the FAIL set that it passes — a threshold that rejects
+good work costs a student a photograph they should not have had to take.
 
-### All 41 are labelled, and the sixteen are still the calibration set
-
-`LABELS.csv` gained the other twenty-five rows on 2026-09-02, so
-`gate-tests.mjs` now holds the whole set to exact agreement. **The sixteen keep
-a separate assertion of their own 12/4 split**, because every threshold in the
-detector and in the gate is fitted to them and a change that moves that number
-has moved a calibration. No threshold is fitted to the other twenty-five; they
-are held to the labels and nothing more.
+**The sixteen in `real/` and `stale/` keep a separate assertion of their own
+12 pass / 4 reject split**, because every threshold in the detector and the gate
+is fitted to them and a change that moves that number has moved a calibration.
+No threshold is fitted to the other twenty-five; they are held to the labels and
+nothing more.
 
 Two rows to read before trusting the rest:
 
@@ -143,52 +81,109 @@ Two rows to read before trusting the rest:
   own shadow, hard edged, across the answer box — and the first photograph in
   the set ever to reach the legibility check, which until then had never fired
   on anything.
-- **`ios2_05` is reviewed PASS and the gate rejects it.** That disagreement is
-  real and is pinned in `KNOWN_OPEN` in `gate-tests.mjs`, along with `android04`.
+- **`android04` is reviewed PASS and the gate rejects it**, at `page_code`: the
+  target page is fully visible and readable and no symbol on it decodes, while
+  neighbouring sheets show their own codes. Nobody has investigated it.
 
 ### `KNOWN_OPEN` is a list that must shrink
 
-Where the gate disagrees with a label, the capture is named in `KNOWN_OPEN` with
-the reason — never quietly excluded. Each entry asserts the **current wrong
-verdict**, so fixing the cause turns the suite red and forces the entry out. A
-new disagreement, on any of the 41, fails.
+Where the gate disagrees with a label, the capture is named in `KNOWN_OPEN` in
+`gate-tests.mjs` with the reason — never quietly excluded. Each entry asserts the
+**current wrong verdict**, so fixing the cause turns the suite red and forces the
+entry out. A new disagreement, on any of the 41, fails. `android04` is the only
+entry.
 
-### Seeing all 41 with the numbers
+## Thresholds that must not be moved, and why
+
+Each constant carries its own measurement in the comment beside it. These are the
+four where the measurement is easy to lose and the temptation to tune is real.
+
+| constant | value | why it is where it is |
+|---|---|---|
+| `captureGate.MARKS_MIN` | **3** | A three-mark fit is sometimes excellent and sometimes catastrophic, and the residual tells them apart by a factor of seventy — `ios2_01` fits on three marks to 0.61 mm, `ios2_05` once fitted on three to 42.33 mm. A count cannot separate those; the residual can. |
+| `captureGate.LEGIBILITY_MIN_TILE_LUMA` | **70** | **Do not lower this to admit `ios2_01`.** Its darkest page tile is 55.0; every capture that passes measures 94.7 or brighter and the sixteen run 98.3 to 176.5. That is not a boundary case, and moving the floor to admit one page splits the difference against populations that do not overlap. |
+| `registration.HELDOUT_MAX_MM` | **10.0** | How near a predicted corner a declined mark must sit to count as evidence. Measured on all 41: the nearest true declined mark is 3.16 mm and the nearest blob belonging to something else is 20.25 mm, so 10.0 sits in a 17 mm gap. Raising it to 100 breaks `cap01`, `cap04` and `cap06`, which are the multi-sheet and cluttered-desk captures. |
+| ~~`DEGRADED_PENALTY_MM`~~ | **deleted** | It was a fixed penalty standing in for a measurement nobody was taking. A fit is now scored against every mark it declined near one of its own corners. **Do not reintroduce it**, and a test asserts it has not been. |
+
+### The tier rule in `registration.consider`
+
+A magnitude alone is not enough, and this is the least obvious thing in the
+detector. On a page with **no perspective** — which is every synthetic capture —
+a three-point affine is the correct model, so it fits the QR marginally better
+than the homography *and* predicts the mark it declined to within 0.08 mm.
+Scored on distance alone it wins, and the page is then reported as registering
+on three marks when four were found and usable.
+
+So fits are ranked in two tiers: **a fit that declined nothing it could have
+used beats one that did, whatever the millimetres say.** Within a tier, the lower
+score wins. Four synthetic captures found this; no photograph would have.
+
+## Two captures whose numbers moved without their verdicts
+
+`cap02` and `cap03` are the two "sheet cut off" captures. When the three-mark
+branch gained the geometric sort the four-mark path always had, both changed
+what they report while keeping their verdict:
+
+- `cap02` went from **no fit at all** to a three-mark fit at 4.948 mm. The
+  correct reading of its three real marks had never been generated; it is still
+  refused, well outside both the 3.0 mm degraded budget and the 1.0 mm gate.
+- `cap03` went from a **232 mm "fit"** to no fit. That number was a wrong
+  reading that happened to be plausible, and it was never information.
+
+Both are labelled FAIL and both still fail. Any earlier note quoting their old
+numbers is describing a detector that no longer exists.
+
+## The decoder question, and when to re-open it
+
+jsQR plus a quadrant pass is what ships. Replacing it with zxing-cpp's wasm
+build was measured on 2026-09-01 and **the answer was: not yet.**
+
+zxing passed every acceptance criterion and was faster — 1530 ms to 42 ms on the
+worst case — but the gap was **two photographs out of twenty-nine**, against
++413 KB gzip at best (+963 KB if the host does not compress wasm) paid by every
+student on every load, a dependency on a flag the library marks
+`@experimental`, and a decode budget that becomes unenforceable. The pipeline is
+inside its 2 s budget as it stands.
+
+**Re-open it if either becomes true:** the bundle cost stops mattering (a
+different delivery path, or the library ships a smaller build), or the decode
+failure rate on real captures rises above the two-in-twenty-nine measured then.
+Do not re-run the comparison from scratch without checking those first.
+
+## Seeing all 41 with the numbers
 
 ```bash
-node tests/gateProbe.mjs                  # every folder
-node tests/gateProbe.mjs students android   # just these
-node tests/gate-tests.mjs --table         # the suite, with its table
+node tests/gate-tests.mjs            # the suite
+node tests/gate-tests.mjs --table    # the suite, with its table
+node tests/gateProbe.mjs             # every folder, no assertions
+node tests/gateProbe.mjs students android
 ```
 
 `gateProbe.mjs` is a diagnostic and asserts nothing. `gate-tests.mjs` is the
-suite.
+suite. Both print a SKIP line for any folder that is not checked out.
 
-### Keeping the two copies in step
+## Keeping the two copies of LABELS.csv in step
 
-`GradeBridge2026\CaptureSet\LABELS.csv` is the other copy. **Whichever you edit,
-copy it to the other in the same change** — the one in this folder is what the
-suite reads, and a stale copy elsewhere is how a corrected label gets lost.
-
-**Every threshold in the mark detector and the capture gate is set from these
-sixteen**, and each one carries the measurement that justifies it in the comment
-beside it. Changing any of them means re-running all sixteen and reporting the
-before-and-after table in the same message as the change.
+A working copy lives outside this repository beside the untracked photographs.
+**Whichever you edit, copy it to the other in the same change** — the one in this
+folder is what the suite reads, and a stale copy elsewhere is how a corrected
+label gets lost.
 
 ## Adding real photographs
 
-Drop `.jpg` or `.png` files into `real/` and add a row to `LABELS.csv`. The
-suite picks them up with no code change, and an unlabelled capture fails the
-suite rather than being quietly skipped.
+Drop `.jpg` or `.png` files into `real/` and add a row to `LABELS.csv`. The suite
+picks them up with no code change, and an unlabelled capture fails the suite
+rather than being quietly skipped.
 
 To make them: print `assignment.pdf` from a real assignment zip at 100% (no
 "fit to page" — it changes the scale and the marks move), write something in a
 few boxes, and photograph it badly on purpose. Bad light, at an angle, curled,
 on a dark desk, in a hurry, with a shadow across it.
 
-The photographs are of an instructor's blank template with your own handwriting
-on it. Do not put a student's work in this folder, and do not write a name or a
-student ID on a sheet you are about to commit.
+**The photographs in `real/` and `stale/` are of a blank instructor template
+with the maintainer's own handwriting on it. Do not put anyone else's work in
+this folder**, and do not write a name or a student ID on a sheet you are about
+to commit.
 
 ## Rebuilding
 

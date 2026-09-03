@@ -13,7 +13,7 @@
 //   local    raster.adaptiveInk: a local mean, the definition built for shading
 //
 // Neither separates the populations, and they disagree about which crops are
-// extreme. See REPORT_CROP_FLAGS_2026-09-03.md §2.
+// extreme, so no `edge-contact` flag was built. See tests/captures/README.md.
 //
 //   node tests/edgeBandProbe.mjs [bandMm] [radiusMm] [offset]
 //

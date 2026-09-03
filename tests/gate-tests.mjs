@@ -85,8 +85,9 @@ const labels = new Map();
 // ---------- the captures ----------
 //
 // All four folders. `real/` and `stale/` are the original sixteen and are
-// tracked; `android/` (a Samsung Galaxy S22) and `students/` (two iPhones, real
-// student work) are not yet, so they may be absent on a given machine. The
+// tracked; `android/` (a colleague's Android captures) and `students/` (two
+// iPhones, real student work) are not, so they may be absent on a given
+// machine. The
 // suite says so rather than counting an absent photograph as agreement.
 const TRACKED = ['real', 'stale'];
 const UNTRACKED = ['android', 'students'];
