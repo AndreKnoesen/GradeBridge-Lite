@@ -1,8 +1,8 @@
 # GradeBridge Student Submission
 
-Complete academic assignments with LaTeX support and generate professional PDFs for Gradescope - entirely in your browser.
+Complete academic assignments in your browser: type answers with LaTeX support and get a PDF, or photograph a printed sheet and get one cropped image per answer. Either way you download a single ZIP and upload it to your course's learning management system. Nothing is sent anywhere.
 
-![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.8.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** 
@@ -31,7 +31,7 @@ This app handles lab reports, mini-projects, and homework:
 - **Auto-Save** - Work saved every second to browser storage
 - **LaTeX Math Support** - Live preview with built-in cheatsheet (fractions, integrals, Greek letters, matrices)
 - **Multiple Answer Types** - Text with LaTeX, image uploads, text + image combined, AI-graded responses
-- **Professional PDF Generation** - Gradescope-compatible output matching instructor templates
+- **PDF generation** - output matching the instructor's template, for typed assignments
 - **Images in ZIP** - Uploaded images are included as individual files in the submission ZIP so graders can see them without opening the PDF
 - **Try Demo** - One-click sample assignment to explore features instantly
 - **Backup & Restore** - Export/import work as JSON
@@ -152,12 +152,72 @@ re-implement the splitter locally.
 
 ---
 
-## Data & Privacy
+## Data and privacy
 
-- All data stored in browser localStorage
-- No server communication, no analytics, no account required
-- Data persists across browser restarts
-- **Always export JSON backups** - data is lost if you clear browser cache
+**This app collects no student-identifying information.** There is no name
+field, no student ID field, no email field, no account and no login. It asks
+who you are at no point, because it never needs to know.
+
+### Where identity actually comes from
+
+You download a submission file and upload it yourself to your institution's
+learning management system. **You authenticate there**, under the agreement your
+institution already holds with that provider, and that authenticated upload is
+what ties the work to you. Identity is established once, by your institution's
+own system, and this app is not part of it.
+
+The tool is LMS-neutral. It produces a file. Where that file goes is the
+instructor's and the institution's choice.
+
+### What the app does with your work
+
+- **Once the page has loaded, nothing leaves your browser.** The app makes no
+  request to any server after load — no analytics, no telemetry, no fonts, no
+  CDN. Verified on the live site: the only requests after load are `blob:` URLs,
+  which are handles to data already in your own browser. Your work is held in
+  browser storage on your device until you download it.
+- **The submission file carries no identity field.** Not your name, not an ID,
+  not an email. Filenames carry none either; they are built from the assignment
+  and a timestamp, like `ENG17_Homework_1_submission_20260903-0303.zip`.
+- **Photograph metadata is removed.** Phone photographs carry EXIF data naming
+  the device, the software version and the time and sometimes the place of
+  capture. The app decodes and re-encodes every page, and **all** of it goes,
+  not only EXIF: a source photograph in our test set carries an 8,912-byte EXIF
+  block plus two further metadata segments, and the corresponding image inside
+  the submission carries a 16-byte JFIF header and nothing else.
+
+### For handwritten assignments
+
+- **The printed sheet has no name or ID line, deliberately.** Page 1 tells you:
+  *"Do not write your name or student ID anywhere on these pages. You are
+  identified when you upload."*
+- **You see exactly what will be submitted, before you download it.** The review
+  step shows every image that will be sent — one per answer, cut from your
+  pages — and you confirm each one.
+
+### What this app cannot do, stated plainly
+
+- **Confirming each image is not enforced, on purpose.** You can download and
+  submit without confirming anything, and nothing blocks you: a student part-way
+  through sixteen pages at a deadline must still be able to hand in what they
+  have. Whether you confirmed each answer is *recorded* in the submission for
+  your grader to see, rather than being a gate in front of you.
+- **It cannot read your handwriting, so it cannot detect identifying information
+  you write on the page.** The instruction and the review step are the controls;
+  the app does not screen the content of an image. Downstream processing may
+  apply a best-effort screen, but the reliable protection is that the sheet never
+  asks for your name and you check what is sent.
+- **A page photograph is the whole frame.** Whatever else is in shot is in the
+  image. Photograph the page on a plain surface.
+- **`gb1:` encoding is tamper resistance, not confidentiality.** The key is in
+  the shipped JavaScript, deliberately: it exists to stop casual editing of an
+  assignment file between download and submission, not to keep secrets. This is
+  only acceptable because no identity field is in the payload, which is enforced
+  by test. Where a course supplies a public key, `gb2:` provides real
+  confidentiality — only the holder of the course private key can open it, and
+  this app never holds one.
+- **Your work is in browser storage and can be lost.** Clearing site data
+  deletes it. Use *Save Backup*.
 
 ---
 
@@ -175,9 +235,9 @@ re-implement the splitter locally.
 
 ---
 
-## Gradescope Integration
+## The submission package
 
-The **"Download for Gradescope"** button produces a single ZIP containing:
+The download button produces a single ZIP. For a typed assignment it contains:
 - `*_submission.json` — encrypted answer data (text responses, image counts)
 - `*_submission.pdf` — formatted PDF matching the instructor template (one page per subsection)
 - `p{N}s{N}_image_{N}.jpg` — one file per uploaded image, downsampled for fast loading
@@ -186,14 +246,20 @@ The **"Download for Gradescope"** button produces a single ZIP containing:
 
 The submission JSON is encoded in one of two formats. The autograder detects which by prefix; the choice is driven entirely by the assignment file:
 
-| Spec field | Format | Payload |
+| Spec field | Format | Confidentiality |
 |---|---|---|
-| no `coursePublicKey` | `gb1:` — shared-key AES-256-GCM | includes `student_name` |
-| `coursePublicKey` present | `gb2:` — public-key envelope | **de-identified**: `student_name`, `email`, `sid`, `student_id` removed |
+| no `coursePublicKey` | `gb1:` — shared-key AES-256-GCM | Tamper resistance only. The key ships in the JavaScript. |
+| `coursePublicKey` present | `gb2:` — public-key envelope | Real. Only the course private key opens it, and this app never holds one. |
+
+**Neither format carries an identity field.** The payload has had no
+`student_name` since v3.8.0, and never carried an email or a student ID. `gb2:`
+additionally strips those four keys on the way out, which is belt and braces
+rather than the mechanism: if one ever returned to the payload by accident, the
+`gb2:` path would still remove it.
 
 `gb2:` wraps a per-submission random AES-256-GCM content key with the course RSA public key (RSA-OAEP, SHA-256/MGF1-SHA256, empty label) and lays out the envelope as `wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag`, standard-base64 encoded. Only the course private key — held by the autograder, never by this app — can open it.
 
-The PDF and all filenames are identical in both cases and still carry the student's name; de-identification applies to the JSON payload only. Identity is taken from Gradescope's authenticated submitter metadata. If a spec carries a `coursePublicKey` that cannot be read, the submission fails with an error rather than downgrading to `gb1:`.
+Identity comes from the authenticated upload to your institution's LMS, not from anything in the file. If a spec carries a `coursePublicKey` that cannot be read, the submission fails with an error rather than downgrading to `gb1:`.
 
 The PDF is designed to match Assignment Maker templates:
 - One page per subsection
@@ -274,7 +340,7 @@ Without it the suite still runs everything using an ephemeral keypair and marks 
   and `N` from its own QR) and `crops`. `ai_feedback` is unchanged.
 
 ### v3.6.0
-- **`gb2:` hardened submission encoding.** When the loaded assignment spec carries a `coursePublicKey` (SPKI PEM), the submission JSON is encoded as a public-key envelope and de-identified — `student_name`, `email`, `sid`, and `student_id` are stripped from the payload. Specs without that field are unaffected and still produce `gb1:`. See [Gradescope Integration](#submission-encoding-gb1-and-gb2).
+- **`gb2:` hardened submission encoding.** When the loaded assignment spec carries a `coursePublicKey` (SPKI PEM), the submission JSON is encoded as a public-key envelope and de-identified — `student_name`, `email`, `sid`, and `student_id` are stripped from the payload. Specs without that field are unaffected and still produce `gb1:`. See [The submission package](#submission-encoding-gb1-and-gb2).
 - A spec whose `coursePublicKey` cannot be imported now fails the download with a clear message instead of silently falling back to `gb1:`.
 - PDF, ZIP filename, and image files are unchanged in both paths.
 - Added `npm test` — a dependency-free `cryptoService` suite covering the gb2 round trip, envelope layout, de-identification, key-failure handling, and gb1 regression.
@@ -294,7 +360,7 @@ Without it the suite still runs everything using an ephemeral keypair and marks 
 
 - **Long Text Answers** - Very long answers that exceed one page may have imperfect breaks (html2pdf limitation)
 - **Mobile Experience** - Optimized for desktop for typed assignments; a handwritten assignment is meant to be done on the phone that took the photographs
-- **Registration thresholds are untuned against real photographs.** The mark detector has been measured only on rendered and synthetically degraded captures. See `tests/captures/README.md`.
+- **The capture path has not been walked by hand end to end.** Registration thresholds *are* measured against real photographs — 41 of them, and the gate agrees with their reviewed labels — but the whole flow from loading an assignment to downloading a package has been exercised by test harnesses rather than by a person clicking through it. See `tests/captures/README.md`.
 
 ## Browser Support
 
