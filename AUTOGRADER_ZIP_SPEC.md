@@ -3,15 +3,15 @@
 **Version:** v6.0
 **Date:** 2026-09-03
 
-> ## BREAKING, on a course that has a key. **Every image in the archive is encrypted.**
+> ## BREAKING, on a course that has a key. **Everything but the payload's own envelope is encrypted.**
 >
 > On a course whose assignment spec carries a `coursePublicKey`, the page
-> photographs, the answer crops and the electronic path's image answers are each
-> written as a **gb2 envelope over the raw JPEG bytes**, under a name ending
-> `.gb2`:
+> photographs, the answer crops, the electronic path's image answers **and the
+> electronic submission PDF** are each written as a **gb2 envelope over the raw
+> bytes**, under a name ending `.gb2`:
 >
 > ```
-> page_1.jpg.gb2      crops/p1a.jpg.gb2      p0s1_image_0.jpg.gb2
+> page_1.jpg.gb2   crops/p1a.jpg.gb2   p0s1_image_0.jpg.gb2   {stem}.pdf.gb2
 > ```
 >
 > A consumer that opens `crops/p1a.jpg` on such a course finds nothing there.
@@ -25,7 +25,15 @@
 > `submission_data` entry is `null`, because the graded artefact is the crop
 > images. A hardened course was encrypting the envelope and shipping the letter
 > in the clear beside it. §3.1 has said the payload is empty since v4.0; what
-> changed is that the images are now covered too.
+> changed is that everything carrying an answer is now covered too.
+>
+> **The PDF is in that list for the same reason, one file along.** On an
+> electronic assignment it renders the same typed answers the payload encrypts.
+> It was left out of the first pass of this change deliberately and reported
+> rather than quietly included; the decision to seal it followed the same day.
+> **`pdf_filename` therefore names `{stem}.pdf.gb2` on a sealed course** — it
+> names the entry that is in the archive, as `pages[].file` and `crops[].file`
+> always have.
 >
 > **Two consequences that are not optional to plan for:**
 >
@@ -230,6 +238,8 @@ JPEG magic moves inside the envelope:
 | `*_submission.json` | 1 | `67 62 32 3a` (`gb2:`) | the payload, §3 |
 | `crops/{region_id}.jpg.gb2` | 3 | `01 00` | a sealed crop, §4.2 |
 | `page_{n}.jpg.gb2` | 2 | `01 00` | a sealed page, §4.2 |
+| `*_submission.pdf.gb2` | 0 here | `01 00` | a sealed PDF — **electronic only**, §5 |
+| `p{i}s{j}_image_{n}.jpg.gb2` | 0 here | `01 00` | a sealed image answer — electronic only |
 
 `01 00` is `wrappedKeyLen` — 256, big-endian, for the RSA-2048 test key; a
 4096-bit course key makes it `02 00`. **Do not identify a sealed entry by those
@@ -253,11 +263,10 @@ none. **These are sealed too** on a course with a key — `p0s1_image_0.jpg.gb2`
 and that path is covered by `tests/package-encryption-tests.mjs` rather than by
 an archive on disk.
 
-**The electronic `*_submission.pdf` is NOT sealed.** It is not an image entry and
-the work order that sealed the images did not name it, so on an electronic gb2
-course the PDF still carries the student's written answers in the clear beside a
-payload that carries the same answers encrypted. Stated here because it is the
-kind of thing a reader would otherwise assume either way.
+**The electronic `*_submission.pdf` is sealed too**, as `{stem}.pdf.gb2`, and is
+listed in `encrypted_entries` like everything else. It is written in the same
+position it always was — immediately after the payload, before the images — so
+the archive order a consumer has always seen is unchanged.
 
 `{n}` in `page_{n}.jpg` is **the position in the ZIP, counting from 1**. It is
 not the page of the sheet. See §4.
@@ -325,7 +334,7 @@ mechanism. Identity is the authenticated upload, not anything in the archive.
 | ~~`student_name`~~ | — | **REMOVED in v5.0. The key is absent.** Do not read it, and do not fall back to `""` — there is nothing to fall back from. Identity is Gradescope's authenticated submitter. |
 | `course_code` | string | |
 | `assignment_id` | string | `{courseCode}_{title with spaces → _}`. **Not** the `assignment_id` in `layout_*.csv`, which is `ENG17HOM496F`. Two different identifiers; do not join on this one. |
-| `pdf_filename` | string | **Electronic only.** Absent from a handwritten payload, because a handwritten archive has no PDF and a field naming a file that is not there is a defect rather than a courtesy. Do not index it unconditionally. |
+| `pdf_filename` | string | **Electronic only.** Absent from a handwritten payload, because a handwritten archive has no PDF and a field naming a file that is not there is a defect rather than a courtesy. Do not index it unconditionally. **On a sealed course it ends `.pdf.gb2`** and appears in `encrypted_entries`: it names the entry, not the file that comes out of it. |
 | `ai_feedback` | boolean | Always a real boolean, never absent, so "off" is never confusable with an older app version. |
 | `submission_data` | object | §3.1 |
 | `last_saved` | string | ISO 8601, UTC. |
@@ -440,20 +449,26 @@ first, then everything below applies unchanged — the pixels, the dimensions an
 the bytes are identical to what a course with no key ships. That is asserted on
 every entry of a sixteen-page run, not argued: §4.3.
 
+**The electronic PDF goes through the identical envelope**, and what comes out
+of it begins `%PDF`. Nothing in §4.2 is specific to an image; the section is
+named for images because that is what the handwritten archive contains.
+
 ### 4.2 The envelope on an image entry
 
 ```
 wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag
 ```
 
-**Byte for byte the same envelope as the payload**, which is the point: this is
-the format the autograder already decrypts. Two differences from the JSON entry,
+**Byte for byte the same envelope as the payload**, and the same for every
+sealed entry — page, crop, image answer, PDF. That is the point: this is the
+format the autograder already decrypts. Two differences from the JSON entry,
 both about packaging rather than cryptography:
 
 - **No `gb2:` tag and no base64.** The JSON entry is text, so it is tagged and
   base64'd; an image entry is a raw byte stream in a ZIP. Base64 would have
   added a third to a multi-megabyte archive for nothing. **Parse from offset 0.**
-- **The result is JPEG bytes, not JSON.** Do not `json.loads` it.
+- **The result is JPEG bytes** — or PDF bytes for `{stem}.pdf.gb2` — **not
+  JSON.** Do not `json.loads` it.
 
 **One content key per file**, freshly generated, RSA-OAEP-wrapped with the course
 public key (SHA-256, MGF1-SHA256, empty label) — exactly as for the payload. An
@@ -485,9 +500,10 @@ bytes of JPEG:
 
 Two runs, both real, and they disagree by a lot for a reason worth knowing.
 
-| run | images | plain archive | sealed archive | delta |
+| run | sealed entries | plain archive | sealed archive | delta |
 |---|---:|---:|---:|---:|
 | two phone photographs, 3 crops (§1) | 5 | 1,117,431 | 1,141,466 | **+24,035 (+2.15%)** |
+| electronic: a real app-built PDF + 1 image answer | 2 | 962,660 | 985,880 | **+23,220 (+2.41%)** |
 | sixteen RENDERED pages, 17 crops | 33 | 2,594,920 | 4,998,140 | +2,403,220 (+92.6%) |
 
 **The second number is an artefact of the fixture and must not be quoted as the
@@ -498,16 +514,25 @@ removing 2.4 MB that a real photograph never offers in the first place. A phone
 photograph is already entropy-dense, which is why the honest measurement is the
 first row: **about 2%, plus 286 bytes a file.**
 
-**Time and memory**, on the sixteen-page run: the encryption step took **24 and
-26 ms** on two runs, for 4.7 MB of image bytes — **180 to 200 MB/s** — so a full
-~9 MB photographic submission is well under 100 ms of AES on a laptop, and the
-prediction that WebCrypto would be fast enough is confirmed rather than assumed.
-That is 33 RSA-2048 wraps inside the same 25 ms, which is why the per-file
-content key of §4.2 cost nothing worth trading a second format for. Peak RSS was
-**391 and 393 MB** across both builds, against **395 MB** for the plain build
-alone: sealing did not move it, because the work is one image at a time and the
-archive is already held. (Archive totals move a byte or two between runs — the
-payload carries a timestamp.)
+**The electronic row measures the same effect and lands in the same place.** The
+PDF the app builds is `jsPDF` over `html2canvas` rasters — 979,728 bytes that
+DEFLATE only to **98.1%** — so sealing it costs its 286 bytes and the 1.9% the
+ZIP was getting. **This is a property of that PDF, not of PDFs.** The ENG17
+*assignment* PDF, which is vector text, deflates to **61.9%**, and sealing a PDF
+like that would cost **+62%** of the archive. If the submission PDF ever becomes
+vector rather than raster, re-measure this row before quoting it.
+
+**Time and memory**, on the sixteen-page run: the encryption step took **24, 26
+and 38 ms** across three runs, for 4.7 MB of image bytes and 33 RSA-2048 wraps —
+**125 to 200 MB/s**, the spread being what a laptop does, not what the algorithm
+does. A full ~9 MB photographic submission is therefore well under a fifth of a
+second, and the prediction that WebCrypto would be fast enough is confirmed
+rather than assumed. Those 33 wraps live inside that same figure, which is why
+the per-file content key of §4.2 cost nothing worth trading a second format for.
+Peak RSS was **387 to 393 MB** across both builds, against **395 MB** for the
+plain build alone: sealing did not move it, because the work is one entry at a
+time and the archive is already held. (Archive totals move a byte or two between
+runs — the payload carries a timestamp.)
 
 ### 4.4 The crops — measured off this archive
 
@@ -575,6 +600,12 @@ next time something in this archive has no reader:
 
 Removing a thing that can be wrong beats maintaining a second copy of something
 already kept.
+
+**The electronic path still carries one, and since v6.0 it is sealed** on a
+course with a key: `{stem}.pdf.gb2`, in `encrypted_entries`, `pdf_filename`
+naming it. It rendered the same typed answers the payload encrypts, which made
+it the one remaining entry that handed over in the clear what the envelope beside
+it protected.
 
 **Consequences for a reader:**
 
@@ -669,28 +700,32 @@ Then:
 ```python
 payload = decrypt(open(glob.glob(SUBMISSION_DIR + '*_submission.json')[0]).read())
 
-# v6.0: on a course with a key every image entry is a gb2 envelope over the
-# JPEG. `crop['file']` already names the entry as it is — 'crops/p1a.jpg.gb2' —
-# so nothing here appends or strips a suffix.
+# v6.0: on a course with a key every image entry AND the electronic PDF is a
+# gb2 envelope over the raw bytes. `crop['file']` and `payload['pdf_filename']`
+# already name the entry as it is — 'crops/p1a.jpg.gb2' — so nothing here
+# appends or strips a suffix.
 sealed = payload.get('image_encryption') == 'gb2'
 
-def image_bytes(entry):
+def entry_bytes(entry):
     raw = open(os.path.join(SUBMISSION_DIR, entry), 'rb').read()
     return decrypt_gb2_bytes(raw) if sealed else raw     # §10
 
 if payload.get('input_mode') == 'handwritten':
     for region_id, crop in payload['crops'].items():
-        jpeg = image_bytes(crop['file'])
+        jpeg = entry_bytes(crop['file'])
         # crop['part_id']      -> the label a human recognises
         # crop['max_points']   -> from the map
         # crop['page_k']       -> which sheet page
         # crop['student_review'], crop['quality_flags'] -> advisory only
 else:
-    ...                                   # v3.1 behaviour, unchanged
+    pdf = entry_bytes(payload['pdf_filename'])   # '{stem}.pdf.gb2' when sealed
+    ...                                          # v3.1 behaviour otherwise
 ```
 
 `payload['encrypted_entries']` is the same statement as a list, for a consumer
 that would rather check the archive against the payload than trust a suffix.
+**Driving the loop off that list rather than off filenames is why the PDF cost
+its reader nothing:** it simply appeared in the list one day.
 
 ---
 
@@ -767,10 +802,17 @@ autograder author's call. What follows is the contract it has to implement.
 3. `AES-256-GCM` decrypt `ciphertext+tag` under that key and `iv`, no AAD. The
    result is UTF-8 JSON.
 4. If `image_encryption == "gb2"`, every name in `encrypted_entries` is an
-   envelope on disk. Repeat 2 and 3 **per entry, starting at offset 0** — no
-   base64, no tag to strip — and the result is JPEG bytes. Each entry has its own
-   content key and its own IV; nothing is shared, and nothing is cached between
-   entries.
+   envelope on disk — the pages, the crops, an electronic assignment's image
+   answers, and its PDF. Repeat 2 and 3 **per entry, starting at offset 0** — no
+   base64, no tag to strip — and the result is the original bytes, JPEG or PDF.
+   Each entry has its own content key and its own IV; nothing is shared, and
+   nothing is cached between entries.
+
+   **The key name says `image_encryption` and it covers the PDF as well.** The
+   name is narrower than the fact and was kept on purpose: it had already been
+   circulated, and renaming a key to improve an adjective breaks a consumer for
+   nothing. `entry_encryption` is the better name if it is ever worth one
+   coordinated change.
 5. Write them out under the same names without `.gb2` and open them normally.
 
 ### Reference

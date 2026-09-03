@@ -511,8 +511,8 @@ console.log(`\n  archive ${zipBytes.length.toLocaleString()} -> ${sealedZip.leng
   `(${sealedZip.length - zipBytes.length >= 0 ? '+' : ''}${(sealedZip.length - zipBytes.length).toLocaleString()}, ` +
   `${((sealedZip.length - zipBytes.length) / zipBytes.length * 100).toFixed(2)}%)`);
 console.log(`  per file 286 bytes: 258 wrapped key + 12 IV + 16 tag`);
-console.log(`  encryption step ${sealedBuild.imageEncryptionMs} ms for ` +
-  `${(sealedBuild.imagePlainBytes / 1048576).toFixed(2)} MB of image bytes`);
+console.log(`  encryption step ${sealedBuild.sealMs} ms for ` +
+  `${(sealedBuild.sealedPlainBytes / 1048576).toFixed(2)} MB of image bytes`);
 console.log(`  peak RSS ${(process.memoryUsage().rss / 1048576).toFixed(1)} MB at the end of the run`);
 
 console.log('\n=== PAYLOAD ===');

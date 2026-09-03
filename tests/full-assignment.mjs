@@ -413,8 +413,8 @@ console.log(`    written to            ${zipPath}`);
 
 // ITEM 6, measured on this run rather than predicted.
 const sealedOverhead = sealedZipBytes.length - zipLen;
-const sealMs = sealedBuilt.imageEncryptionMs;
-const sealedBytes = sealedBuilt.imagePlainBytes;
+const sealMs = sealedBuilt.sealMs;
+const sealedBytes = sealedBuilt.sealedPlainBytes;
 console.log('\n    with a course key (gb2, images sealed)');
 console.log(`    ARCHIVE               ${sealedZipBytes.length.toLocaleString()} bytes = ${mb(sealedZipBytes.length)}`);
 console.log(`    archive delta         ${sealedOverhead >= 0 ? '+' : ''}${sealedOverhead.toLocaleString()} bytes ` +

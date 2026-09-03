@@ -752,17 +752,39 @@ check('the ZIP always carries the JSON', () => {
   assert(zipBlock.includes('.json`, encoded.bytes)'), 'the ZIP builder does not write the JSON');
 });
 
-check('a handwritten submission carries no PDF', () => {
+await checkAsync('a handwritten submission carries no PDF', async () => {
   // Andre, 2026-09-01, DECISION_PACKAGE_CONTENTS_2026-09-01.md. Nothing consumes
   // it, it was half the archive, and the one the app would have produced was the
   // blank question paper — which invites a reader to conclude the student
   // submitted nothing. The electronic path still writes one.
-  const pdfWrite = zipBlock.indexOf('.pdf`, assets.pdfBytes)');
-  assert(pdfWrite !== -1, 'the ZIP builder no longer writes a PDF at all — the electronic path needs one');
-  const guard = zipBlock.lastIndexOf('if (!sources.isHandwritten)', pdfWrite);
-  assert(guard !== -1, 'the PDF write is not behind an isHandwritten guard');
+  //
+  // **Behavioural since 2026-09-03.** This matched `` `.pdf`, assets.pdfBytes) ``
+  // inside the ZIP block; the PDF write moved out of that block when the PDF
+  // started being sealed with everything else, and the check would have failed
+  // on a builder that gets this exactly right.
+  const built = await pkg.buildSubmissionPackage(packageFixture(), fixtureAssets);
+  const names = Object.keys(built.zip.files);
+  assert(!names.some(n => n.toLowerCase().endsWith('.pdf')),
+    `a handwritten archive carries a PDF: ${names.join(', ')}`);
+  assert(!('pdf_filename' in built.submissionJson),
+    'a handwritten payload names a PDF that is not in the archive');
 
-  // ...and the payload must not name a file the archive does not contain.
+  // ...and the electronic path still writes one, or the check above passes for
+  // the wrong reason.
+  const electronic = await pkg.buildSubmissionPackage(
+    {
+      ...packageFixture(), isHandwritten: false, layoutId: null, pages: [], crops: {},
+      assignment: { ...packageFixture().assignment, inputMode: undefined },
+    },
+    { ...fixtureAssets, pdfBytes: Uint8Array.from([0x25, 0x50, 0x44, 0x46]) },
+  );
+  assert(electronic.zip.file(`${electronic.baseName}.pdf`) !== null,
+    'an electronic archive no longer carries a PDF');
+  assert(electronic.submissionJson.pdf_filename === `${electronic.baseName}.pdf`,
+    `an electronic payload names ${electronic.submissionJson.pdf_filename}`);
+
+  // The deletion stays inside the handwritten branch: an electronic payload
+  // keeps the field.
   assert(/delete submissionJson\.pdf_filename;/.test(pkgSrc),
     'pdf_filename is still emitted on the handwritten path, naming a file that is not there');
   const branch = pkgSrc.indexOf('if (s.isHandwritten) {');
@@ -915,15 +937,30 @@ check('nothing in the sidebar is gated behind a field the app no longer has', ()
   assert(!/>Student Info</.test(sidebar), 'the Student Info step is back');
 });
 
-check('the filename carries the assignment and the moment, not a person', () => {
+await checkAsync('the filename carries the assignment and the moment, not a person', async () => {
   const code = stripComments(pkgSrc);
   assert(/submissionBaseName = \(assignmentId: string, isoTimestamp: string\)/.test(code),
     'submissionBaseName no longer takes the assignment and a timestamp');
-  // Derived from last_saved rather than a second clock read, so the filename and
-  // the payload cannot disagree about when the submission was made.
-  assert(/submissionBaseName\(\s*submissionJson\.assignment_id as string, submissionJson\.last_saved as string\)/
-    .test(code.replace(/\s+/g, ' ')) || /submissionJson\.last_saved as string/.test(code),
-    'the archive name is no longer derived from last_saved');
+
+  // **The filename and the payload must agree about when the submission was
+  // made.** It used to be enough to derive the archive name back out of the
+  // finished payload, and this checked for that expression. Sealing the PDF
+  // needed the name BEFORE the payload — the payload has to list the sealed
+  // entries — so the identity is computed once up front and `now` is pinned
+  // onto the sources instead. That is a different expression and the same
+  // guarantee, so the check is now the guarantee: built with a real clock, the
+  // archive stem is exactly what the payload's own two fields produce.
+  const { now, ...noClock } = packageFixture();
+  void now;
+  const built = await pkg.buildSubmissionPackage(noClock, fixtureAssets);
+  const jsonEntry = Object.keys(built.zip.files).find(n => n.endsWith('.json'));
+  const payload = await crypto.decryptJson(await built.zip.file(jsonEntry).async('string'));
+  assert(pkg.submissionBaseName(payload.assignment_id, payload.last_saved) === built.baseName,
+    `the archive is named ${built.baseName} but the payload says ` +
+    `${pkg.submissionBaseName(payload.assignment_id, payload.last_saved)} — two clock reads`);
+  assert(jsonEntry === `${built.baseName}.json`, `the payload entry is ${jsonEntry}`);
+  assert(!/[a-z]+_[A-Z]/.test(built.baseName.replace('ENG17_Homework_1_submission_', '')),
+    `the stem carries something that is not the assignment and the moment: ${built.baseName}`);
 });
 
 check('GB2_PII_FIELDS still strips student_name', () => {

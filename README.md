@@ -216,12 +216,14 @@ instructor's and the institution's choice.
   by test. Where a course supplies a public key, `gb2:` provides real
   confidentiality — only the holder of the course private key can open it, and
   this app never holds one.
-- **On a `gb2:` course the photographs and the crops are encrypted too**
+- **On a `gb2:` course the photographs, the crops and the PDF are encrypted too**
   (2026-09-03). Until then only the JSON was, and on a handwritten assignment
   the JSON holds no answers at all — the answers are the images, and they
-  travelled as plain JPEGs beside it. Now every image in the archive is sealed
-  individually and named `.gb2`. **On a course with no key nothing changed**, and
-  a submission from such a course is as readable as it always was.
+  travelled as plain JPEGs beside it. The typed-assignment PDF was the same thing
+  one file along: it renders the answers the JSON encrypts. Now every entry in
+  the archive but the JSON's own envelope is sealed individually and named
+  `.gb2`. **On a course with no key nothing changed**, and a submission from such
+  a course is as readable as it always was.
 - **Your work is in browser storage and can be lost.** Clearing site data
   deletes it. Use *Save Backup*.
 
@@ -252,10 +254,11 @@ For a handwritten assignment it contains the JSON, `page_{n}.jpg` for each page
 you photographed, and `crops/{region}.jpg` for each answer cut out of them. There
 is no PDF.
 
-**On a course with a public key every image entry gains a `.gb2` suffix** —
-`page_1.jpg.gb2`, `crops/p1a.jpg.gb2`, `p0s1_image_0.jpg.gb2` — because it is an
-encrypted envelope rather than a JPEG, and a file that is not a JPEG should not
-be named `.jpg`. The payload lists them under `encrypted_entries`.
+**On a course with a public key every entry but the JSON gains a `.gb2` suffix**
+— `page_1.jpg.gb2`, `crops/p1a.jpg.gb2`, `p0s1_image_0.jpg.gb2` and
+`*_submission.pdf.gb2` — because it is an encrypted envelope rather than a JPEG
+or a PDF, and a file that is not one should not be named as one. The payload
+lists them under `encrypted_entries`, and `pdf_filename` names the sealed entry.
 
 ### Submission encoding: gb1 and gb2
 
@@ -274,12 +277,12 @@ rather than the mechanism: if one ever returned to the payload by accident, the
 
 `gb2:` wraps a random AES-256-GCM content key with the course RSA public key (RSA-OAEP, SHA-256/MGF1-SHA256, empty label) and lays out the envelope as `wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag`, standard-base64 encoded. Only the course private key — held by the autograder, never by this app — can open it.
 
-**Each image entry is the same envelope over the raw JPEG bytes**, with its own
+**Each sealed entry is the same envelope over its raw bytes**, with its own
 content key and its own IV, written into the ZIP unencoded: base64 would add a
 third to a multi-megabyte archive for nothing. The overhead is 286 bytes a file
-(258 wrapped key, 12 IV, 16 tag) — measured at **+2.15%** on a real two-page
-submission. The full interface, including how to open one by hand, is
-`AUTOGRADER_ZIP_SPEC.md` v6.0.
+(258 wrapped key, 12 IV, 16 tag) — measured at **+2.15%** on a real handwritten
+two-page submission and **+2.41%** on a typed one carrying a real PDF. The full
+interface, including how to open one by hand, is `AUTOGRADER_ZIP_SPEC.md` v6.0.
 
 Identity comes from the authenticated upload to your institution's LMS, not from anything in the file. If a spec carries a `coursePublicKey` that cannot be read, the submission fails with an error rather than downgrading to `gb1:`.
 

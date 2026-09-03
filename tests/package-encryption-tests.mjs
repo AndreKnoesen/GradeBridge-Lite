@@ -157,8 +157,19 @@ const electronicSources = (coursePublicKey) => ({
   crops: {},
 });
 
+/**
+ * A PDF-shaped fixture: the magic, then bytes that do not compress, so the
+ * archive delta below is the envelope's cost and not DEFLATE's opinion of a
+ * repetitive fixture.
+ */
+const PDF_BYTES = (() => {
+  const out = jpegish(11, 32768);
+  out.set([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34], 0);   // %PDF-1.4
+  return out;
+})();
+
 const assets = {
-  pdfBytes: Uint8Array.from([0x25, 0x50, 0x44, 0x46]),
+  pdfBytes: PDF_BYTES,
   readBlob: async (key) => PAGE_BYTES[key] ?? CROP_BYTES[key.replace(/^crop_/, '')] ?? null,
   downsampleImage: async (uri) => uri,
 };
@@ -212,6 +223,30 @@ check('the electronic image answer is the stored bytes, untouched', () => {
   assert(plainElectronicManifest.has('p0s1_image_0.jpg'), 'p0s1_image_0.jpg is missing');
   assertEqual([...plainElectronicManifest.get('p0s1_image_0.jpg')], [...ELECTRONIC_IMAGE],
     'the electronic image answer changed on a course with no key');
+});
+
+check('the electronic PDF is the PDF, under its plain name', () => {
+  const name = `${plainElectronic.baseName}.pdf`;
+  assert(plainElectronicManifest.has(name), `${name} is missing`);
+  assertEqual([...plainElectronicManifest.get(name)], [...PDF_BYTES],
+    'the PDF changed on a course with no key');
+  assertEqual(plainElectronic.submissionJson.pdf_filename, name,
+    'pdf_filename does not name the entry that is there');
+});
+
+check('the archive order is the one a consumer has always seen', () => {
+  // JSON, PDF, pages, crops, image answers. The PDF joined the sealable list in
+  // supplement 1 and is FIRST in it precisely so this does not move.
+  assertEqual(plainElectronic.entries, [
+    `${plainElectronic.baseName}.json`,
+    `${plainElectronic.baseName}.pdf`,
+    'p0s1_image_0.jpg',
+  ], 'the electronic archive order changed');
+  assertEqual(sealedElectronic.entries, [
+    `${sealedElectronic.baseName}.json`,
+    `${sealedElectronic.baseName}.pdf.gb2`,
+    'p0s1_image_0.jpg.gb2',
+  ], 'the sealed electronic archive order changed');
 });
 
 await checkAsync('the payload gains no key at all', async () => {
@@ -270,13 +305,42 @@ await checkAsync('...and it decrypts to the same bytes the plain build wrote', a
     'the electronic image answer did not survive the envelope');
 });
 
-check('the PDF is NOT sealed, and that is scope rather than a finding', () => {
-  // The work order names the page photographs, the crops and the image answers.
-  // On an electronic gb2 course the PDF still carries the written answers in
-  // the clear. Asserted so the state of affairs is recorded rather than
-  // discovered later by someone reading the archive.
-  assert(sealedElectronicManifest.has(`${sealedElectronic.baseName}.pdf`),
-    'the electronic PDF is gone — this test records that it is NOT sealed, not that it vanished');
+// **The PDF is sealed as of supplement 1 (2026-09-03).** This check previously
+// asserted the opposite, and said so: the original order named the page
+// photographs, the crops and the image answers, and the PDF was reported rather
+// than quietly swept in. Andre took the decision on that finding — an electronic
+// PDF renders in the clear the same typed answers the payload beside it
+// encrypts.
+check('the electronic PDF is sealed, and no plain PDF survives', () => {
+  assert(sealedElectronicManifest.has(`${sealedElectronic.baseName}.pdf.gb2`),
+    `the PDF is not sealed: ${[...sealedElectronicManifest.keys()].join(', ')}`);
+  assert(!sealedElectronicManifest.has(`${sealedElectronic.baseName}.pdf`),
+    'a plain PDF survives beside the sealed one');
+});
+
+await checkAsync('...and it decrypts to the byte-identical PDF of the plain build', async () => {
+  const opened = await openEnvelope(sealedElectronicManifest.get(`${sealedElectronic.baseName}.pdf.gb2`));
+  assertEqual([...opened], [...plainElectronicManifest.get(`${plainElectronic.baseName}.pdf`)],
+    'the PDF did not survive the envelope');
+  assert(opened[0] === 0x25 && opened[1] === 0x50 && opened[2] === 0x44 && opened[3] === 0x46,
+    'what came out of the envelope does not begin %PDF');
+});
+
+check('the sealed PDF is in encrypted_entries, and pdf_filename names it', () => {
+  const sealedName = `${sealedElectronic.baseName}.pdf.gb2`;
+  assert(sealedElectronic.imageEncryption.entries.includes(sealedName),
+    `the PDF is sealed but absent from the list: ${sealedElectronic.imageEncryption.entries.join(', ')}`);
+  assertEqual(sealedElectronic.submissionJson.pdf_filename, sealedName,
+    'pdf_filename names a file the archive does not contain');
+});
+
+check('a handwritten submission still carries no PDF, sealed or otherwise', () => {
+  for (const [label, m] of [['plain', plainManifest], ['sealed', sealedManifest]]) {
+    const pdfs = [...m.keys()].filter(n => /\.pdf(\.gb2)?$/.test(n));
+    assert(pdfs.length === 0, `the ${label} handwritten archive carries ${pdfs.join(', ')}`);
+  }
+  assert(!('pdf_filename' in sealedBuild.submissionJson),
+    'a handwritten payload names a PDF');
 });
 
 // =====================================================
@@ -395,6 +459,17 @@ check('the declared list is exactly what is in the archive', () => {
     'the payload\'s encrypted_entries and the archive disagree');
 });
 
+await checkAsync('the electronic payload declares its own archive exactly', async () => {
+  const text = Buffer.from(
+    sealedElectronicManifest.get(`${sealedElectronic.baseName}.json`)).toString('utf8');
+  const payload = await openPayload(text);
+  assertEqual([...payload.encrypted_entries].sort(),
+    [...sealedElectronicManifest.keys()].filter(n => n.endsWith('.gb2')).sort(),
+    'the electronic payload and its archive disagree');
+  assert(sealedElectronicManifest.has(payload.pdf_filename),
+    `pdf_filename is ${payload.pdf_filename}, which is not in the archive`);
+});
+
 check('every page and crop names the entry that is actually there', () => {
   assert(Array.isArray(sealedPayload.pages), 'the sealed payload could not be read');
   for (const page of sealedPayload.pages) {
@@ -479,7 +554,12 @@ const sealedTotal = [...sealedManifest.values()].reduce((s, b) => s + b.length, 
 const plainTotal = [...plainManifest.values()].reduce((s, b) => s + b.length, 0);
 console.log(`\n  entry bytes: ${plainTotal.toLocaleString()} plain -> ${sealedTotal.toLocaleString()} sealed ` +
   `(+${sealedTotal - plainTotal} over ${IMAGE_ENTRIES.length} images and the payload)`);
-console.log(`  sealing took ${sealedBuild.imageEncryptionMs} ms for ` +
-  `${sealedBuild.imagePlainBytes.toLocaleString()} image bytes`);
+console.log(`  sealing took ${sealedBuild.sealMs} ms for ` +
+  `${sealedBuild.sealedPlainBytes.toLocaleString()} image bytes`);
+const eEntry = (m, n) => m.get(n).length;
+console.log(`  electronic PDF: ${eEntry(plainElectronicManifest, `${plainElectronic.baseName}.pdf`).toLocaleString()}` +
+  ` -> ${eEntry(sealedElectronicManifest, `${sealedElectronic.baseName}.pdf.gb2`).toLocaleString()} bytes ` +
+  `(+${eEntry(sealedElectronicManifest, `${sealedElectronic.baseName}.pdf.gb2`) -
+      eEntry(plainElectronicManifest, `${plainElectronic.baseName}.pdf`)})`);
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

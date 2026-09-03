@@ -103,6 +103,24 @@ export interface ImageEncryption {
   entries: string[];
 }
 
+/**
+ * The two facts every name in the download is built from.
+ *
+ * **Extracted so the clock is read once.** `buildSubmissionJson` used to derive
+ * both inline, and the package's archive name was then derived back out of the
+ * finished payload so the two could not disagree. Sealing the PDF broke that
+ * order — the payload has to list the sealed entries, and the PDF's entry name
+ * is built from the identity — so the identity is now computed first and the
+ * payload is built with `now` pinned to it. Same one derivation, same one
+ * `new Date()`, and the filename still cannot disagree with the contents.
+ */
+export const submissionIdentity = (
+  s: SubmissionSources,
+): { assignmentId: string; lastSaved: string } => ({
+  assignmentId: `${s.assignment.courseCode}_${s.assignment.title.replace(/\s+/g, '_')}`,
+  lastSaved: s.now ?? new Date().toISOString(),
+});
+
 export interface SubmissionSources {
   assignment: Assignment;
   submissionData: SubmissionData;
@@ -126,10 +144,10 @@ export interface SubmissionSources {
 export const buildSubmissionJson = (
   s: SubmissionSources, images?: ImageEncryption | null,
 ): Record<string, unknown> => {
-  // Where the images are sealed, the payload must name the entries that are
-  // actually in the archive — `page_01.jpg.gb2`, not `page_01.jpg`. The `file`
-  // field is the string a consumer opens; a payload that names a file the
-  // archive does not have is the defect, not a courtesy.
+  // Where the entries are sealed, the payload must name what is actually in the
+  // archive — `page_01.jpg.gb2`, not `page_01.jpg`. The `file` field (and
+  // `pdf_filename`) is the string a consumer opens; a payload that names a file
+  // the archive does not have is the defect, not a courtesy.
   const entryName = (file: string): string => (images ? encryptedEntryName(file) : file);
 
   const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
@@ -165,9 +183,12 @@ export const buildSubmissionJson = (
     });
   });
 
-  const assignmentId = `${s.assignment.courseCode}_${s.assignment.title.replace(/\s+/g, '_')}`;
-  const lastSaved = s.now ?? new Date().toISOString();
-  const pdfFilename = `${submissionBaseName(assignmentId, lastSaved)}.pdf`;
+  const { assignmentId, lastSaved } = submissionIdentity(s);
+  // The PDF is sealed like everything else on a course with a key, so the field
+  // names `{stem}.pdf.gb2` there. **A payload that names a file the archive does
+  // not contain is the defect** — that is why the handwritten path deletes this
+  // field rather than leaving it pointing at a PDF it does not ship.
+  const pdfFilename = entryName(`${submissionBaseName(assignmentId, lastSaved)}.pdf`);
 
   // **`student_name` is not here, and its absence is the point** (2026-09-03).
   //
@@ -261,13 +282,20 @@ export const buildSubmissionJson = (
   // payload is exactly what it was.
   //
   // Two keys and not one: `encrypted_entries` says *which*, and
-  // `image_encryption` says *what*. An image entry is raw bytes, so unlike the
+  // `image_encryption` says *what*. A sealed entry is raw bytes, so unlike the
   // JSON entry it carries no `gb2:` tag to read the format off — the
   // declaration is the only place a consumer can branch on it.
   //
+  // **`image_encryption` covers every sealed entry, including the electronic
+  // PDF** (supplement 1, 2026-09-03). The name is narrower than the fact and
+  // was kept deliberately: it had already been given to the autograder author,
+  // and renaming a key to improve an adjective is how a consumer breaks for no
+  // gain. `entry_encryption` is the better name if it is ever worth one
+  // coordinated change.
+  //
   // Set here, after the handwritten branch, because it is the one field that
-  // belongs to BOTH paths: an electronic assignment's `p{i}s{j}_image_{n}`
-  // entries are sealed too.
+  // belongs to BOTH paths: an electronic assignment's PDF and its
+  // `p{i}s{j}_image_{n}` entries are sealed too.
   if (images) {
     submissionJson.image_encryption = images.format;
     submissionJson.encrypted_entries = images.entries;
@@ -342,36 +370,43 @@ export interface BuiltPackage {
   /** What was sealed, or null on a course with no key. The same object the payload declares. */
   imageEncryption: ImageEncryption | null;
   /**
-   * Milliseconds spent sealing the images, and the plaintext bytes that went
-   * through it. Reported rather than predicted: "AES-GCM over 9 MB is fast" is
-   * an assumption until a real archive has been through it.
+   * Milliseconds spent sealing, and the plaintext bytes that went through it.
+   * Reported rather than predicted: "AES-GCM over 9 MB is fast" is an
+   * assumption until a real archive has been through it.
    */
-  imageEncryptionMs: number;
-  imagePlainBytes: number;
+  sealMs: number;
+  sealedPlainBytes: number;
 }
 
-/** One image on its way into the archive, before anything is sealed. */
-interface PlainImage {
+/**
+ * One sealable entry on its way into the archive, before anything is sealed:
+ * a page photograph, a crop, an electronic image answer, or the electronic PDF.
+ *
+ * Named for what it is rather than for images — the PDF joined the list in
+ * supplement 1 of the 2026-09-03 work order, on the finding that it renders in
+ * the clear the same typed answers the payload beside it encrypts.
+ */
+interface PlainEntry {
   name: string;
   /** A blob or bytes from the store, or -- for the electronic path -- base64 text. */
   data: Blob | Uint8Array | string;
   base64?: boolean;
 }
 
-interface SealedImage {
+interface SealedEntry {
   name: string;
   bytes: Uint8Array;
 }
 
 /**
- * An image as bytes, whatever the caller had.
+ * An entry as bytes, whatever the caller had.
  *
  * The electronic path holds its answers as base64 in React state and hands them
  * to JSZip to decode; encryption needs the real bytes, so that decode happens
  * here instead. `atob` is a browser global and is also global in Node 18+,
  * which is what the harnesses run on.
  */
-const imageBytes = async (image: PlainImage): Promise<Uint8Array> => {
+const entryBytes = async (image: PlainEntry): Promise<Uint8Array> => {
   const { data } = image;
   if (typeof data === 'string') {
     const binary = atob(data);
@@ -424,20 +459,48 @@ export const buildSubmissionPackage = async (
   //     and the electronic path's `p{i}s{j}_image_{n}` alike. None of them was
   //     ever encrypted.
   //
+  // **Supplement 1, the same day: the electronic PDF is sealed too.** It was
+  // outside the original order's scope and was reported rather than quietly
+  // included; Andre took the decision on that finding. It renders in the clear
+  // the same typed answers the payload beside it encrypts, so leaving it was
+  // the same defect one file along. It is one more entry through the same
+  // function — no new format, no new key, no new decision.
+  //
   // **A course with no key is untouched, byte for byte** — same entry names,
   // same bytes, same payload keys. A course with no key had no protection to
   // weaken, and inventing a weaker scheme for it is not the answer; issuing a
   // key is.
   const courseKey = sources.assignment.coursePublicKey?.trim() || null;
 
-  // 1. Collect every image the archive will carry, in archive order.
+  // The identity, computed once and then pinned. Everything in the archive is
+  // named from it, including the PDF entry that now has to be known before the
+  // payload can list it. `now` is pinned onto the sources so `buildSubmissionJson`
+  // reads the clock zero further times and the filename cannot disagree with
+  // `last_saved` inside the payload.
+  const { assignmentId, lastSaved } = submissionIdentity(sources);
+  const pinned: SubmissionSources = { ...sources, now: lastSaved };
+  const baseName = submissionBaseName(assignmentId, lastSaved);
+
+  // 1. Collect every sealable entry the archive will carry, in archive order.
   //
   // Collected BEFORE the payload is built, which is the reordering this work
   // needed: the payload has to list the sealed entries, and a list built from
   // what the app INTENDED to write would name entries a partial submission does
   // not have. `readBlob` returning null is a real case — see the note on
   // partial submissions below — so the list is built from what was read.
-  const plain: PlainImage[] = [];
+  const plain: PlainEntry[] = [];
+
+  // **The PDF is first, because it is written first**, and the order of this
+  // list is the order of the archive. An ELECTRONIC submission only: a
+  // handwritten one carries no PDF at all (the decision below), so there is
+  // nothing here to seal and nothing changes for it.
+  if (!sources.isHandwritten) {
+    if (!assets.pdfBytes) {
+      throw new Error('An electronic submission needs a PDF, and none was supplied.');
+    }
+    plain.push({ name: `${baseName}.pdf`, data: assets.pdfBytes });
+  }
+
   for (const page of sources.pages) {
     const pageBlob = await assets.readBlob(page.id);
     if (pageBlob) plain.push({ name: page.file, data: pageBlob });
@@ -467,32 +530,31 @@ export const buildSubmissionPackage = async (
 
   // 2. Seal them, if the course has a key.
   const sealStarted = Date.now();
-  let sealed: SealedImage[] | null = null;
+  let sealed: SealedEntry[] | null = null;
   let plainBytes = 0;
   if (courseKey) {
     sealed = [];
-    for (const image of plain) {
-      const bytes = await imageBytes(image);
+    for (const entry of plain) {
+      const bytes = await entryBytes(entry);
       plainBytes += bytes.length;
       sealed.push({
-        name: encryptedEntryName(image.name),
+        name: encryptedEntryName(entry.name),
         bytes: await encryptBytesGb2(bytes, courseKey),
       });
     }
   }
-  const imageEncryptionMs = courseKey ? Date.now() - sealStarted : 0;
+  const sealMs = courseKey ? Date.now() - sealStarted : 0;
   const imageEncryption: ImageEncryption | null =
     sealed ? { format: 'gb2', entries: sealed.map(e => e.name) } : null;
 
-  // 3. The payload, which now knows what was sealed and under what names.
-  const submissionJson = buildSubmissionJson(sources, imageEncryption);
+  // 3. The payload, which now knows what was sealed and under what names. Built
+  // from the pinned sources, so `assignment_id` and `last_saved` in it are the
+  // same two values `baseName` was built from and the archive, the PDF and the
+  // JSON inside it cannot disagree.
+  const submissionJson = buildSubmissionJson(pinned, imageEncryption);
   const encoded = await encodeSubmissionJson(submissionJson, sources.assignment.coursePublicKey);
 
   const zip = new JSZip();
-  // The same stem the payload names itself by, so the archive, the PDF and the
-  // JSON inside it cannot disagree.
-  const baseName = submissionBaseName(
-    submissionJson.assignment_id as string, submissionJson.last_saved as string);
   const entries: string[] = [];
   const add = (
     name: string, data: Blob | Uint8Array | string, options?: JSZip.JSZipFileOptions,
@@ -518,19 +580,10 @@ export const buildSubmissionPackage = async (
   // Removing a thing that can be wrong beats maintaining a second copy of
   // something already kept. The electronic path is untouched.
   //
-  // **The PDF is not sealed**, and that is the 2026-09-03 work order's scope
-  // rather than a finding that it need not be: the order names the page
-  // photographs, the crops and the image answers. On an ELECTRONIC gb2 course
-  // the PDF still carries the student's written answers in the clear, beside a
-  // payload that carries the same answers encrypted. Flagged in the completion
-  // note; it is the same defect one file along.
-  if (!sources.isHandwritten) {
-    if (!assets.pdfBytes) {
-      throw new Error('An electronic submission needs a PDF, and none was supplied.');
-    }
-    add(`${baseName}.pdf`, assets.pdfBytes);
-  }
-
+  // The PDF an electronic submission does carry is collected above with
+  // everything else, and is sealed with everything else on a course with a key
+  // (supplement 1). It is still written here, first, before the pages.
+  //
   // The pages, the crops, then any electronic image answers.
   //
   // Until the handwritten work landed the ZIP builder never referenced the
@@ -551,7 +604,7 @@ export const buildSubmissionPackage = async (
 
   return {
     zip, baseName, format: encoded.format, entries, submissionJson,
-    imageEncryption, imageEncryptionMs, imagePlainBytes: plainBytes,
+    imageEncryption, sealMs, sealedPlainBytes: plainBytes,
   };
 };
 
