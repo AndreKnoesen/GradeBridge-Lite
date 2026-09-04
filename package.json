@@ -13,9 +13,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist --dotfiles",
-    "build:beta": "vite build --base=/GradeBridge-Student-Submission-Beta/",
-    "deploy:beta": "npm run build:beta && gh-pages -d dist --dotfiles -r git@github.com:aknoesen/GradeBridge-Student-Submission-Beta.git"
+    "deploy": "gh-pages -d dist --dotfiles"
   },
   "dependencies": {
     "heic2any": "^0.0.4",
