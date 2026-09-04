@@ -1,0 +1,94 @@
+# =====================================================
+# The suite, run where the person who forgot cannot reach it
+# =====================================================
+# Until 2026-09-03 every check in this repository ran only when somebody typed
+# `npm test`. There was no CI and no hook, so the privacy guards — no personal
+# name, no absolute path, no image metadata, no tracked process record — were
+# enforced by habit.
+#
+# WHAT THIS IS, AND WHAT IT IS NOT
+#
+#   This is the enforcement half. The `pre-push` hook in `.githooks/` is the
+#   other half and it is NOT enforcement: it does not survive a clone, and
+#   `git push --no-verify` skips it. This runs on the server, on every push and
+#   every pull request, and cannot be skipped from a developer's machine.
+#
+#   **It catches a mistake AFTER the push, not before it.** By the time this job
+#   turns red, the commit is on GitHub and, if the repository is public, it has
+#   been fetchable by anyone and may already be indexed. For a name, a path or a
+#   photograph's metadata that is not a near miss — publication has happened and
+#   the fix is a history rewrite plus whatever disclosure that deserves.
+#
+#   So do not read a green tick as proof that nothing was ever published. Read
+#   it as proof that nothing is published *now*. The control that actually
+#   prevents disclosure is upstream of both: not writing the name, the path or
+#   the process record into the repository in the first place.
+#
+# THIS FILE IS CANONICAL for both repositories (supplement 2, item C), and so is
+# its FILENAME: `.github/workflows/tests.yml`, in both. It was `test.yml` here
+# and `guards.yml` there, which is one job under two names in the first place a
+# person looks — the same drift the reconciliation exists to stop.
+#
+# `tests` rather than `guards` because the job runs the whole suite plus `tsc`
+# and the build, not only the disclosure guards, and somebody whose build broke
+# would not think to look in a file called `guards`. The filename matches the
+# `name:` below deliberately, so the tab in the Actions UI and the file on disk
+# agree.
+#
+# The Student Submission copy adopts this and adjusts exactly one thing: it has
+# a tracked lockfile, so its install step is `npm ci` where this one is
+# `npm install`. Any other difference is drift.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+# A second push to the same branch makes the first run's answer stale, and a
+# stale green tick is worse than no tick.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. This job inspects the tree; it has no business writing to it.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guards read `git ls-files`, which needs the working tree and
+          # nothing else, so a shallow fetch is enough. They scan the tree as it
+          # stands, never its history — history is a separate, authorised
+          # question and not this job's business.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # Possible here and not there: see the install step below.
+          cache: npm
+
+      # THE ONE ADOPTED DIFFERENCE, and the canonical file names it: this
+      # repository tracks `package-lock.json`, so `npm ci` runs and the cache
+      # has something to key on. There it is `npm install` with no cache,
+      # because no lockfile is tracked. Any other difference is drift.
+      - run: npm ci
+
+      # tsc, then the full suite: no-personal-names, no-process-records,
+      # spec-matches-code, run-tests, orientation, download, math-delimiter,
+      # figure, ai-feedback, legacy-type, registration, package-encryption and
+      # the capture gate.
+      #
+      # Twenty-five of the forty-one labelled photographs are other people's
+      # coursework and are not in this repository, so `gate-tests.mjs` prints a
+      # SKIP naming each and asserts exact agreement over the sixteen that are
+      # tracked. A green run here therefore covers the sixteen, not the
+      # forty-one — the other twenty-five are covered locally, where the files
+      # are. Verified in that shape before this workflow was written.
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build

@@ -526,6 +526,15 @@ for (const r of report) {
 console.log('');
 console.log(`    synthetic set: QR ${qrOk}/${synthetic.length}, ` +
   `4-of-4 marks ${marks4}/${synthetic.length}, usable ${usable}/${synthetic.length}`);
+// X-1: every assertion over the synthetic set below is `filter(...).length === 0`,
+// which is true of an empty set. If generation ever fails or the folder is
+// emptied, the whole block passes by measuring nothing and green means "did not
+// run". Say so instead.
+check('the synthetic set was generated', () => {
+  assert(synthetic.length > 0,
+    'no synthetic capture was produced — every assertion over the set below ' +
+    'would pass by describing nothing. Run `npm run captures`.');
+});
 console.log(`    real photographs: measured in gate-tests.mjs, through the app's own ingest`);
 console.log('');
 

@@ -74,6 +74,25 @@ tests/captures/synthetic/
 tests/captures/students/
 tests/captures/android/
 # ...and anything a probe renders FROM them.
-tests/captures/_probe/ios1*
-tests/captures/_probe/ios2*
-tests/captures/_probe/android*
+#
+# IGNORE EVERYTHING A PROBE RENDERS, AND NAME THE EXCEPTION INSTEAD.
+#
+# This was a list of per-set prefixes until 2026-09-03. Two things were wrong
+# with that. Renaming the capture sets that day silently stopped ignoring the
+# old names, so the protection went out with the name — and the staging folders
+# outside this repository still use the old names, which makes the sequence that
+# hurts an ordinary one: copy those captures back in, run a probe, `git add -A`,
+# and renders of real student coursework are trackable where a moment ago they
+# were ignored. A prefix list also has to be edited at every rename, and the one
+# rename it was not edited at is the one that mattered.
+#
+# So the default is now to ignore the whole folder and to name what is tracked.
+# That covers the old prefixes, the current ones, and any prefix nobody has
+# thought of yet; it cannot rot at the next rename; and it spells no personal
+# name, which a prefix list necessarily did. Ignore rules do not untrack
+# anything, so the IMG_* renders that are already committed stay committed; the
+# exception below states that rather than leaving it to be inferred.
+#
+# To track a new probe render deliberately: `git add -f`.
+tests/captures/_probe/*
+!tests/captures/_probe/IMG_*.png

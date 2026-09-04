@@ -106,6 +106,22 @@ for (const folder of [...TRACKED, ...UNTRACKED]) {
 console.log(`capture quality gate — ${captures.length} photographs\n`);
 for (const folder of missingFolders) console.log(`  SKIP  ${folder}/ is not checked out`);
 
+// X-1: this suite is a comparison between two sets, and either of them coming
+// back empty makes every assertion below pass by describing nothing. That is
+// not hypothetical here — `edgeBandProbe` next door spent a day comparing twelve
+// names against an empty set and reporting a clean separation, silently, after
+// a rename it did not know about.
+//
+// Both counts are printed on every run and an empty one fails. The SKIP lines
+// above are the same idea applied to a set that is legitimately absent: say what
+// you did not look at, always.
+check('LABELS.csv specifies something', labels.size > 0,
+  'the label file parsed to zero rows — every check below would pass vacuously');
+check('there are photographs to run', captures.length > 0,
+  'no capture was found in any folder — every check below would pass vacuously');
+console.log(`  ${labels.size} labelled row(s), ${captures.length} photograph(s) on disk, ` +
+  `${missingFolders.length} folder(s) not checked out`);
+
 check('every capture on disk is labelled',
   captures.every(c => c.want === 'PASS' || c.want === 'FAIL'),
   captures.filter(c => c.want !== 'PASS' && c.want !== 'FAIL').map(c => c.name).join(', '));

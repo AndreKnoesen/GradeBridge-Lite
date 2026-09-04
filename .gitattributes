@@ -8,8 +8,10 @@
 # already holds, on every platform. Same settings as the Assignment Maker repo.
 * text=auto eol=lf
 
-# Belt and braces for the image and font assets under logos/ and public/, so no
-# future detection change can rewrite one of them a line at a time.
+# Belt and braces for every tracked image and font asset, wherever it sits, so
+# no future detection change can rewrite one of them a line at a time. Stated as
+# a rule about file types rather than about particular directories: a comment
+# naming a folder outlives the folder, and this one already has.
 *.png binary
 *.jpg binary
 *.jpeg binary

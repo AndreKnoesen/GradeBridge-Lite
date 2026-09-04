@@ -1,13 +1,15 @@
 // =====================================================
 // Nothing tracked points at a person or a machine
 // =====================================================
-// Three scans over every tracked file, one process, one exit code:
+// Four scans over every tracked file, one process, one exit code:
 //
 //   1. no absolute path — no drive letter, no user-home or home-directory
 //      path segment, no such directory named as a quoted path component
 //   2. no metadata in a tracked image — no EXIF beyond an orientation flag in a
 //      JPEG, no text or provenance chunk in a PNG
 //   3. no personal name, as a whole token, against a hashed list
+//   4. no product name — a separate hashed list, checked in paths as well as
+//      contents, because what triggered that rule was a filename
 //
 // The rule behind check 3, why it exists, and why the list is hashed rather
 // than written out are all in `tests/forbiddenNames.mjs` — as is the honest
@@ -34,24 +36,36 @@
 // and student ID line was ordered removed on 2026-08-15 and survived on two
 // export paths for three weeks, because the guard was scoped to one file. This
 // one is scoped to every tracked file.
+//
+// THE ASSIGNMENT MAKER IS CANONICAL for this file (supplement 3). Checks 1 and
+// 2 were written here first, because this is where the photographs and the
+// absolute paths were; that version went there, gained the extension-based text
+// decision, the report-once fix, check 4 and the in-memory fixtures, and came
+// back. **Change both or neither**, and change the canonical copy first.
+//
+// Only four things below are deliberately repository-specific and each says so
+// where it sits: the two exclusion lists, and the two places the prose states a
+// fact about which tree it is in.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORBIDDEN_NAME_HASHES, hashName, normaliseName } from './forbiddenNames.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Paths where a match is a known false positive, with the evidence.
+ * Paths where a check-3 match is a known false positive, with the evidence.
  *
- * **Excluded by path, never by deleting the fixture.** This capture is one of
- * the eleven photographs the whole detector is calibrated against.
+ * **Excluded by path, never by deleting the fixture.** Any entry here must say
+ * where the bytes are and why they cannot be a name — never which name
+ * collided, because that would put back the mapping this guard exists to keep
+ * out.
  *
- * The entry says nothing about which name collided, because that would put back
- * the mapping this guard exists to keep out. What it says is where the bytes
- * are and why they cannot be a name: a four-letter run inside the compressed
- * scan data of a JPEG, far past the end of its metadata.
+ * **One entry here, and the Assignment Maker's copy has none** — its map is
+ * empty and its comment says so. The difference is the evidence: this tree
+ * carries 25 MB of compressed photograph, which is where a chance letter run
+ * long enough to hash to a short entry actually comes from.
  */
 const EXCUSED = new Map([
   ['tests/captures/real/cap02.jpg',
@@ -62,6 +76,7 @@ const EXCUSED = new Map([
 
 let failed = 0;
 const fail = (msg) => { console.error(`  FAIL  ${msg}`); failed++; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: REPO, maxBuffer: 64 << 20 })
   .toString('utf8').split('\0').filter(Boolean);
@@ -74,11 +89,35 @@ for (const path of tracked) {
 console.log(`\nno local traces — ${tracked.length} tracked files\n`);
 
 // =====================================================
+// X-1: a check that scanned nothing must say so
+// =====================================================
+// Three findings in one week had this shape: one NUL byte hid 143 KB of source
+// from check 1; a probe next door compared twelve names against an empty set;
+// check 2 scanned nothing in a repository with no images. All three were GREEN.
+//
+// **Green and correct look identical from outside, and that is the defect.**
+//
+// So every set this file compares against is counted out loud on every run, and
+// an empty one fails rather than passing vacuously. A guard is allowed to find
+// nothing. It is not allowed to be silent about having looked at nothing.
+if (tracked.length === 0) {
+  fail('git ls-files returned nothing — every check below would pass by ' +
+    'scanning an empty tree');
+}
+if (contents.size !== tracked.length) {
+  console.log(`  note  ${tracked.length - contents.size} tracked file(s) could not be ` +
+    `read and were not scanned`);
+}
+
+// =====================================================
 // 1. No absolute path
 // =====================================================
 // A path into somebody's machine publishes a username, and often a surname as a
-// folder and the shape of their Documents tree. Three of these lived as
-// harmless-looking `??` defaults on test harnesses until 2026-09-03.
+// folder and the shape of their home directory tree. **This is the repository
+// that had them:** three lived as harmless-looking `??` defaults on the test
+// harnesses here until 2026-09-03, one written as a drive letter and two as
+// quoted path components. The Assignment Maker had none, and added the check
+// anyway — it was true there, and nothing was holding it true.
 //
 // Three shapes are matched:
 //
@@ -116,26 +155,73 @@ const PATH_PATTERNS = [
 /**
  * `path:line` -> why the match there is not an absolute path.
  *
- * Empty in this repository. The Assignment Maker's copy carries one entry, for
- * a Windows temp path inside its LaTeX-escaping fixture: a string under test,
- * not a path anything opens.
+ * **Empty here. The Assignment Maker's copy carries two**, both the same string
+ * twice: a Windows temp path inside its LaTeX-escaping fixture and the
+ * assertion that checks it survives the escape. That fixture has no counterpart
+ * in this repository, so there is nothing to excuse.
+ *
+ * The mechanism is kept rather than deleted, because the next false positive
+ * here is excused the same way: by exact file and line, with a reason, and NOT
+ * by loosening a pattern. A pattern relaxed to admit one legitimate string
+ * admits every real absolute path shaped like it.
+ *
+ * A reason written here must describe the offending string rather than quote
+ * it, for the same reason the patterns above are assembled from fragments: this
+ * file must not contain what it forbids.
  */
 const EXCUSED_LINES = new Map();
 
 /**
- * Text, for the purposes of check 1.
+ * Text, for the purposes of checks 1 and 3 — decided by EXTENSION, not content.
  *
- * A NUL byte anywhere is git's own test and it is the right one here: a
- * photograph's compressed scan data will sooner or later contain a home-
- * directory segment by chance, and failing on that would teach the next person
- * to disable this check rather than read it.
+ * **It was the NUL-byte test until 2026-09-03, and that was a silent hole.**
+ * A single NUL is git's own definition of binary, and one raw NUL written
+ * inside a regex in `tests/templateTests.mjs` took 143 KB of test source out of
+ * check 1 completely, and dropped it to the weaker floor in check 3. Nothing was
+ * printed. A mutation planting an absolute path in that file passed, and it was
+ * not a bad mutation.
+ *
+ * The reason for the NUL test was sound — a photograph's compressed scan will
+ * eventually contain a home-directory segment by chance, and a check that fires
+ * on that gets switched off. But the property wanted is "this file is a
+ * photograph", and the extension says so directly, where content only implies
+ * it.
+ *
+ * **The list is of BINARY types, not textual ones, so the default is to scan.**
+ * A source or data extension nobody thought of is read as text and checked;
+ * under the opposite arrangement it would be skipped in silence, which is the
+ * failure being fixed.
+ *
+ * Nothing is skipped quietly either way: every file treated as binary, and every
+ * text file carrying a NUL, is named in the output below.
  */
-const isText = (buf) => !buf.includes(0);
+const BINARY_EXTENSIONS = new Set([
+  // images
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'tif', 'tiff', 'avif', 'heic', 'heif',
+  // fonts
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  // documents and archives
+  'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'jar',
+  // media
+  'mp3', 'mp4', 'm4a', 'mov', 'avi', 'webm', 'wav', 'ogg',
+  // compiled and binary data
+  'wasm', 'exe', 'dll', 'so', 'dylib', 'class', 'pyc', 'bin', 'db', 'sqlite', 'sqlite3',
+]);
+
+const extensionOf = (path) => {
+  const name = basename(path);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+};
+
+const isText = (path) => !BINARY_EXTENSIONS.has(extensionOf(path));
 
 {
   let scanned = 0;
+  const skipped = [], withNul = [];
   for (const [path, buf] of contents) {
-    if (!isText(buf)) continue;
+    if (!isText(path)) { skipped.push(path); continue; }
+    if (buf.includes(0)) withNul.push(path);
     scanned++;
     const lines = buf.toString('utf8').split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
@@ -148,7 +234,34 @@ const isText = (buf) => !buf.includes(0);
       }
     }
   }
-  console.log(`  1. no absolute path — ${scanned} text files`);
+  if (scanned === 0) {
+    fail('check 1 scanned no text files at all — every file was classified binary, ' +
+      'which cannot be right and would make this check pass by doing nothing');
+  }
+  console.log(`  1. no absolute path — ${scanned} text files, ` +
+    `${PATH_PATTERNS.length} patterns, ${EXCUSED_LINES.size} excused line(s)`);
+  // Never silently. A file this check did not read is reported, so a guard that
+  // has gone quiet says so instead of passing. Grouped by extension and capped,
+  // because on a repository that tracks photographs this would otherwise be
+  // twenty lines of noise on every green run, and noise is how a reader learns
+  // to skip the output that matters.
+  if (skipped.length > 0) {
+    const byExt = new Map();
+    for (const path of skipped) {
+      const ext = extensionOf(path) || '(none)';
+      byExt.set(ext, (byExt.get(ext) || 0) + 1);
+    }
+    const summary = [...byExt.entries()].sort().map(([ext, n]) => `.${ext} ×${n}`).join(', ');
+    console.log(`  note  ${skipped.length} file(s) not scanned as text — ${summary}`);
+    for (const path of skipped.slice(0, 8)) console.log(`          ${path}`);
+    if (skipped.length > 8) console.log(`          …and ${skipped.length - 8} more`);
+  }
+  // Scanned anyway, but a NUL in something claiming to be source is worth
+  // seeing: it is what made this check silent before 2026-09-03.
+  for (const path of withNul) {
+    console.log(`  note  ${path} contains a NUL byte and was scanned as text anyway ` +
+      `— write it as an escape (see tests/templateTests.mjs)`);
+  }
 }
 
 // An exemption for a line that has moved protects nothing and hides the next
@@ -164,11 +277,16 @@ for (const at of EXCUSED_LINES.keys()) {
 // =====================================================
 // 2. No metadata in a tracked image
 // =====================================================
-// Sixteen tracked photographs carried an intact EXIF block naming the camera
-// make and model, the operating system version and the capture time to the
-// second, plus a 1.5 KB MakerNote and an embedded thumbnail. A tracked logo
-// carried an XMP packet and a C2PA provenance manifest. None of that is pixel
-// data and none of it belongs in a public repository.
+// **This repository is where the photographs are.** Sixteen tracked ones carried
+// an intact EXIF block naming the camera make and model, the operating system
+// version and the capture time to the second, plus a 1.5 KB MakerNote and an
+// embedded thumbnail; a tracked logo carried an XMP packet and a 16 KB C2PA
+// provenance manifest. None of that is pixel data and none of it belongs in a
+// public repository. The logo is now deleted in both trees under check 4; the
+// photographs are stripped and stay, because they are the evidence.
+//
+// The Assignment Maker tracks no image at all, which is why the self-check
+// below exists: there, this scan would otherwise pass by running over nothing.
 //
 // **This is structural and needs no name list**, which is what makes it worth
 // more than check 3.
@@ -249,41 +367,180 @@ const pngChunks = (buf) => {
   return out;
 };
 
+/**
+ * Every reason one image is unacceptable, as strings. Empty means clean.
+ *
+ * Lifted out of the scan loop so it can be run against fixtures rather than only
+ * against whatever the tree happens to contain — see the self-check below.
+ */
+const imageFindings = (path, buf) => {
+  const out = [];
+  if (/\.jpe?g$/i.test(path)) {
+    const segs = jpegSegments(buf);
+    if (!segs) return [`${path} does not parse as a JPEG`];
+    for (const seg of segs) {
+      const isApp = seg.marker >= 0xe0 && seg.marker <= 0xef;
+      if (!isApp && seg.marker !== 0xfe) continue;
+      const isExif = seg.marker === 0xe1 &&
+        buf.subarray(seg.payloadStart, seg.payloadStart + 6).toString('latin1') === 'Exif\0\0';
+      if (isExif && isOrientationOnlyExif(buf, seg)) continue;
+      out.push(`${path} carries a ${APP_NAME(seg.marker)} segment of ${seg.size} bytes` +
+        `${isExif ? ' (Exif, beyond an orientation flag)' : ''} — strip it without ` +
+        `re-encoding the image, so the entropy-coded scan stays byte-identical`);
+    }
+  } else if (/\.png$/i.test(path)) {
+    const chunks = pngChunks(buf);
+    if (!chunks) return [`${path} does not parse as a PNG`];
+    for (const c of chunks) {
+      if (PNG_KEEP.has(c.type)) continue;
+      out.push(`${path} carries a ${c.type} chunk of ${c.len} bytes — strip it; ` +
+        `only pixel and rendering chunks belong in a tracked image`);
+    }
+  }
+  return out;
+};
+
+const isImagePath = (path) => /\.(jpe?g|png)$/i.test(path);
+
 {
   let scanned = 0;
   for (const [path, buf] of contents) {
-    if (/\.jpe?g$/i.test(path)) {
-      scanned++;
-      const segs = jpegSegments(buf);
-      if (!segs) { fail(`${path} does not parse as a JPEG`); continue; }
-      for (const seg of segs) {
-        const isApp = seg.marker >= 0xe0 && seg.marker <= 0xef;
-        if (!isApp && seg.marker !== 0xfe) continue;
-        const isExif = seg.marker === 0xe1 &&
-          buf.subarray(seg.payloadStart, seg.payloadStart + 6).toString('latin1') === 'Exif\0\0';
-        if (isExif && isOrientationOnlyExif(buf, seg)) continue;
-        fail(`${path} carries a ${APP_NAME(seg.marker)} segment of ${seg.size} bytes` +
-          `${isExif ? ' (Exif, beyond an orientation flag)' : ''} — strip it without ` +
-          `re-encoding the image, so the entropy-coded scan stays byte-identical`);
-      }
-    } else if (/\.png$/i.test(path)) {
-      scanned++;
-      const chunks = pngChunks(buf);
-      if (!chunks) { fail(`${path} does not parse as a PNG`); continue; }
-      for (const c of chunks) {
-        if (PNG_KEEP.has(c.type)) continue;
-        fail(`${path} carries a ${c.type} chunk of ${c.len} bytes — strip it; ` +
-          `only pixel and rendering chunks belong in a tracked image`);
-      }
+    if (!isImagePath(path)) continue;
+    scanned++;
+    for (const finding of imageFindings(path, buf)) fail(finding);
+  }
+  // X-1: a check that scanned nothing has to say so. This one scans zero images
+  // in a repository that tracks none, and green then means "not run", which from
+  // outside is indistinguishable from "passed".
+  console.log(scanned === 0
+    ? '  2. no metadata in a tracked image — NO TRACKED IMAGE; the scan ran over ' +
+      'nothing (the self-check below is what exercises it)'
+    : `  2. no metadata in a tracked image — ${scanned} images`);
+}
+
+// ---- check 2 exercises itself, on fixtures built here and tracked nowhere ----
+// Check 2 used to be proven only by the tree containing a dirty image. Both
+// repositories have now cleaned theirs, and this one tracks no image at all, so
+// the check went green by scanning nothing and a break in either parser would
+// have surfaced whenever somebody next added a photograph.
+//
+// The fixtures are a few dozen bytes each and are built in memory: nothing is
+// tracked, so nothing here can itself become a finding for check 1 or 3.
+//
+// **The Orientation pair is the point of the exercise.** That exemption is the
+// one deviation the strip work took, and an exception nobody probes is a hole
+// with a comment over it. One tag wider must be refused.
+{
+  const be16 = (n) => Buffer.from([n >> 8 & 0xff, n & 0xff]);
+  const be32 = (n) => Buffer.from([n >>> 24 & 0xff, n >>> 16 & 0xff, n >>> 8 & 0xff, n & 0xff]);
+
+  const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  // The CRC is never read by pngChunks, so a placeholder keeps the fixture
+  // honest about its shape without pulling in a CRC implementation.
+  const pngChunk = (type, data = Buffer.alloc(0)) => Buffer.concat([
+    be32(data.length), Buffer.from(type, 'latin1'), data, be32(0),
+  ]);
+  const png = (...extra) => Buffer.concat([
+    PNG_SIG,
+    pngChunk('IHDR', Buffer.alloc(13)),
+    ...extra,
+    pngChunk('IDAT', Buffer.alloc(8)),
+    pngChunk('IEND'),
+  ]);
+
+  // An Exif APP1: 'Exif\0\0', a big-endian TIFF header, then `entries` IFD0
+  // entries and a nul next-IFD pointer. One entry is the shape the exception
+  // admits; two is one tag wider.
+  const exifApp1 = (entries) => {
+    const tags = [];
+    for (let i = 0; i < entries; i++) {
+      tags.push(Buffer.concat([
+        be16(i === 0 ? 0x0112 : 0x0132),  // Orientation, then DateTime
+        be16(3), be32(1), be32(6 << 16),
+      ]));
+    }
+    const tiff = Buffer.concat([
+      Buffer.from('MM', 'latin1'), be16(0x002a), be32(8),
+      be16(entries), ...tags, be32(0),
+    ]);
+    const payload = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+    return Buffer.concat([Buffer.from([0xff, 0xe1]), be16(payload.length + 2), payload]);
+  };
+
+  // A one-entry Exif with junk after the IFD. Size 34 is what the exception
+  // pins, and the entry count alone does not catch this: mutating `size !== 34`
+  // to `size >= 34` left every other fixture still refused, because they widen
+  // the IFD. This is the shape that slips through when only the size is relaxed,
+  // and it is here because that mutation survived without it.
+  const exifApp1WithTrailer = (trailer) => {
+    const base = exifApp1(1);
+    const payload = Buffer.concat([base.subarray(4), Buffer.alloc(trailer)]);
+    return Buffer.concat([Buffer.from([0xff, 0xe1]), be16(payload.length + 2), payload]);
+  };
+
+  const jpeg = (...segments) => Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    ...segments,
+    Buffer.from([0xff, 0xdb]), be16(4), Buffer.alloc(2),   // a DQT, so it is not all APPn
+    Buffer.from([0xff, 0xda]), be16(4), Buffer.alloc(2),   // SOS ends the segment walk
+    Buffer.from([0xff, 0xd9]),
+  ]);
+  const comSegment = Buffer.concat([Buffer.from([0xff, 0xfe]), be16(6), Buffer.alloc(4)]);
+
+  const CASES = [
+    ['a clean PNG', 'fixture.png', png(), false],
+    ['a PNG carrying tEXt', 'fixture.png', png(pngChunk('tEXt', Buffer.from('a\0b'))), true],
+    ['a PNG carrying iTXt', 'fixture.png', png(pngChunk('iTXt', Buffer.from('a\0b'))), true],
+    ['a PNG carrying a C2PA caBX', 'fixture.png', png(pngChunk('caBX', Buffer.alloc(16))), true],
+    ['a clean JPEG', 'fixture.jpg', jpeg(), false],
+    ['a JPEG with an orientation-only Exif', 'fixture.jpg', jpeg(exifApp1(1)), false],
+    ['a JPEG with an Exif one tag wider', 'fixture.jpg', jpeg(exifApp1(2)), true],
+    ['a JPEG with a one-entry Exif and trailing bytes', 'fixture.jpg',
+     jpeg(exifApp1WithTrailer(12)), true],
+    ['a JPEG carrying a COM comment', 'fixture.jpg', jpeg(comSegment), true],
+  ];
+
+  let ran = 0;
+  for (const [what, name, buf, shouldFail] of CASES) {
+    ran++;
+    const findings = imageFindings(name, buf);
+    if (shouldFail && findings.length === 0) {
+      fail(`check 2 accepted ${what} — its parser is not seeing what it is meant to see`);
+    }
+    if (!shouldFail && findings.length > 0) {
+      fail(`check 2 rejected ${what}: ${findings.join('; ')}`);
     }
   }
-  console.log(`  2. no metadata in a tracked image — ${scanned} images`);
+  // The exemption's boundary, asserted as a pair rather than two separate cases,
+  // because what matters is that they differ.
+  const narrow = imageFindings('fixture.jpg', jpeg(exifApp1(1)));
+  const wider = imageFindings('fixture.jpg', jpeg(exifApp1(2)));
+  if (!(narrow.length === 0 && wider.length > 0)) {
+    fail('the orientation-only Exif exception no longer distinguishes one tag from two — ' +
+      `narrow: ${narrow.length} finding(s), wider: ${wider.length}`);
+  }
+  // The exception is pinned on the SIZE as well as the entry count, and both
+  // halves need their own case: relaxing the size alone leaves every
+  // wider-IFD fixture still refused, so without this the mutation is invisible.
+  const padded = imageFindings('fixture.jpg', jpeg(exifApp1WithTrailer(12)));
+  if (padded.length === 0) {
+    fail('a one-entry Exif with trailing bytes was accepted — the exception is ' +
+      'pinned on the entry count but no longer on the 34-byte size');
+  }
+  if (ran !== CASES.length) fail(`check 2 self-check ran ${ran} of ${CASES.length} fixtures`);
+  console.log(`     self-check — ${ran} in-memory fixtures, ` +
+    `${CASES.filter((c) => c[3]).length} of them dirty, including both sides of the ` +
+    `orientation exception`);
 }
 
 // =====================================================
 // 3. No personal name
 // =====================================================
-console.log(`  3. no personal names`);
+if (FORBIDDEN_NAME_HASHES.size === 0) {
+  fail('the forbidden-name list is empty — check 3 would compare every token ' +
+    'against nothing and report clean');
+}
+console.log(`  3. no personal names — ${plural(FORBIDDEN_NAME_HASHES.size, 'hashed entry', 'hashed entries')}`);
 
 /**
  * Every letter run whose NORMALISED form is at least `min` characters.
@@ -337,11 +594,50 @@ const tokensOf = (text, min) => {
  */
 const READINGS = ['utf8', 'latin1'];
 
+/**
+ * Up to three PLACES, deduplicated — not up to three places per token.
+ *
+ * Two things each used to multiply one finding into several, and both are the
+ * same mistake: reporting per cause rather than per location.
+ *
+ *   Both decodings are searched, because a token found in one may not appear
+ *   literally in the other — but for a text file utf8 and latin1 are the same
+ *   string, so everything was printed twice.
+ *
+ *   And several distinct tokens can hash to one forbidden entry: a name, the
+ *   same name accented, the same name upper-cased. One line carrying all three
+ *   was printed three times.
+ *
+ * **A guard that turns one finding into three teaches whoever reads its output
+ * to discount it**, which is the opposite of what a guard is for. So every
+ * matching token is searched for at once and the results are keyed on the line
+ * number alone.
+ */
+const locate = (decodings, tokens) => {
+  const re = new RegExp([...tokens].join('|'), 'i');
+  const seen = new Map();
+  for (const decoded of decodings) {
+    const lines = decoded.split(/\r?\n/);
+    for (let n = 0; n < lines.length; n++) {
+      if (!re.test(lines[n])) continue;
+      // Keyed on the LINE NUMBER alone. Keying on the text as well looks
+      // safer and is not: the two decodings render an accented line
+      // differently, so the same line of the same file came back as two
+      // findings — which is the whole defect this is fixing, one level down.
+      if (!seen.has(n)) seen.set(n, { line: lines[n], n });
+      if (seen.size >= 3) return [...seen.values()];
+    }
+  }
+  return [...seen.values()];
+};
+
+const show = (line) => (line.length > 140 ? `${line.slice(0, 140)}…` : line).trim();
+
 let scanned = 0, excusedHits = 0;
 for (const [path, buf] of contents) {
   scanned++;
 
-  const min = isText(buf) ? 3 : 4;
+  const min = isText(path) ? 3 : 4;
   const hits = new Set();
   const decodings = [];
   for (const encoding of READINGS) {
@@ -354,24 +650,92 @@ for (const [path, buf] of contents) {
   if (hits.size === 0) continue;
   if (EXCUSED.has(path)) { excusedHits += hits.size; continue; }
 
-  // Locate each hit so the failure names a line, not just a file. Both
-  // decodings are searched: a token found in one may not appear literally
-  // in the other.
-  for (const token of hits) {
-    const re = new RegExp(token, "i");
-    const at = decodings
-      .flatMap((d) => d.split(/\r?\n/).map((line, n) => ({ line, n })))
-      .filter(({ line }) => re.test(line))
-      .slice(0, 3);
-    if (at.length === 0) {
-      fail(`a forbidden name appears in ${path} (not on any line — binary?)`);
-      continue;
+  const at = locate(decodings, hits);
+  if (at.length === 0) {
+    fail(`a forbidden name appears in ${path} (not on any line — binary?)`);
+  }
+  for (const { line, n } of at) {
+    fail(`a forbidden name in ${path}:${n + 1}\n          ${show(line)}`);
+  }
+}
+
+// =====================================================
+// 4. No product name
+// =====================================================
+// A SEPARATE LIST FROM THE NAMES, DELIBERATELY.
+//
+//   `forbiddenNames.mjs` is about people, and its whole justification — that
+//   nobody consents to being published by working on a project — does not apply
+//   to a brand. Mixing them would make one list mean two things and invite the
+//   next person to reason about a name using an argument that was written for a
+//   product. Same mechanism, same hash function, different list and different
+//   reason.
+//
+// WHY IT IS HASHED ANYWAY
+//
+//   Not privacy. The instruction is that neither repository contains anything
+//   about the former product name, and a guard that spells it out in order to
+//   forbid it is a repository that contains it. Same trap as a path scanner
+//   holding a path, and the same answer.
+//
+// WHY PATHS AS WELL AS CONTENTS
+//
+//   Check 3 reads file contents. What triggered this rule was a FILENAME — a
+//   tracked logo, referenced by nothing, whose name was the only thing about it
+//   that mattered. A content-only scan would have passed it every time.
+//
+//   The file is deleted. Its metadata was stripped first, under an order that
+//   assumed it had to stay; that work was not wasted, since the strip is what
+//   established the manifest named no person. But the file itself is gone, and
+//   this is what stops it or its name coming back.
+//
+// The name is in past commit messages and in blob history. That is a rewrite,
+// it is Andre's decision, and it is explicitly not this guard's business.
+const FORBIDDEN_PRODUCT_HASHES = new Set([
+  '1c653d25d68fb2ad',
+]);
+
+{
+  let hitFiles = 0;
+  for (const [path, buf] of contents) {
+    const min = isText(path) ? 3 : 4;
+
+    // The path first, because that is the shape this rule was written for.
+    for (const token of tokensOf(path, min)) {
+      if (!FORBIDDEN_PRODUCT_HASHES.has(hashName(token))) continue;
+      fail(`a forbidden product name in the PATH ${path} — the filename is the ` +
+        `reference; renaming it is not enough if the file is not needed`);
+      hitFiles++;
+      break;
     }
-    for (const { line, n } of at) {
-      const shown = line.length > 140 ? `${line.slice(0, 140)}…` : line;
-      fail(`a forbidden name in ${path}:${n + 1}\n          ${shown.trim()}`);
+
+    const decodings = READINGS.map((encoding) => buf.toString(encoding));
+    const hits = new Set();
+    for (const decoded of decodings) {
+      for (const token of tokensOf(decoded, min)) {
+        if (FORBIDDEN_PRODUCT_HASHES.has(hashName(token))) hits.add(token);
+      }
+    }
+    if (hits.size === 0) continue;
+    hitFiles++;
+    for (const token of hits) {
+      const at = locate(decodings, token);
+      if (at.length === 0) {
+        fail(`a forbidden product name appears in ${path} (not on any line — binary?)`);
+        continue;
+      }
+      for (const { line, n } of at) {
+        fail(`a forbidden product name in ${path}:${n + 1}
+          ${show(line)}`);
+      }
     }
   }
+  if (FORBIDDEN_PRODUCT_HASHES.size === 0) {
+    fail('the forbidden-product list is empty — check 4 would compare every token ' +
+      'against nothing and report clean');
+  }
+  console.log(`  4. no product names — ${plural(FORBIDDEN_PRODUCT_HASHES.size, 'hashed entry', 'hashed entries')}` +
+    `${hitFiles ? `, ${hitFiles} file(s) with findings` : ''}`);
 }
 
 // An exemption for a file that has gone protects nothing and hides the next
