@@ -1,0 +1,57 @@
+#!/bin/sh
+# =====================================================
+# Fast local feedback before a push. NOT enforcement.
+# =====================================================
+# This is the half of the 2026-09-03 guard that runs on your machine, and it is
+# worth being exact about how little it guarantees:
+#
+#   * It does not survive a clone. Hooks are not tracked content — this file is
+#     tracked, but git will not run it until somebody points git at it:
+#
+#         git config core.hooksPath .githooks
+#
+#     A fresh clone runs no hook at all until that line is typed. That single
+#     manual step is the reason this cannot be the enforcement.
+#
+#   * `git push --no-verify` skips it, silently and by design.
+#
+# The enforcement is `.github/workflows/tests.yml`, which runs on the server
+# where the person who forgot cannot reach it. This exists so you find out in
+# the seconds before a push rather than the minutes after one — which for a
+# personal name, an absolute path or a photograph's metadata is the difference
+# between a local fix and a history rewrite.
+#
+# To skip it deliberately, use --no-verify and know that CI will still see it.
+#
+# HOW MUCH IT RUNS, AND THE RULE FOR CHANGING THAT
+#
+#   **The governing constraint is the clock, not the coverage**: a hook slow
+#   enough to be resented is a hook that gets `--no-verify`d out of habit, and
+#   then it protects nothing at all.
+#
+#   So the rule is — run everything while everything is fast; when it stops
+#   being fast, drop to the disclosure guards alone (`no-personal-names.mjs` and
+#   `no-process-records.mjs`), because those are the ones whose findings a push
+#   makes irreversible. Everything else CI will redo anyway.
+#
+# THE ASSIGNMENT MAKER IS CANONICAL for this file (supplement 2, item C). This
+# copy adopts it and differs in exactly one place — the commands below — by
+# APPLYING the rule above rather than departing from it.
+#
+#   Measured on this repository, 2026-09-03: the two guards take **6.6 s**; the
+#   full `npm test` takes **106 s**, because this suite drives registration and
+#   the capture gate over 41 photographs. There the whole suite is seventeen
+#   seconds and running all of it is the same rule's answer.
+#
+#   Re-measure before changing this. If the guards ever approach the minute, cut
+#   further; if the suite ever drops under about twenty seconds, run all of it.
+
+set -e
+
+printf '\n[pre-push] no-personal-names\n'
+node tests/no-personal-names.mjs
+
+printf '\n[pre-push] no-process-records\n'
+node tests/no-process-records.mjs
+
+printf '\n[pre-push] ok — CI runs tsc, the full suite and the build\n'

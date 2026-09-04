@@ -97,27 +97,41 @@ We love hearing ideas for improving the student experience! Before suggesting a 
    npm install
    ```
 
-3. **Create a branch**
+3. **Install the pre-push hook**
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+
+   This repository is public, and the expensive mistakes are the ones a push
+   makes irreversible: a path into your own machine, somebody's name, an
+   untouched EXIF block. The hook runs those guards before the push so you find
+   them while they are still cheap to fix. It takes a few seconds.
+
+   It is a convenience, not enforcement — `git push --no-verify` skips it and a
+   fresh clone does not have it. **CI is the enforcement**, and CI runs after
+   the push. See `.githooks/pre-push` and `.github/workflows/guards.yml`.
+
+4. **Create a branch**
    ```bash
    git checkout -b feature/your-feature-name
    # or
    git checkout -b fix/bug-description
    ```
 
-4. **Make your changes**
+5. **Make your changes**
    - Write clean, readable code
    - Follow existing code patterns
    - Add comments for complex logic
    - Update documentation if needed
 
-5. **Test your changes**
+6. **Test your changes**
    ```bash
    npm run dev      # Test in development mode
    npm run build    # Ensure it builds
    npm run preview  # Test the production build
    ```
 
-6. **Commit your changes**
+7. **Commit your changes**
    ```bash
    git add .
    git commit -m "Brief description of changes"
@@ -128,7 +142,7 @@ We love hearing ideas for improving the student experience! Before suggesting a 
    - `Fix: PDF generation with large images`
    - `Update: README installation instructions`
 
-7. **Push and create a Pull Request**
+8. **Push and create a Pull Request**
    ```bash
    git push origin feature/your-feature-name
    ```

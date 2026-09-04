@@ -15,9 +15,10 @@
 // Neither separates the populations, and they disagree about which crops are
 // extreme, so no `edge-contact` flag was built. See tests/captures/README.md.
 //
-//   node tests/edgeBandProbe.mjs [bandMm] [radiusMm] [offset]
+//   OCR_TRIAGE=<folder> node tests/edgeBandProbe.mjs [bandMm] [radiusMm] [offset]
 //
-// Needs GradeBridge2026/CaptureSet/ocr_triage, which is not in this repository.
+// OCR_TRIAGE points at the folder holding the triage crops and their
+// INDEX.json. They are not in this repository.
 import { webcrypto } from 'node:crypto';
 globalThis.crypto ??= webcrypto;
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -25,11 +26,13 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { loadModule } from './captureSet.mjs';
 
-const DIR = process.env.OCR_TRIAGE
-  ?? 'C:/Users/aknoesen/Documents/BridgeSuite/GradeBridge2026/CaptureSet/ocr_triage';
-if (!existsSync(join(DIR, 'INDEX.json'))) {
-  console.log(`SKIP: the OCR triage crops are not checked out at ${DIR}`);
-  console.log('Set OCR_TRIAGE to their folder to run this.');
+// OCR_TRIAGE is the only way to point this at the crops. There is deliberately
+// no default: a fallback path is a path into one person's machine, and this
+// repository is public.
+const DIR = process.env.OCR_TRIAGE;
+if (!DIR || !existsSync(join(DIR, 'INDEX.json'))) {
+  console.log('SKIP: set OCR_TRIAGE to the folder holding the OCR triage crops ' +
+    '(the one with INDEX.json in it) to run this.');
   process.exit(0);
 }
 
@@ -86,6 +89,26 @@ for (const file of readdirSync(join(DIR, 'crops')).filter(f => f.endsWith('.png'
     name: file.replace('.png', ''), truncated: TRUNCATED.has(file), pxPerMm: meta.pxPerMm,
     global: edges(globalMask), local: edges(localMask),
   });
+}
+
+// The whole comparison below is `truncated` against the rest, so a TRUNCATED
+// entry that matches no crop on disk silently empties one side of it and the
+// probe reports a separation between a population and nothing. That is exactly
+// what a rename does: these names were changed on 2026-09-03 and the crop files,
+// which live outside this repository, may still carry the old ones. Say so
+// rather than printing a confident table drawn from an empty set.
+{
+  const seen = new Set(rows.map(r => `${r.name}.png`));
+  const missing = [...TRUNCATED].filter(f => !seen.has(f));
+  if (missing.length) {
+    console.error(`\nSTOPPED: ${missing.length} of ${TRUNCATED.size} truncated crops ` +
+      `are not in ${DIR}:`);
+    for (const f of missing) console.error(`  ${f}`);
+    console.error('\nThese names were changed in this repository on 2026-09-03 and the ' +
+      'folder OCR_TRIAGE\npoints at was not. Rename the files there to match, or point ' +
+      'OCR_TRIAGE at a\nfolder that already does.\n');
+    process.exit(1);
+  }
 }
 
 const pc = (v) => (100 * v).toFixed(2).padStart(6);

@@ -85,10 +85,10 @@ const labels = new Map();
 // ---------- the captures ----------
 //
 // All four folders. `real/` and `stale/` are the original sixteen and are
-// tracked; `android/` (a colleague's Android captures) and `students/` (two
-// iPhones, real student work) are not, so they may be absent on a given
-// machine. The
-// suite says so rather than counting an absent photograph as agreement.
+// tracked; `android/` (thirteen captures from an Android phone) and `students/`
+// (two iPhones, real student work) are not, so they may be absent on a given
+// machine. The suite says so rather than counting an absent photograph as
+// agreement.
 const TRACKED = ['real', 'stale'];
 const UNTRACKED = ['android', 'students'];
 
@@ -105,6 +105,22 @@ for (const folder of [...TRACKED, ...UNTRACKED]) {
 
 console.log(`capture quality gate — ${captures.length} photographs\n`);
 for (const folder of missingFolders) console.log(`  SKIP  ${folder}/ is not checked out`);
+
+// X-1: this suite is a comparison between two sets, and either of them coming
+// back empty makes every assertion below pass by describing nothing. That is
+// not hypothetical here — `edgeBandProbe` next door spent a day comparing twelve
+// names against an empty set and reporting a clean separation, silently, after
+// a rename it did not know about.
+//
+// Both counts are printed on every run and an empty one fails. The SKIP lines
+// above are the same idea applied to a set that is legitimately absent: say what
+// you did not look at, always.
+check('LABELS.csv specifies something', labels.size > 0,
+  'the label file parsed to zero rows — every check below would pass vacuously');
+check('there are photographs to run', captures.length > 0,
+  'no capture was found in any folder — every check below would pass vacuously');
+console.log(`  ${labels.size} labelled row(s), ${captures.length} photograph(s) on disk, ` +
+  `${missingFolders.length} folder(s) not checked out`);
 
 check('every capture on disk is labelled',
   captures.every(c => c.want === 'PASS' || c.want === 'FAIL'),
@@ -402,7 +418,7 @@ if (table) {
     const m = v ? v.measurements : null;
     const num = (x, d) => (typeof x === 'number' ? x.toFixed(d) : '—');
     console.log(
-      (r.name + (KNOWN_OPEN[r.name] ? ' *' : '')).padEnd(19),
+      (r.name + (KNOWN_OPEN[r.name] ? ' *' : '')).padEnd(26),
       String(r.want).padEnd(5),
       (v ? (v.pass ? 'PASS' : 'FAIL') : 'THREW').padEnd(5),
       String(v && v.failed ? v.failed : '').padEnd(15),
