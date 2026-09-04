@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* The action bar is fixed to the bottom of the viewport, so the scrolling
+   content has to reserve its height or the last problem sits underneath it.
+   On a phone the bar wraps to two rows and the home indicator eats another
+   strip below it, hence the taller reserve and the safe-area inset. */
+/* 11rem covers the two-row bar (~10rem at 360-430 px) with room to spare. */
+.pb-action-bar {
+  padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .pb-action-bar {
+    padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* For the bar itself, so its buttons clear the home indicator too. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

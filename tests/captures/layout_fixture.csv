@@ -1,0 +1,7 @@
+assignment_id,layout_id,region_id,part_id,page_k,x0,y0,x1,y1,is_drawing,max_points
+ENG17HW1,9B10FCF1,r001,"Problem 1(a)",1,0.0556,0.2147,0.9444,0.4295,false,10
+ENG17HW1,9B10FCF1,r002,"Problem 1(b)",1,0.0556,0.4581,0.9444,0.7158,false,15
+ENG17HW1,9B10FCF1,r003,"Problem 1(c)",1,0.0556,0.7445,0.9444,0.9234,true,8
+ENG17HW1,9B10FCF1,r004,"Problem 2(a)",2,0.0556,0.1611,0.9444,0.5369,false,20
+ENG17HW1,9B10FCF1,r005,"Problem 2(b)",2,0.0556,0.5655,0.9444,0.9234,false,20
+ENG17HW1,9B10FCF1,r006,"Problem 3",3,0.0556,0.1611,0.9444,0.9234,false,27

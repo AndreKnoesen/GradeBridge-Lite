@@ -6,8 +6,7 @@ import { LaTeXCheatsheet } from './LaTeXCheatsheet';
 
 interface SidebarProps {
   state: AppState;
-  onUpdateStudent: (field: string, value: string) => void;
-  onLoadAssignment: (file: File) => void;
+  onLoadAssignment: (file: File) => void | Promise<void>;
   onLoadDemo: () => void;
   onLoadWork: (file: File) => void;
   onExportWork: () => void;
@@ -19,7 +18,6 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({
   state,
-  onUpdateStudent,
   onLoadAssignment,
   onLoadDemo,
   onLoadWork,
@@ -36,10 +34,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleAssignmentClick = () => assignmentInputRef.current?.click();
   const handleWorkClick = () => workInputRef.current?.click();
 
-  const hasStudentInfo = state.studentName.trim();
-
+  // `h-full` and the internal scroll only apply once the sidebar is a
+  // viewport-height column beside the content (lg and up). Stacked above the
+  // content on a phone it sizes to its own content and scrolls with the page.
   return (
-    <div className="w-full lg:w-[320px] bg-slate-900 text-slate-100 flex flex-col h-full shadow-2xl overflow-y-auto z-20">
+    <div className="w-full lg:w-[320px] lg:flex-shrink-0 bg-slate-900 text-slate-100 flex flex-col lg:h-full lg:overflow-y-auto shadow-2xl z-20">
       <div className="p-6 border-b border-slate-700 bg-slate-950">
         <div className="flex items-center gap-3 mb-2">
           <div>
@@ -52,34 +51,17 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="p-6 space-y-8 flex-1">
         
-        {/* Student Info - Step 1 */}
+        {/* Assignment Section - Step 1 */}
+        {/*
+          There is no "Student Info" step above this any more (2026-09-03).
+          Identity comes from Gradescope's authenticated submitter, so the app
+          does not ask, and nothing here is gated behind a text field: the first
+          step is now something the student can actually do, and it is available
+          the moment the page loads.
+        */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${hasStudentInfo ? 'bg-green-500 text-white' : 'bg-blue-500 text-white animate-pulse'}`}>1</span>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Info</h3>
-            {hasStudentInfo && <span className="text-green-400 text-xs">Complete</span>}
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium mb-1 text-slate-300">Full Name *</label>
-              <input
-                type="text"
-                value={state.studentName}
-                onChange={(e) => onUpdateStudent('studentName', e.target.value)}
-                placeholder="Jane Doe"
-                className="w-full bg-white border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-black placeholder-gray-400 transition-all font-medium shadow-sm"
-              />
-            </div>
-          </div>
-          {!hasStudentInfo && (
-            <p className="text-xs text-amber-400">Enter your name to continue</p>
-          )}
-        </div>
-
-        {/* Assignment Section - Step 2 */}
-        <div className={`space-y-4 ${!hasStudentInfo ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="flex items-center gap-2">
-            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${state.assignment ? 'bg-green-500 text-white' : hasStudentInfo ? 'bg-blue-500 text-white animate-pulse' : 'bg-slate-600 text-slate-400'}`}>2</span>
+            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${state.assignment ? 'bg-green-500 text-white' : 'bg-blue-500 text-white animate-pulse'}`}>1</span>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment</h3>
             {state.assignment && <span className="text-green-400 text-xs">Loaded</span>}
           </div>
@@ -88,11 +70,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="space-y-3">
               <button
                 onClick={handleAssignmentClick}
-                disabled={!hasStudentInfo}
-                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group disabled:cursor-not-allowed disabled:hover:border-slate-600 disabled:hover:bg-transparent"
+                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-800 transition-all text-slate-300 group"
               >
                 <Upload className="w-5 h-5 group-hover:text-blue-400" />
-                <span className="text-sm font-medium">Upload JSON</span>
+                <span className="text-sm font-medium">Upload assignment</span>
               </button>
 
               <div className="flex items-center gap-2">
@@ -103,8 +84,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
               <button
                 onClick={onLoadDemo}
-                disabled={!hasStudentInfo}
-                className="w-full flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition-all text-white group shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-purple-600 disabled:hover:to-blue-600"
+                className="w-full flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition-all text-white group shadow-lg"
               >
                 <Sparkles className="w-4 h-4" />
                 <span className="text-sm font-medium">Try Demo Assignment</span>
@@ -127,7 +107,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
              </div>
           )}
-          <input type="file" ref={assignmentInputRef} onChange={(e) => e.target.files?.[0] && onLoadAssignment(e.target.files[0])} accept=".json" className="hidden" />
+          {/* The student is given a zip — the `student/` folder of the
+              instructor's export, the same file they printed the PDF from. A
+              bare assignment_spec.json still loads, so both are accepted. */}
+          <input type="file" ref={assignmentInputRef} onChange={(e) => e.target.files?.[0] && void onLoadAssignment(e.target.files[0])} accept=".zip,.json,application/zip,application/json" className="hidden" />
         </div>
 
         {/* Actions */}

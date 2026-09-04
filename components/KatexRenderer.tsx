@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import katex from 'katex';
+import { splitMath, segToSource } from '../services/mathDelimiters';
+import { Figure, prepareSvgForInline, figurePlaceholder, splitFigures, trimAroundFigures } from '../services/figureBlocks';
 
 interface KatexRendererProps {
   expression: string; // Expects full string WITH delimiters (e.g. "$\sin(x)$")
@@ -50,32 +52,64 @@ const KatexRenderer: React.FC<KatexRendererProps> = ({ expression, block = false
   );
 };
 
-export const LatexContent: React.FC<{ content: string }> = ({ content }) => {
-    if (!content) return null;
-    
-    // Improved Regex:
-    // 1. $$ ... $$ (Block)
-    // 2. $ ... $ (Inline)
-    const parts = content.split(/(\$\$[\s\S]+?\$\$|\$[^\$]+?\$)/g);
+/**
+ * A figure from the problem stem. The `svg` form is inlined so it stays vector
+ * and scales with the column; the fallback form is an image.
+ *
+ * `idPrefix` must be unique on the page: ids are document-global, and the same
+ * drawing may legitimately appear on two problems — inline both unprefixed and
+ * the second one's markers and gradients resolve to the first one's.
+ */
+const FigureBlock: React.FC<{ figure: Figure; idPrefix: string }> = ({ figure, idPrefix }) => {
+    if (figure.form === 'svg') {
+        return (
+            <span
+                className="block my-4 text-center"
+                dangerouslySetInnerHTML={{ __html: prepareSvgForInline(figure.svg, idPrefix) }}
+            />
+        );
+    }
+    const safe = /^\s*(?:data:image\/|https?:\/\/|\.{0,2}\/)/i.test(figure.url);
+    if (!safe) return <span className="block my-4 text-center font-mono text-gray-500">{figurePlaceholder(figure)}</span>;
+    return (
+        <span className="block my-4 text-center">
+            <img src={figure.url} alt={figure.alt} className="inline-block max-w-full h-auto" />
+        </span>
+    );
+};
 
+export const LatexContent: React.FC<{ content: string }> = ({ content }) => {
+    const uid = React.useId().replace(/[^a-zA-Z0-9]/g, '');
+    if (!content) return null;
+
+    // Figures come out first, before the math splitter ever sees the text: an
+    // SVG is full of characters `$...$` mis-reads — a stray `$` in path data is
+    // enough — and the drawing would be shredded into KaTeX spans with nothing
+    // downstream noticing. services/figureBlocks.ts is mirrored byte-for-byte
+    // from the Assignment Maker, as services/mathDelimiters.ts is, so a figure
+    // and its math render here exactly as they did when they were authored.
+    // Do not reintroduce a local copy of either splitter.
+    let figureIndex = 0;
     return (
         <span className="whitespace-pre-wrap break-words">
-            {parts.map((part, index) => {
-                // Block Math
-                if (part.startsWith('$$') && part.endsWith('$$') && part.length >= 4) {
-                    // Pass the FULL part including delimiters
-                    return <KatexRenderer key={index} expression={part} block={true} className="block my-4 text-center" />;
-                } 
-                // Inline Math
-                else if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
-                    // Pass the FULL part including delimiters
-                    return <KatexRenderer key={index} expression={part} block={false} />;
-                } 
-                // Plain Text
-                else if (part) {
-                    return <span key={index}>{part}</span>;
+            {trimAroundFigures(splitFigures(content)).map((fig, index) => {
+                if (fig.kind === 'figure') {
+                    return <FigureBlock key={index} figure={fig.figure} idPrefix={`f${uid}-${figureIndex++}-`} />;
                 }
-                return null;
+                return splitMath(fig.value).map((seg, mIndex) => {
+                    const key = `${index}-${mIndex}`;
+                    if (seg.kind === 'text') return <span key={key}>{seg.value}</span>;
+                    // KatexRenderer wants the full span, delimiters and all, so its
+                    // fallback can show the raw source rather than stripped LaTeX.
+                    return (
+                        <KatexRenderer
+                            key={key}
+                            expression={segToSource(seg)}
+                            block={seg.kind === 'display'}
+                            className={seg.kind === 'display' ? 'block my-4 text-center' : ''}
+                        />
+                    );
+                });
             })}
         </span>
     );

@@ -10,14 +10,12 @@ export const DEMO_ASSIGNMENT: Assignment = {
   id: 'demo-assignment-001',
   courseCode: 'MATH 101',
   title: 'Sample Mathematics Assignment - Demo',
-  dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 14 days from now
-  dueTime: '23:59',
   preamble: `Welcome to this demo assignment! This sample showcases the features of GradeBridge Student Submission.
 
 You can:
 - Enter text answers with LaTeX math formatting (use $...$ for inline math, $$...$$ for display math)
 - Upload images of handwritten work or diagrams
-- Document your AI tool usage in the AI Formative sections
+- Document your AI tool usage in a written answer
 - Preview and download your submission as a PDF
 
 Try filling out each question to see how the app works. Your work is automatically saved to your browser.`,
@@ -177,11 +175,11 @@ $$\\frac{dy}{dx} = 2xy$$
 
 with initial condition $y(0) = 1$.
 
-You may use AI tools (ChatGPT, Wolfram Alpha, etc.) to help you, but you MUST document your process in the AI Formative section below.
+You may use AI tools (ChatGPT, Wolfram Alpha, etc.) to help you, but you MUST document your process in your written answer: name the tool, say how you used it, and state one thing you checked or changed in what it produced.
 
-This demonstrates the AI Formative documentation feature.`,
+This demonstrates how to disclose AI use in a written answer.`,
           points: 10,
-          submissionType: SubmissionType.AI_FORMATIVE,
+          submissionType: SubmissionType.TEXT,
           maxImages: 0
         },
         {

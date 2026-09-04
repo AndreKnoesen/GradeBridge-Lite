@@ -1,16 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import JSZip from 'jszip';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import Sidebar from './components/Sidebar';
 import ProblemRenderer from './components/ProblemRenderer';
+import PageUploader from './components/PageUploader';
+import CropReview from './components/CropReview';
 import PrintView from './components/PrintView';
 import { PrivacyNotice } from './components/PrivacyNotice';
-import { AppState, Assignment, SubmissionData, BackupData } from './types';
-import { STORAGE_KEY, PRIVACY_KEY, VERSION, AI_GRADED_TYPES } from './constants';
+import {
+  AppState, Assignment, CropRef, PageRef, StoredLayoutMap, StudentReview,
+  SubmissionData, BackupData,
+} from './types';
+import { STORAGE_KEY, PRIVACY_KEY, VERSION } from './constants';
+import { IngestedPage, blobToDataUri, dataUriToBlob, ingestPage, rotatePageBlob } from './imageIngest';
+import { downloadBlob } from './downloadFile';
+import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept } from './pageStore';
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
-import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Save } from 'lucide-react';
-import { isEncoded, decryptJson, encryptJson, encryptJsonGb2, deidentifyForGb2, GB2_KEY_ERROR } from './cryptoService';
+import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
+import { isEncoded, decryptJson, GB2_KEY_ERROR } from './cryptoService';
+import { BundleError, loadAssignmentBundle } from './services/assignmentBundle';
+import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
+import { registerAndCropPage } from './services/pageCrops';
+import {
+  SUBMISSION_ZIP_OPTIONS, buildSubmissionPackage, cropBlobKey, cropList, submissionBaseName,
+} from './services/submissionPackage';
 
 function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
@@ -32,11 +45,40 @@ function downsampleImage(dataUri: string, maxPx = 1920, quality = 0.82): Promise
   });
 }
 
+// Page order drives the filenames the pages are written under in the submission
+// ZIP, so it is recomputed on every add, removal and reorder. Crops bind to
+// PageRef.id and to the page's own `k` from its QR, never to the filename, so
+// reordering never invalidates one.
+//
+// (This comment used to assert the pages ship. Until the fix below they did
+// not: the ZIP builder never referenced state.pages, so a handwritten student
+// submitted the blank question paper and a JSON of nulls. They ship now.)
+const renumberPages = (pages: PageRef[]): PageRef[] =>
+  pages.map((page, idx) => ({ ...page, file: `page_${idx + 1}.jpg` }));
+
+const newPageId = (): string =>
+  `pg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * IndexedDB key for a crop bitmap; page bitmaps use the bare PageRef.id.
+ *
+ * Both this and `cropList` now come from `services/submissionPackage`, because
+ * the package is written from the same keys and the same order and the two must
+ * not be able to drift. Re-exported here under the names the component already
+ * used so the call sites read as they did.
+ */
+const cropKey = cropBlobKey;
+
+const cropFileName = (regionId: string): string =>
+  `crops/${regionId.replace(/[^a-z0-9_\-]/gi, '_')}.jpg`;
+
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
-    studentName: '',
     assignment: null,
     submissionData: {},
+    pages: [],
+    layout: null,
+    crops: {},
     viewMode: 'edit',
     lastSaved: null,
     privacyAcknowledged: false
@@ -45,6 +87,83 @@ const App: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobileBanner, setShowMobileBanner] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<{ active: boolean; phase: 'pdf' | 'packaging'; current: number; total: number }>({ active: false, phase: 'pdf', current: 0, total: 0 });
+
+  // Object URLs for the stored page bitmaps. A page with no entry here has
+  // metadata but no image — the uploader surfaces it as needing re-upload.
+  const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
+  const pageUrlsRef = useRef<Record<string, string>>({});
+
+  // The same, for crop bitmaps, keyed by region_id.
+  const [cropUrls, setCropUrls] = useState<Record<string, string>>({});
+  const cropUrlsRef = useRef<Record<string, string>>({});
+
+  /** region_id currently being re-cut, so the review row can say so. */
+  const [cropBusy, setCropBusy] = useState<string | null>(null);
+
+  const isHandwritten = state.assignment?.inputMode === 'handwritten';
+
+  const setPageUrl = useCallback((id: string, blob: Blob) => {
+    const previous = pageUrlsRef.current[id];
+    if (previous) URL.revokeObjectURL(previous);
+    pageUrlsRef.current = { ...pageUrlsRef.current, [id]: URL.createObjectURL(blob) };
+    setPageUrls(pageUrlsRef.current);
+  }, []);
+
+  const dropPageUrl = useCallback((id: string) => {
+    const previous = pageUrlsRef.current[id];
+    if (!previous) return;
+    URL.revokeObjectURL(previous);
+    const { [id]: _removed, ...rest } = pageUrlsRef.current;
+    pageUrlsRef.current = rest;
+    setPageUrls(rest);
+  }, []);
+
+  const dropAllPageUrls = useCallback(() => {
+    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+    pageUrlsRef.current = {};
+    setPageUrls({});
+  }, []);
+
+  const setCropUrl = useCallback((regionId: string, blob: Blob) => {
+    const previous = cropUrlsRef.current[regionId];
+    if (previous) URL.revokeObjectURL(previous);
+    cropUrlsRef.current = { ...cropUrlsRef.current, [regionId]: URL.createObjectURL(blob) };
+    setCropUrls(cropUrlsRef.current);
+  }, []);
+
+  const dropAllCropUrls = useCallback(() => {
+    Object.values(cropUrlsRef.current).forEach(URL.revokeObjectURL);
+    cropUrlsRef.current = {};
+    setCropUrls({});
+  }, []);
+
+  // Revoke on unmount so a long session does not leak page or crop bitmaps.
+  useEffect(() => () => {
+    Object.values(pageUrlsRef.current).forEach(URL.revokeObjectURL);
+    Object.values(cropUrlsRef.current).forEach(URL.revokeObjectURL);
+  }, []);
+
+  /**
+   * Pulls stored bitmaps for the pages and crops; anything missing stays
+   * missing. The prune has to see BOTH lists — page and crop bitmaps share one
+   * object store, so pruning against the pages alone deletes every crop.
+   */
+  const hydrateStoredImages = useCallback(async (
+    pages: PageRef[], crops: Record<string, CropRef>
+  ) => {
+    for (const page of pages) {
+      const blob = await getPageBlob(page.id);
+      if (blob) setPageUrl(page.id, blob);
+    }
+    for (const regionId of Object.keys(crops)) {
+      const blob = await getPageBlob(cropKey(regionId));
+      if (blob) setCropUrl(regionId, blob);
+    }
+    await pruneExcept([
+      ...pages.map((p) => p.id),
+      ...Object.keys(crops).map(cropKey),
+    ]);
+  }, [setPageUrl, setCropUrl]);
 
   // Mobile detection
   useEffect(() => {
@@ -71,14 +190,25 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         // Only restore if version matches or simple check passes
         if (parsed.submissionData) {
+           const pages: PageRef[] = Array.isArray(parsed.pages) ? parsed.pages : [];
+           const crops: Record<string, CropRef> =
+             parsed.crops && typeof parsed.crops === 'object' ? parsed.crops : {};
            setState(prev => ({
              ...prev,
-             studentName: parsed.studentName || '',
              assignment: parsed.assignment || null,
              submissionData: parsed.submissionData || {},
+             pages,
+             layout: parsed.layout ?? null,
+             crops,
              lastSaved: parsed.lastSaved || null,
              privacyAcknowledged: true // If they have data, they likely ack'd privacy
            }));
+           // Page and crop bitmaps live in IndexedDB, so they restore separately
+           // and may be gone (cleared cache, different browser). The metadata is
+           // kept either way — re-photographing the page re-cuts its crops.
+           if (pages.length > 0 || Object.keys(crops).length > 0) {
+             void hydrateStoredImages(pages, crops);
+           }
         }
       } catch (e) {
         console.error("Failed to restore session", e);
@@ -87,28 +217,36 @@ const App: React.FC = () => {
   }, []);
 
   // Auto Save Debounced
+  // Only the small data goes here. Page bitmaps are written to IndexedDB as
+  // they are ingested; localStorage keeps their metadata, which is a few
+  // hundred bytes a page instead of a few hundred kilobytes.
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (state.studentName || Object.keys(state.submissionData).length > 0) {
+      if (Object.keys(state.submissionData).length > 0 || state.pages.length > 0) {
         const toSave = {
-          studentName: state.studentName,
           assignment: state.assignment,
           submissionData: state.submissionData,
+          pages: state.pages,
+          layout: state.layout,
+          crops: state.crops,
           lastSaved: new Date().toISOString()
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-        setState(s => ({ ...s, lastSaved: toSave.lastSaved }));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+          setState(s => ({ ...s, lastSaved: toSave.lastSaved }));
+        } catch (err) {
+          // A silent autosave failure is how drafts disappear. Say so, and
+          // point at the backup file, which does not use this quota.
+          console.error('Autosave failed', err);
+          setStatusMessage('Auto-save failed — this browser is out of storage. Use "Save Backup" to keep your work.');
+        }
       }
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [state.studentName, state.submissionData, state.assignment]);
+  }, [state.submissionData, state.assignment, state.pages, state.layout, state.crops]);
 
   // Handlers
-  const handleUpdateStudent = (field: string, value: string) => {
-    setState(prev => ({ ...prev, [field]: value }));
-  };
-
   const handleSubmissionChange = (id: string, data: SubmissionData['key']) => {
     setState(prev => ({
       ...prev,
@@ -119,11 +257,289 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleLoadAssignment = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+  // --- Handwritten page pool ---
+
+  /**
+   * Registers one photographed page and stores every crop the map declares for
+   * it. Runs on upload, on replace and on rotate, because all three change what
+   * the camera actually delivered and none of them can be corrected for by
+   * moving a rectangle: the transform is fitted to the marks on THIS bitmap.
+   *
+   * A page whose QR names a layout other than the one in the loaded file is
+   * refused here and nothing is cropped. That is the single check standing
+   * between a student who printed this week's sheet and loaded last week's zip
+   * and a submission full of perfectly cut rectangles under the wrong labels.
+   */
+  const runRegistration = useCallback(async (
+    pageId: string, blob: Blob, layout: StoredLayoutMap | null, pageWarnings: string[]
+  ): Promise<void> => {
+    const result = await registerAndCropPage(blob, layout);
+    const reg = result.registration;
+    const fields = reg.qr?.fields;
+
+    const info: PageRef['registration'] = result.layoutMismatch
+      ? {
+          status: 'layout_mismatch',
+          k: fields?.k, n: fields?.n, layoutId: result.layoutMismatch.onPage,
+          marksFound: reg.marksFound, marksDetected: reg.marksDetected,
+          marksDeclined: reg.marksDeclined,
+          message:
+            'This page belongs to a different version of the assignment than the file you loaded, ' +
+            'so nothing was cut from it. Load the assignment zip you printed these pages from.',
+        }
+      : !reg.usable
+        ? {
+            status: 'failed',
+            k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
+            marksFound: reg.marksFound, marksDetected: reg.marksDetected,
+            marksDeclined: reg.marksDeclined, message: reg.message,
+          }
+        : {
+            status: reg.status === 'degraded' ? 'degraded' : 'ok',
+            k: fields?.k, n: fields?.n, layoutId: fields?.layoutId,
+            marksFound: reg.marksFound,
+            marksDetected: reg.marksDetected,
+            marksDeclined: reg.marksDeclined,
+            residualMm: reg.residualMm ?? undefined,
+            heldOutMm: reg.heldOutMm ?? undefined,
+            message: reg.message,
+          };
+
+    const cut: Record<string, CropRef> = {};
+    for (const c of result.crops) {
+      await putPageBlob(cropKey(c.row.regionId), c.blob);
+      setCropUrl(c.row.regionId, c.blob);
+      cut[c.row.regionId] = {
+        regionId: c.row.regionId,
+        partId: c.row.partId,
+        pageK: c.row.pageK,
+        isDrawing: c.row.isDrawing,
+        maxPoints: c.row.maxPoints,
+        cropSource: 'registration',
+        // Re-cutting a page resets its sign-off: the picture the student
+        // approved is not the picture that would now be submitted.
+        review: 'not_reviewed',
+        qualityFlags: [...c.flags, ...pageWarnings],
+        file: cropFileName(c.row.regionId),
+        width: c.width,
+        height: c.height,
+        bytes: c.blob.size,
+        fromPage: pageId,
+      };
+    }
+
+    setState(prev => ({
+      ...prev,
+      pages: prev.pages.map(page => page.id === pageId ? { ...page, registration: info } : page),
+      crops: { ...prev.crops, ...cut },
+    }));
+  }, [setCropUrl]);
+
+  const handleAddPage = async (ingested: IngestedPage) => {
+    const id = newPageId();
+    await putPageBlob(id, ingested.blob);
+    setPageUrl(id, ingested.blob);
+    setState(prev => ({
+      ...prev,
+      pages: renumberPages([
+        ...prev.pages,
+        {
+          id,
+          file: '',
+          width: ingested.width,
+          height: ingested.height,
+          bytes: ingested.bytes,
+          sourceName: ingested.sourceName,
+          warnings: ingested.warnings,
+          registration: { status: 'pending' }
+        }
+      ])
+    }));
+    if (isHandwritten) await runRegistration(id, ingested.blob, state.layout, ingested.warnings);
+  };
+
+  // Keeps the id, so the page keeps its place in the pool and its crops are
+  // re-cut into the same region slots.
+  const handleReplacePage = async (id: string, ingested: IngestedPage) => {
+    await putPageBlob(id, ingested.blob);
+    setPageUrl(id, ingested.blob);
+    setState(prev => ({
+      ...prev,
+      pages: prev.pages.map(page => page.id === id
+        ? {
+            ...page,
+            width: ingested.width,
+            height: ingested.height,
+            bytes: ingested.bytes,
+            sourceName: ingested.sourceName,
+            warnings: ingested.warnings,
+            registration: { status: 'pending' }
+          }
+        : page)
+    }));
+    if (isHandwritten) await runRegistration(id, ingested.blob, state.layout, ingested.warnings);
+  };
+
+  // Rotation rewrites the stored bitmap, so width/height swap with it and the
+  // autosave picks the new metadata up on the next tick. The blob itself is
+  // already in IndexedDB by the time this returns.
+  const handleRotatePage = async (id: string) => {
+    const blob = await getPageBlob(id);
+    if (!blob) {
+      setStatusMessage('That page image is no longer stored in this browser — upload it again to rotate it.');
+      return;
+    }
+    try {
+      const rotated = await rotatePageBlob(blob);
+      await putPageBlob(id, rotated.blob);
+      setPageUrl(id, rotated.blob);
+      const warnings = state.pages.find(p => p.id === id)?.warnings ?? [];
+      setState(prev => ({
+        ...prev,
+        pages: prev.pages.map(page => page.id === id
+          ? {
+              ...page, width: rotated.width, height: rotated.height, bytes: rotated.bytes,
+              registration: { status: 'pending' }
+            }
+          : page)
+      }));
+      // Rotation rewrites the stored bitmap, so the transform fitted to the old
+      // one is void. Re-register rather than trying to turn the map: the marks
+      // are on the paper and the paper just moved.
+      if (isHandwritten) await runRegistration(id, rotated.blob, state.layout, warnings);
+    } catch (err) {
+      console.error('Rotate failed', err);
+      setStatusMessage('This page could not be rotated. Try retaking it.');
+    }
+  };
+
+  const handleRemovePage = (id: string) => {
+    if (!window.confirm("Remove this page? You can upload it again afterwards, but the answers cut from it will go with it.")) {
+      return;
+    }
+    void deletePageBlob(id);
+    dropPageUrl(id);
+    setState(prev => {
+      // Crops the student photographed directly are theirs, not this page's,
+      // and survive the page going away.
+      const crops: Record<string, CropRef> = {};
+      for (const crop of cropList(prev.crops)) {
+        if (crop.fromPage === id && crop.cropSource === 'registration') {
+          void deletePageBlob(cropKey(crop.regionId));
+          continue;
+        }
+        crops[crop.regionId] = crop;
+      }
+      return { ...prev, crops, pages: renumberPages(prev.pages.filter(page => page.id !== id)) };
+    });
+  };
+
+  const handleMovePage = (id: string, delta: number) => {
+    setState(prev => {
+      const from = prev.pages.findIndex(page => page.id === id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= prev.pages.length) return prev;
+      const pages = [...prev.pages];
+      const [moved] = pages.splice(from, 1);
+      pages.splice(to, 0, moved);
+      return { ...prev, pages: renumberPages(pages) };
+    });
+  };
+
+  // --- Review and the two recovery routes (work order section 5) ---
+
+  const handleReviewCrop = (regionId: string, review: StudentReview) => {
+    setState(prev => {
+      const crop = prev.crops[regionId];
+      if (!crop) return prev;
+      return { ...prev, crops: { ...prev.crops, [regionId]: { ...crop, review } } };
+    });
+  };
+
+  /**
+   * Recovery route two: the student frames just that answer and the photograph
+   * **is** the crop. No registration, no rectangle, no map lookup for geometry —
+   * only the map row's labels, which are what the grader needs to file it.
+   *
+   * This is also the route for a student with no printer, who writes on blank
+   * paper and photographs each answer in turn. `crop_source` says so, because a
+   * grader must not assume a direct capture came from a known rectangle on a
+   * registered page.
+   */
+  const handleDirectCapture = async (regionId: string, file: File) => {
+    const row = state.layout?.rows.find(r => r.regionId === regionId);
+    if (!row) return;
+    setCropBusy(regionId);
+    try {
+      const result = await ingestPage(file);
+      if (!result.page) {
+        setStatusMessage(result.reason ?? 'That photo could not be used. Try taking it again.');
+        return;
+      }
+      await putPageBlob(cropKey(regionId), result.page.blob);
+      setCropUrl(regionId, result.page.blob);
+      setState(prev => ({
+        ...prev,
+        crops: {
+          ...prev.crops,
+          [regionId]: {
+            regionId,
+            partId: row.partId,
+            pageK: row.pageK,
+            isDrawing: row.isDrawing,
+            maxPoints: row.maxPoints,
+            cropSource: 'direct_capture',
+            review: 'not_reviewed',
+            qualityFlags: result.page.warnings,
+            file: cropFileName(regionId),
+            width: result.page.width,
+            height: result.page.height,
+            bytes: result.page.bytes,
+          },
+        },
+      }));
+      setStatusMessage('');
+    } finally {
+      setCropBusy(null);
+    }
+  };
+
+  /**
+   * Recovery route one: replace the whole page and re-cut every part on it.
+   * A page the student has not photographed yet is added rather than replaced,
+   * so "retake page 4" works before page 4 exists.
+   */
+  const handleRephotographPage = async (pageK: number, file: File) => {
+    setCropBusy(`page-${pageK}`);
+    try {
+      const result = await ingestPage(file);
+      if (!result.page) {
+        setStatusMessage(result.reason ?? 'That photo could not be used. Try taking it again.');
+        return;
+      }
+      const existing = state.pages.find(p => p.registration?.k === pageK);
+      if (existing) await handleReplacePage(existing.id, result.page);
+      else await handleAddPage(result.page);
+      setStatusMessage('');
+    } finally {
+      setCropBusy(null);
+    }
+  };
+
+  /**
+   * The student loads ONE file: the `student/` folder of the instructor's
+   * export, zipped — the same file they printed the PDF from. The zip carries
+   * the spec and the geometry map together, which is what makes the stale-map
+   * check possible at all.
+   *
+   * A bare `assignment_spec.json` still loads. Electronic assignments have no
+   * map and never needed one, and every file already in circulation is a bare
+   * spec, so refusing one would break them all to buy nothing.
+   */
+  const handleLoadAssignment = async (file: File) => {
       try {
-        const raw = (e.target?.result as string).trim();
+        const loaded = await loadAssignmentBundle(file);
+        const raw = loaded.specText;
         // Decode if encoded by Assignment Maker (gb1:…), otherwise parse plain JSON
         const decoded = (isEncoded(raw)
           ? await decryptJson(raw)
@@ -156,55 +572,131 @@ const App: React.FC = () => {
         if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
         }
-        setState(prev => ({ ...prev, assignment: json, submissionData: {} }));
+        // Loading an assignment starts a fresh submission. Answers have always
+        // been cleared here; pages are photographs, so ask before dropping them.
+        if (state.pages.length > 0 && !window.confirm(
+          "Loading an assignment clears your current work, including the " +
+          `${state.pages.length} page image${state.pages.length === 1 ? '' : 's'} you uploaded.\n\n` +
+          "Continue?"
+        )) {
+          return;
+        }
+        // The map, when the bundle carries one.
+        let layout: StoredLayoutMap | null = null;
+        if (loaded.layout) {
+          layout = await parseLayoutCsv(loaded.layout.text, loaded.layout.name);
+          if (layout.declaredLayoutId && layout.declaredLayoutId !== layout.computedLayoutId) {
+            throw new LayoutMapError(
+              `${loaded.layout.name} says its layout id is ${layout.declaredLayoutId}, but its own ` +
+              `rows come to ${layout.computedLayoutId}. The file has been edited or was not ` +
+              "downloaded completely — get the assignment file again."
+            );
+          }
+        }
+
+        void clearPageBlobs();
+        dropAllPageUrls();
+        dropAllCropUrls();
+        setState(prev => ({
+          ...prev, assignment: json, submissionData: {}, pages: [], layout, crops: {},
+        }));
+
+        // A handwritten assignment with no map can be photographed but never
+        // cropped. Say so here, plainly, rather than letting it fail later.
+        if (json.inputMode === 'handwritten' && !layout) {
+          alert(
+            "This assignment is written on paper, but the file you loaded has no layout map in it.\n\n" +
+            "You can still photograph your pages, but the app cannot cut your answers out of them " +
+            "for you, and your grader will get whole pages instead of answers.\n\n" +
+            "Load the assignment zip your instructor gave you — the one you printed the PDF from — " +
+            "rather than the assignment_spec.json on its own."
+          );
+        }
       } catch (err) {
+        // A bundle or map problem already says exactly what is wrong and what
+        // to do about it; do not bury it under the generic advice.
+        if (err instanceof BundleError || err instanceof LayoutMapError) {
+          alert(err.message);
+          return;
+        }
         alert(
           "Invalid Assignment File\n\n" +
           "This file doesn't appear to be a valid assignment.\n\n" +
-          "Please use the assignment JSON file provided by your course/instructor.\n\n" +
+          "Please use the assignment file your course/instructor provided — the zip you printed " +
+          "your pages from, or the assignment_spec.json inside it.\n\n" +
           "If you're trying to restore your previous work, use \"Load Work\" instead."
         );
       }
-    };
-    reader.readAsText(file);
   };
 
   const handleLoadDemo = () => {
     // Load the demo assignment directly without file upload
-    setState(prev => ({ ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {} }));
+    void clearPageBlobs();
+    dropAllPageUrls();
+    dropAllCropUrls();
+    setState(prev => ({
+      ...prev, assignment: DEMO_ASSIGNMENT, submissionData: {}, pages: [], layout: null, crops: {},
+    }));
     setStatusMessage(DEMO_LOADED_MESSAGE);
     // Clear the message after 5 seconds
     setTimeout(() => setStatusMessage(''), 5000);
   };
 
-  const handleExportWork = () => {
+  const handleExportWork = async () => {
     if (!state.assignment) return;
     const backup: BackupData = {
-      student_name: state.studentName,
       submission_data: state.submissionData,
       assignment_title: state.assignment.title,
       course_code: state.assignment.courseCode,
       exported_at: new Date().toISOString(),
       version: VERSION
     };
+
+    // A backup that omitted the pages would send a student who restores it
+    // back out to re-photograph everything, so carry the bitmaps too — and the
+    // crops with their sign-off state, so a restore does not send them back
+    // through the review either.
+    if (state.pages.length > 0 || Object.keys(state.crops).length > 0) {
+      setStatusMessage('Packing your pages into the backup...');
+      const images: Record<string, string> = {};
+      for (const page of state.pages) {
+        const pageBlob = await getPageBlob(page.id);
+        if (pageBlob) images[page.id] = await blobToDataUri(pageBlob);
+      }
+      const cropImages: Record<string, string> = {};
+      for (const regionId of Object.keys(state.crops)) {
+        const cropBlob = await getPageBlob(cropKey(regionId));
+        if (cropBlob) cropImages[regionId] = await blobToDataUri(cropBlob);
+      }
+      backup.pages = state.pages;
+      backup.page_images = images;
+      backup.layout = state.layout;
+      backup.crops = state.crops;
+      backup.crop_images = cropImages;
+      setStatusMessage('');
+    }
+
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.studentName}_${state.assignment.courseCode}.json`.replace(/[^a-z0-9_\-\.]/gi, '_');
-    a.click();
-    URL.revokeObjectURL(url);
-    // Show LMS upload reminder (same as PDF)
+    const fileName = `${submissionBaseName(
+      `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`,
+      backup.exported_at,
+    )}_backup.json`;
+    downloadBlob(blob, fileName);
+    // Nothing here knows whether the file was written — on iOS the download is
+    // still behind a confirmation the student has not seen yet. Tell them what
+    // to do next instead of claiming it is done.
     alert(
-      "Backup Saved Successfully!\n\n" +
-      "You can upload this JSON file to your LMS (Canvas, etc.) as a backup of your work.\n\n" +
-      "The file is in your Downloads folder."
+      "Backup file created.\n\n" +
+      `File: ${fileName}\n\n` +
+      "If your browser asks whether to download it, confirm. It saves wherever your " +
+      "browser puts downloads — the Files app on a phone, the Downloads folder on a computer.\n\n" +
+      "You can also upload this JSON to your LMS (Canvas, etc.) as a backup of your work."
     );
   };
 
   const handleLoadWork = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const json = JSON.parse(e.target?.result as string);
 
@@ -215,7 +707,7 @@ const App: React.FC = () => {
             "You selected an ASSIGNMENT file (used to define problems).\n\n" +
             "To restore your work, use a BACKUP file instead.\n" +
             "Backup files are named like: CourseCode_Title_backup.json\n\n" +
-            "To load an assignment, use 'Upload JSON' in the Assignment section above."
+            "To load an assignment, use 'Upload assignment' in the Assignment section above."
           );
           return;
         }
@@ -236,7 +728,7 @@ const App: React.FC = () => {
         if (!state.assignment && !window.confirm(
           "You haven't loaded an assignment file yet.\n\n" +
           "This backup might not display correctly without the original assignment structure.\n\n" +
-          "Recommended: First upload the assignment JSON, then load your backup.\n\n" +
+          "Recommended: First upload the assignment file, then load your backup.\n\n" +
           "Continue anyway?"
         )) {
           return;
@@ -254,10 +746,46 @@ const App: React.FC = () => {
           }
         }
 
+        // Pages, when the backup carries them. Written back into IndexedDB so
+        // they behave exactly like freshly uploaded pages from here on.
+        const restoredPages = Array.isArray(backupData.pages) ? backupData.pages : [];
+        const restoredCrops = backupData.crops ?? {};
+        if (restoredPages.length > 0 || Object.keys(restoredCrops).length > 0) {
+          setStatusMessage('Restoring your pages...');
+          await clearPageBlobs();
+          dropAllPageUrls();
+          dropAllCropUrls();
+          for (const page of restoredPages) {
+            const dataUri = backupData.page_images?.[page.id];
+            if (!dataUri) continue;
+            try {
+              const pageBlob = dataUriToBlob(dataUri);
+              await putPageBlob(page.id, pageBlob);
+              setPageUrl(page.id, pageBlob);
+            } catch (err) {
+              console.error(`Could not restore page ${page.id}`, err);
+            }
+          }
+          for (const regionId of Object.keys(restoredCrops)) {
+            const dataUri = backupData.crop_images?.[regionId];
+            if (!dataUri) continue;
+            try {
+              const cropBlob = dataUriToBlob(dataUri);
+              await putPageBlob(cropKey(regionId), cropBlob);
+              setCropUrl(regionId, cropBlob);
+            } catch (err) {
+              console.error(`Could not restore crop ${regionId}`, err);
+            }
+          }
+          setStatusMessage('');
+        }
+
         setState(prev => ({
           ...prev,
-          studentName: backupData.student_name,
           submissionData: backupData.submission_data,
+          pages: restoredPages.length > 0 ? renumberPages(restoredPages) : prev.pages,
+          layout: backupData.layout ?? prev.layout,
+          crops: Object.keys(restoredCrops).length > 0 ? restoredCrops : prev.crops,
           lastSaved: new Date().toISOString()
         }));
         alert("Work restored successfully!");
@@ -276,10 +804,15 @@ const App: React.FC = () => {
     if (window.confirm("Are you sure you want to clear all work? This cannot be undone.")) {
       if (window.confirm("Really delete everything? Type 'YES' to confirm if you are unsure, or just click OK.")) {
          localStorage.removeItem(STORAGE_KEY);
+         void clearPageBlobs();
+         dropAllPageUrls();
+         dropAllCropUrls();
          setState({
-            studentName: '',
             assignment: null,
             submissionData: {},
+            pages: [],
+            layout: null,
+            crops: {},
             viewMode: 'edit',
             lastSaved: null,
             privacyAcknowledged: true
@@ -367,144 +900,66 @@ const App: React.FC = () => {
     }
   };
 
-  // Returns the encrypted JSON bytes, or null if validation fails.
-  const buildSubmissionJsonBytes = async (): Promise<{ bytes: Uint8Array; filename: string } | null> => {
-    if (!state.assignment) return null;
-    if (!state.studentName.trim()) {
-      alert("Please enter your name before submitting.");
-      return null;
-    }
-
-    const convertedData: Record<string, { answer: string | null; images_submitted: number }> = {};
-
-    state.assignment.problems.forEach((problem, pIdx) => {
-      problem.subsections.forEach((sub, sIdx) => {
-        const internalKey = `p${pIdx}_s${sIdx}`;
-        const autograderKey = `p${pIdx}s${sIdx}`;
-        const subData = state.submissionData[internalKey];
-        const isAiGraded = typeof sub.submissionType === 'string' && AI_GRADED_TYPES.has(sub.submissionType);
-
-        if (sub.submissionType === 'Image') {
-          convertedData[autograderKey] = {
-            answer: null,
-            images_submitted: subData?.imageAnswers?.length ?? 0
-          };
-        } else if (sub.submissionType === 'Text and Image') {
-          convertedData[autograderKey] = {
-            answer: subData?.textAnswer ?? null,
-            images_submitted: subData?.imageAnswers?.length ?? 0
-          };
-        } else if (isAiGraded) {
-          convertedData[autograderKey] = {
-            answer: subData?.aiAnswer ?? null,
-            images_submitted: 0
-          };
-        } else {
-          convertedData[autograderKey] = {
-            answer: subData?.textAnswer ?? null,
-            images_submitted: 0
-          };
-        }
-      });
-    });
-
-    const assignmentId = `${state.assignment.courseCode}_${state.assignment.title.replace(/\s+/g, '_')}`;
-    const pdfFilename = `${state.studentName}_${state.assignment.courseCode}_submission.pdf`
-      .replace(/[^a-z0-9_\-\.]/gi, '_');
-
-    const submissionJson = {
-      student_name: state.studentName,
-      course_code: state.assignment.courseCode,
-      assignment_id: assignmentId,
-      pdf_filename: pdfFilename,
-      submission_data: convertedData,
-      last_saved: new Date().toISOString()
-    };
-
-    // Format selection: a spec carrying a course public key gets the hardened
-    // gb2 envelope with a de-identified payload; everything else stays on gb1.
-    // A spec that asked for gb2 must never silently downgrade to gb1, so any
-    // gb2 failure propagates out of here rather than being caught.
-    const coursePublicKey = state.assignment.coursePublicKey?.trim();
-    let encoded: string;
-    if (coursePublicKey) {
-      // Identity comes from Gradescope's authenticated submitter metadata, not
-      // the payload. The PDF and all filenames keep the student's name.
-      encoded = await encryptJsonGb2(deidentifyForGb2(submissionJson), coursePublicKey);
-    } else {
-      encoded = await encryptJson(submissionJson);
-    }
-    const bytes = new TextEncoder().encode(encoded);
-    const filename = `${state.studentName}_${state.assignment.courseCode}_submission.json`
-      .replace(/[^a-z0-9_\-\.]/gi, '_');
-
-    return { bytes, filename };
-  };
-
   const handleDownloadForGradescope = async () => {
     if (!state.assignment) return;
-    if (!state.studentName.trim()) {
-      alert("Please enter your name before submitting.");
-      return;
-    }
-
     setPdfProgress({ active: true, phase: 'pdf', current: 0, total: 0 });
     setStatusMessage("Generating submission package...");
 
     try {
-      // Phase 1: build PDF
-      const pdfBytes = await buildPdfBytes((current, total) => {
-        setPdfProgress({ active: true, phase: 'pdf', current, total });
-        setStatusMessage(`Generating PDF... Page ${current} of ${total}`);
-      });
-      if (!pdfBytes) return;
+      // Phase 1: build the PDF — an ELECTRONIC submission only.
+      //
+      // A handwritten submission carries no PDF (see `submissionPackage`), so it
+      // does not build one. That is not only bytes saved: rasterising the print
+      // view is by far the slowest thing this handler does, and it is the step a
+      // student waits through on a phone. A handwritten submission now goes
+      // straight to packaging.
+      let pdfBytes: Uint8Array | undefined;
+      if (!isHandwritten) {
+        const rendered = await buildPdfBytes((current, total) => {
+          setPdfProgress({ active: true, phase: 'pdf', current, total });
+          setStatusMessage(`Generating PDF... Page ${current} of ${total}`);
+        });
+        if (!rendered) return;
+        pdfBytes = rendered;
+      }
 
-      // Phase 2: build JSON
+      // Phase 2 and 3: the payload and the archive.
+      //
+      // Both live in `services/submissionPackage` now rather than here. What
+      // this handler owns is the browser: the progress overlay, the blob store
+      // the bitmaps come out of, the download, and the messages. The package
+      // itself is built by a function that can also be called by a test, which
+      // is the only way the artefact this app exists to produce can be opened
+      // and checked without a person clicking a button.
       setPdfProgress({ active: true, phase: 'packaging', current: 0, total: 0 });
       setStatusMessage("Packaging submission...");
 
-      const jsonResult = await buildSubmissionJsonBytes();
-      if (!jsonResult) return;
+      const built = await buildSubmissionPackage(
+        {
+          assignment: state.assignment,
+          submissionData: state.submissionData,
+          isHandwritten,
+          layoutId: state.layout?.computedLayoutId ?? null,
+          pages: state.pages,
+          crops: state.crops,
+        },
+        { pdfBytes, readBlob: getPageBlob, downsampleImage },
+      );
+      const baseName = built.baseName;
 
-      // Phase 3: zip both files
-      const zip = new JSZip();
-      const baseName = `${state.studentName}_${state.assignment.courseCode}_submission`
-        .replace(/[^a-z0-9_\-]/gi, '_');
+      const zipBlob = await built.zip.generateAsync({ type: 'blob', ...SUBMISSION_ZIP_OPTIONS });
 
-      zip.file(`${baseName}.json`, jsonResult.bytes);
-      zip.file(`${baseName}.pdf`, pdfBytes);
+      downloadBlob(zipBlob, `${baseName}.zip`);
 
-      for (let pIdx = 0; pIdx < state.assignment.problems.length; pIdx++) {
-        const problem = state.assignment.problems[pIdx];
-        for (let sIdx = 0; sIdx < problem.subsections.length; sIdx++) {
-          const sub = problem.subsections[sIdx];
-          if (sub.submissionType === 'Image' || sub.submissionType === 'Text and Image') {
-            const autograderKey = `p${pIdx}s${sIdx}`;
-            const images = state.submissionData[`p${pIdx}_s${sIdx}`]?.imageAnswers ?? [];
-            for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
-              const downsampled = await downsampleImage(images[imgIdx]);
-              zip.file(`${autograderKey}_image_${imgIdx}.jpg`, downsampled.replace(/^data:[^;]+;base64,/, ''), { base64: true });
-            }
-          }
-        }
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${baseName}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setStatusMessage("Submission package downloaded!");
+      setStatusMessage("Submission package created — confirm the download if your browser asks.");
       alert(
-        `Submission package downloaded!\n\n` +
+        `Submission package created.\n\n` +
         `File: ${baseName}.zip\n\n` +
+        `If your browser asks whether to download it, confirm. It saves wherever your ` +
+        `browser puts downloads — the Files app on a phone, the Downloads folder on a computer.\n\n` +
         `This ZIP contains your PDF and submission data.\n` +
         `Upload the ZIP file to Gradescope to submit your assignment.\n\n` +
-        `The file is in your Downloads folder.`
+        `Check you have the file before you close this page.`
       );
       setTimeout(() => setStatusMessage(''), 6000);
     } catch (error) {
@@ -530,8 +985,13 @@ const App: React.FC = () => {
     setShowPrivacyModal(false);
   };
 
+  // Below lg the shell is one long document scroll: the sidebar stacks on top
+  // and the content follows it. Pinning the shell to the viewport height at
+  // every width (as `h-screen overflow-hidden` used to) let the sidebar's
+  // `h-full` claim the whole screen, squeezing the content pane — and with it
+  // the page uploader — to zero height on phones.
   return (
-    <div className="flex h-screen flex-col lg:flex-row overflow-hidden bg-gray-50 font-sans">
+    <div className="flex min-h-screen flex-col bg-gray-50 font-sans lg:h-screen lg:flex-row lg:overflow-hidden">
 
       {/* Submission Generation Overlay */}
       {pdfProgress.active && (
@@ -577,14 +1037,23 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Warning Banner */}
+      {/* Mobile Warning Banner — in flow on a phone, where a fixed banner
+          would sit on top of the sidebar header and hide the version line.
+          Fixed from lg up, where it is one line and the header clears it.
+          A handwritten assignment is photographed on the phone, so the
+          desktop advice is wrong there; anything else — including no
+          assignment loaded yet — keeps it. */}
       {showMobileBanner && (
-        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
+        <div className="w-full lg:fixed lg:top-0 lg:left-0 lg:right-0 bg-amber-500 text-amber-950 p-3 z-50 shadow-lg">
           <div className="flex items-center justify-between gap-3 max-w-4xl mx-auto">
             <div className="flex items-center gap-3">
-              <Monitor className="w-5 h-5 flex-shrink-0" />
+              {isHandwritten
+                ? <Smartphone className="w-5 h-5 flex-shrink-0" />
+                : <Monitor className="w-5 h-5 flex-shrink-0" />}
               <p className="text-sm font-medium">
-                For the best experience, use a desktop or laptop. File downloads on mobile can be hard to find.
+                {isHandwritten
+                  ? 'Your phone is the right device for this. Photograph your handwritten pages right here. One note: files you save or download land in your Downloads or Files app, so that is where to look for them.'
+                  : 'For the best experience, use a desktop or laptop. Files you download can be hard to find on mobile.'}
               </p>
             </div>
             <button
@@ -601,7 +1070,6 @@ const App: React.FC = () => {
       {/* Sidebar */}
       <Sidebar
         state={state}
-        onUpdateStudent={handleUpdateStudent}
         onLoadAssignment={handleLoadAssignment}
         onLoadDemo={handleLoadDemo}
         onLoadWork={handleLoadWork}
@@ -613,37 +1081,31 @@ const App: React.FC = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto relative scroll-smooth" id="main-scroll">
+      <div className="flex-1 lg:overflow-y-auto relative scroll-smooth" id="main-scroll">
         
         {/* Edit Mode View */}
         {state.viewMode === 'edit' && (
-          <div className="max-w-4xl mx-auto p-6 lg:p-12 pb-32">
+          <div className="max-w-4xl mx-auto p-6 lg:p-12 pb-action-bar">
             {!state.assignment ? (
               <div className="flex flex-col items-center justify-center min-h-[60vh] text-center text-gray-400 py-8">
                 <h2 className="text-xl font-semibold text-gray-600 mb-6">
-                  {!state.studentName.trim()
-                    ? "Welcome! Let's Get Started"
-                    : "Ready to Load Your Assignment"}
+                  Welcome — let's get started
                 </h2>
 
                 {/* How-To Guide */}
                 <div className="max-w-lg mb-8 text-left bg-blue-50 border border-blue-200 rounded-lg p-5 shadow-sm">
                   <h3 className="font-bold text-blue-800 mb-3 text-center">How to Submit Your Assignment</h3>
                   <ol className="space-y-3 text-sm text-blue-900">
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.studentName.trim() ? 'bg-green-50' : 'bg-blue-100'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.studentName.trim() ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
-                      <span><strong>Enter your name</strong> - Type your Full Name in the sidebar (left panel)</span>
-                    </li>
-                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : state.studentName.trim() ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : state.studentName.trim() ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>2</span>
-                      <span><strong>Load assignment</strong> - Upload the JSON file your instructor provided (or try demo)</span>
+                    <li className={`flex items-start gap-3 p-2 rounded ${state.assignment ? 'bg-green-50' : 'bg-blue-100'}`}>
+                      <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${state.assignment ? 'bg-green-500 text-white' : 'bg-blue-600 text-white animate-pulse'}`}>1</span>
+                      <span><strong>Load assignment</strong> - Upload the assignment file your instructor provided — the zip you printed your pages from (or try the demo)</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
-                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                       <span><strong>Complete your work</strong> - Fill in answers for each problem</span>
                     </li>
                     <li className="flex items-start gap-3 p-2 rounded bg-gray-50">
-                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
+                      <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                       <span><strong>Download &amp; Submit</strong> - Click <em>Download for Gradescope</em> to get a single ZIP file, then upload that ZIP to Gradescope</span>
                     </li>
                   </ol>
@@ -652,9 +1114,8 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {state.studentName.trim() ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <p className="text-sm text-gray-600 font-medium">Upload an assignment JSON from the sidebar, or try the demo:</p>
+                <div className="flex flex-col items-center gap-3">
+                    <p className="text-sm text-gray-600 font-medium">Upload your assignment file from the sidebar, or try the demo:</p>
                     <button
                       onClick={handleLoadDemo}
                       className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg shadow-lg transition-all font-medium"
@@ -668,12 +1129,6 @@ const App: React.FC = () => {
                       Explore all features with a sample math assignment
                     </p>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-amber-700 font-medium">Please enter your name first</p>
-                    <p className="text-sm text-amber-600">Complete Step 1 in the sidebar (left panel) to continue</p>
-                  </div>
-                )}
               </div>
             ) : (
               <>
@@ -687,6 +1142,38 @@ const App: React.FC = () => {
                     )}
                  </div>
 
+                 {/* Handwritten assignments answer on paper: the pages are the
+                     submission, so the page pool leads. Electronic assignments
+                     never reach this branch and are untouched. */}
+                 {isHandwritten && (
+                   <PageUploader
+                     pages={state.pages}
+                     pageUrls={pageUrls}
+                     onAddPage={handleAddPage}
+                     onReplacePage={handleReplacePage}
+                     onRemovePage={handleRemovePage}
+                     onMovePage={handleMovePage}
+                     onRotatePage={handleRotatePage}
+                   />
+                 )}
+
+                 {/* The review step. Every crop, every time, before submission —
+                     not optional and not collapsible. It appears as soon as the
+                     map is loaded, so a student sees the empty list of parts
+                     they have to fill before they start photographing. */}
+                 {isHandwritten && state.layout && (
+                   <CropReview
+                     layout={state.layout}
+                     crops={state.crops}
+                     cropUrls={cropUrls}
+                     pages={state.pages}
+                     onReview={handleReviewCrop}
+                     onDirectCapture={handleDirectCapture}
+                     onRephotographPage={handleRephotographPage}
+                     busy={cropBusy}
+                   />
+                 )}
+
                  <div>
                    {state.assignment.problems.map((problem, idx) => (
                      <ProblemRenderer
@@ -699,9 +1186,10 @@ const App: React.FC = () => {
                    ))}
                  </div>
 
-                 {/* Floating Bottom Bar */}
-                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                   <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
+                 {/* Floating Bottom Bar — wraps to two rows on a phone rather
+                     than letting the buttons spill outside the bar. */}
+                 <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 min-h-[5rem] flex items-center pb-safe">
+                   <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-3xl mx-auto w-full px-4 py-3">
                      <button
                        onClick={handleExportWork}
                        className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"
@@ -743,19 +1231,18 @@ const App: React.FC = () => {
            {state.assignment && (
                <>
                    {/* Scrollable Preview Area */}
-                   <div className="flex-1 overflow-y-auto p-8 pb-40 flex justify-center">
+                   <div className="flex-1 overflow-y-auto p-8 pb-action-bar flex justify-center">
                        <div className="shadow-2xl">
                            <PrintView
                              assignment={state.assignment}
                              submissionData={state.submissionData}
-                             studentName={state.studentName}
                            />
                        </div>
                    </div>
 
                    {/* Fixed Download Bar - Always visible at bottom */}
-                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 h-20 flex items-center">
-                     <div className="flex items-center justify-center gap-3 max-w-3xl mx-auto w-full px-4">
+                   <div className="fixed bottom-0 left-0 right-0 lg:left-[320px] bg-gradient-to-t from-slate-900 to-slate-800 border-t border-slate-700 shadow-2xl z-40 min-h-[5rem] flex items-center pb-safe">
+                     <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-3xl mx-auto w-full px-4 py-3">
                        <button
                          onClick={() => setState(s => ({ ...s, viewMode: 'edit' }))}
                          className="py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-sm"

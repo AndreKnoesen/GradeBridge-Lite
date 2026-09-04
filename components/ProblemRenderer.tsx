@@ -15,13 +15,16 @@ const AI_GRADED_STRINGS = new Set([
   'AI Graded: Short',
   'AI Graded: Medium',
   'AI Graded: Long',
-  'AI Formative',
   SubmissionType.AI_GRADED_BINARY,
   SubmissionType.AI_GRADED_SHORT,
   SubmissionType.AI_GRADED_MEDIUM,
   SubmissionType.AI_GRADED_LONG,
-  SubmissionType.AI_FORMATIVE,
 ]);
+
+// Handwritten parts are answered on paper — the page pool holds the answer, so
+// no per-part input widget is rendered for them.
+const isHandwritten = (submissionType: SubmissionType | string): boolean =>
+  submissionType === SubmissionType.HANDWRITTEN || submissionType === 'Handwritten';
 
 // Convert submissionType to widget type string
 const getWidgetType = (submissionType: SubmissionType | string): string => {
@@ -102,14 +105,26 @@ const ProblemRenderer: React.FC<ProblemRendererProps> = ({ problem, problemIndex
                   )}
 
                   <div className="pl-2 space-y-4">
-                    <SubmissionWidget
-                      type={widgetType}
-                      id={subId}
-                      maxImages={sub.maxImages}
-                      minWords={sub.minWords}
-                      data={submissionData[subId] || {}}
-                      onChange={onSubmissionChange}
-                    />
+                    {isHandwritten(sub.submissionType) ? (
+                      // Stage 2b replaces this with the region marker. Until then a
+                      // handwritten part has no input of its own — the answer lives on
+                      // the uploaded pages.
+                      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        <span className="font-medium text-slate-700">Answer on paper.</span>{' '}
+                        Write this part in your handwritten work and upload the page in
+                        <span className="font-medium"> Your Pages</span> above. Marking which page
+                        and area each part is on arrives in the next update.
+                      </div>
+                    ) : (
+                      <SubmissionWidget
+                        type={widgetType}
+                        id={subId}
+                        maxImages={sub.maxImages}
+                        minWords={sub.minWords}
+                        data={submissionData[subId] || {}}
+                        onChange={onSubmissionChange}
+                      />
+                    )}
                   </div>
                 </div>
               );

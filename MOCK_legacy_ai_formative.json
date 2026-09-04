@@ -1,0 +1,54 @@
+{
+  "id": "mock-legacy-formative-eec1-lab8",
+  "courseCode": "EEC1",
+  "title": "Legacy fixture — assignment carrying the retired \"AI Formative\" type",
+  "dueDate": "",
+  "dueTime": "",
+  "preamble": "This fixture exists only to prove back-compatibility. It is shaped like an assignment exported before 2026-08-18, when the \"AI Formative\" submission type was retired. Loading it should succeed: the formative parts render as ordinary plain text answers, with no purple AI badge, no word-count target, and no offer of a resubmission. Nothing should error and no part should disappear.",
+  "problems": [
+    {
+      "id": "p1",
+      "name": "Section 1 — Design Decisions",
+      "description": "Report section carrying parts authored under the retired type.",
+      "subsections": [
+        {
+          "id": "p1s0",
+          "name": "Gain-split justification",
+          "description": "Explain how you divided total gain between the instrumentation amplifier and the summing stage, and why that split suits your sensor.",
+          "points": 5,
+          "submissionType": "AI Formative"
+        },
+        {
+          "id": "p1s1",
+          "name": "Filter design rationale",
+          "description": "Justify your choice of corner frequency for the low-pass filter with reference to your sampling rate.",
+          "points": 5,
+          "submissionType": "AI Formative"
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Control — unaffected part types",
+      "description": "These parts use current types. They must be unchanged by the legacy handling above, which is the point of including them.",
+      "subsections": [
+        {
+          "id": "p2s0",
+          "name": "Measured resolution",
+          "description": "State the smallest mass change your scale resolves, with units.",
+          "points": 4,
+          "submissionType": "Text"
+        },
+        {
+          "id": "p2s1",
+          "name": "Error source",
+          "description": "Identify the dominant error source in your chain and explain in a short paragraph how you established that it dominates.",
+          "points": 6,
+          "submissionType": "AI Graded: Short"
+        }
+      ]
+    }
+  ],
+  "createdAt": 1747300000000,
+  "updatedAt": 1747300000000
+}

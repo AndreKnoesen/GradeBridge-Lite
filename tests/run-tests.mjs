@@ -251,6 +251,7 @@ if (fixture) {
     assignment_id: 'EEC1_Lab1_InLab',
     pdf_filename: 'Jane_Smith_EEC1_submission.pdf',
     submission_data: { p0s0: { answer: 'a', images_submitted: 0 } },
+    ai_feedback: true,
     last_saved: '2026-08-10T00:00:00.000Z',
   };
   const clean = svc.deidentifyForGb2(full);
@@ -264,6 +265,13 @@ if (fixture) {
     assert('assignment_id' in clean, 'assignment_id was dropped');
     assert('submission_data' in clean, 'submission_data was dropped');
     assertEqual(clean.submission_data, full.submission_data, 'submission_data was altered');
+  });
+  // ai_feedback is a pass-through flag, not PII. It is not in GB2_PII_FIELDS,
+  // so it should survive — asserted rather than assumed, because Gradescope
+  // reads it out of the de-identified payload and nothing else would notice.
+  check('de-identify: keeps ai_feedback, still boolean true', () => {
+    assert('ai_feedback' in clean, 'ai_feedback was stripped by de-identification');
+    assert(clean.ai_feedback === true, `ai_feedback is ${JSON.stringify(clean.ai_feedback)}, expected boolean true`);
   });
   check('de-identify: keeps the allowed course_code and pdf_filename', () => {
     assert(clean.course_code === 'EEC1', 'course_code was dropped');
@@ -283,6 +291,8 @@ if (fixture) {
       }
       assert('assignment_id' in decoded && 'submission_data' in decoded,
         'decrypted payload is missing assignment_id or submission_data');
+      assert(decoded.ai_feedback === true,
+        `ai_feedback is ${JSON.stringify(decoded.ai_feedback)} in the decrypted payload, expected true`);
     });
     check('de-identify: "Jane Smith" appears nowhere in the decrypted JSON text', () =>
       assert(!JSON.stringify(decoded).includes('Jane Smith'),
@@ -313,6 +323,95 @@ if (fixture) {
     assert(svc.isEncoded(gb1) === true, 'isEncoded() rejected a gb1 string');
     assert(svc.isEncoded('gb2:AQA=') === false, 'isEncoded() accepted a gb2 string');
   });
+}
+
+// =====================================================
+// 6. The envelope over bytes — one implementation, not two
+// =====================================================
+// Added 2026-09-03 with `WORKORDER_STUDENT_ENCRYPT_IMAGES`. The images in a
+// submission are sealed with the same envelope as the payload, so the envelope
+// is defined over BYTES and the JSON form is that function plus stringify plus
+// base64 plus the tag. These check that it really is one implementation: if
+// `encryptJsonGb2` ever grows a second copy, the last check here fails.
+{
+  const pair = await webcrypto.subtle.generateKey(
+    { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true, ['encrypt', 'decrypt']
+  );
+  const pubPem = spkiPem(await webcrypto.subtle.exportKey('spki', pair.publicKey));
+  const privPem = pkcs8Pem(await webcrypto.subtle.exportKey('pkcs8', pair.privateKey));
+
+  // The autograder's side, over raw bytes: no base64 to strip, no tag to skip.
+  const openBytes = async (raw) => {
+    const wrappedKeyLen = (raw[0] << 8) | raw[1];
+    const wrappedKey = raw.subarray(2, 2 + wrappedKeyLen);
+    const iv = raw.subarray(2 + wrappedKeyLen, 2 + wrappedKeyLen + 12);
+    const ciphertextPlusTag = raw.subarray(2 + wrappedKeyLen + 12);
+    const contentKey = privateDecrypt(
+      { key: createPrivateKey(privPem), padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+      Buffer.from(wrappedKey));
+    const key = await webcrypto.subtle.importKey('raw', contentKey, { name: 'AES-GCM' }, false, ['decrypt']);
+    return new Uint8Array(await webcrypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertextPlusTag));
+  };
+
+  // Deliberately not valid UTF-8: an image is bytes, and a path that decoded
+  // them as text would corrupt exactly this.
+  const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x80, 0xfe, 0xc0, 0x00, 0xff, 0xd9]);
+  const sealed = await svc.encryptBytesGb2(jpegBytes, pubPem);
+
+  check('bytes: the envelope is 2 + wrappedKeyLen + 12 + ciphertext + 16', () => {
+    const wrappedKeyLen = (sealed[0] << 8) | sealed[1];
+    assert(wrappedKeyLen === 256, `wrappedKeyLen is ${wrappedKeyLen}, expected 256`);
+    assert(sealed.length === 2 + 256 + 12 + jpegBytes.length + 16,
+      `envelope is ${sealed.length} bytes for a ${jpegBytes.length}-byte input`);
+  });
+
+  check('bytes: no gb2: tag and no base64 — the entry is the envelope itself', () => {
+    assert(sealed[0] === 0x01 && sealed[1] === 0x00, 'the envelope does not open with a uint16 BE length');
+    assert(Buffer.from(sealed.subarray(0, 4)).toString('latin1') !== 'gb2:', 'the byte form carries the text tag');
+  });
+
+  const opened = await openBytes(sealed);
+  check('bytes: round-trip returns the input exactly, invalid UTF-8 and all', () =>
+    assertEqual([...opened], [...jpegBytes], 'the bytes did not survive the envelope'));
+
+  const empty = await svc.encryptBytesGb2(new Uint8Array(0), pubPem);
+  const openedEmpty = await openBytes(empty);
+  check('bytes: an empty input seals and opens rather than throwing', () => {
+    assert(empty.length === 2 + 256 + 12 + 16, `empty envelope is ${empty.length} bytes`);
+    assert(openedEmpty.length === 0, `empty input came back as ${openedEmpty.length} bytes`);
+  });
+
+  const a = await svc.encryptBytesGb2(jpegBytes, pubPem);
+  const b = await svc.encryptBytesGb2(jpegBytes, pubPem);
+  check('bytes: a fresh content key and IV every call', () => {
+    assert(Buffer.compare(Buffer.from(a), Buffer.from(b)) !== 0,
+      'two seals of the same bytes are identical');
+    const ivA = Buffer.from(a.subarray(258, 270)).toString('hex');
+    const ivB = Buffer.from(b.subarray(258, 270)).toString('hex');
+    assert(ivA !== ivB, `the IV repeated across calls: ${ivA}`);
+  });
+
+  {
+    const realConsoleError = console.error;
+    let threw = null;
+    console.error = () => {};
+    try { await svc.encryptBytesGb2(jpegBytes, 'not a key'); }
+    catch (err) { threw = err; } finally { console.error = realConsoleError; }
+    check('bytes: a bad key throws instead of returning output', () => {
+      assert(threw !== null, 'encryptBytesGb2 resolved with an invalid key');
+      assert(threw.name === svc.GB2_KEY_ERROR, `error name is "${threw.name}"`);
+    });
+  }
+
+  // The one that keeps the two forms from drifting: decrypt the JSON envelope
+  // as BYTES and you get the serialised object, character for character.
+  const payload = { assignment_id: 'X_Lab1', submission_data: { p0s0: { answer: 'hi', images_submitted: 0 } } };
+  const jsonEnvelope = new Uint8Array(Buffer.from((await svc.encryptJsonGb2(payload, pubPem)).slice(4), 'base64'));
+  const jsonBytes = await openBytes(jsonEnvelope);
+  check('the JSON form is the byte form plus stringify, base64 and the tag', () =>
+    assertEqual(Buffer.from(jsonBytes).toString('utf8'), JSON.stringify(payload),
+      'the gb2 JSON envelope is not the byte envelope over JSON.stringify'));
 }
 
 // ---------- report ----------
