@@ -106,37 +106,70 @@ console.log(`  ${plural(PROCESS_RECORD.length, 'filename pattern', 'filename pat
 {
   const matches = (name) => PROCESS_RECORD.some((re) => re.test(name));
 
-  // One dirty name per pattern, derived from the patterns themselves so a new
-  // pattern cannot be added without a case: an exercise that has to be updated
-  // by hand is one that stops being updated.
-  const DIRTY = PROCESS_RECORD.map((re) => {
-    const src = re.source;
-    const prefix = /^\^([A-Z_]+)/.exec(src);
-    if (prefix) return `${prefix[1]}2026-09-03.md`;
-    const infix = /^([A-Za-z_]+)\.\*/.exec(src.replace(/^\^/, ''));
-    return infix ? `EEC100${infix[1]}2026-09-03.md` : null;
-  });
+  /**
+   * Real process-record filenames. **Written out, not derived from the
+   * patterns.**
+   *
+   * The first version of this built each name from the pattern it was meant to
+   * exercise, on the reasoning that a hand-maintained list stops being
+   * maintained. It was self-fulfilling and a mutation proved it: corrupting
+   * `^COMPLETION_` to `^COMPLETIONXX_` also corrupted the filename derived from
+   * it, the two still matched, and the self-check passed. **A fixture generated
+   * from the thing under test cannot test it** — it can only detect the thing
+   * being deleted, never changed.
+   *
+   * So these are literal, and the coverage assertion below is what keeps the
+   * hand-maintenance honest: a pattern that no name here matches fails, so
+   * adding a pattern without a case is caught even though the case is manual.
+   *
+   * **They are filenames, and a filename is where a personal name hides.** The
+   * first version of this list carried a real colleague's name in a plausible
+   * brief filename, and `no-personal-names.mjs` — which scans this file like
+   * every other — refused it. Keep them descriptive: a course code, a subject,
+   * a date.
+   */
+  const DIRTY = [
+    'HANDOFF_HANDWRITTEN_STAGE2B_2026-08-11.md',
+    'COMPLETION_STUDENT_CONSUME_2026-09-01.md',
+    'WORKORDER_NO_LOCAL_TRACES_2026-09-03.md',
+    'WORK_ORDERS_2026-09.md',
+    'CORRECTION_AM_TARGET_POINTS_2026-09-01.md',
+    'REPORT_FULL_ASSIGNMENT_2026-09-03.md',
+    'DIRECTIVE_FREEZE_2026-08-31.md',
+    'DECISION_PACKAGE_CONTENTS_2026-09-01.md',
+    'SESSION_REPORT_2026-03-24.md',
+    'MILESTONE_ZERO_2026-09-01.md',
+    'NOTE_AI_FEEDBACK_2026-08-18.md',
+    'PLAN_ENG17_FALL_CONVERGENCE_2026-08-31.md',
+    'SCHEDULE_FALL_2026.md',
+    'RESUME_2026-09-02.md',
+    'HANDOVER_2026-09-03.md',
+    'BRIEF_AUTOGRADER_2026-06-20.md',
+    'START_HERE_2026-09-03.md',
+    'EEC100_Memo_2026-08-28.md',
+    'EEC100_Test_Battery_2026-08-28.md',
+  ];
 
-  // Real filenames from this repository that must NOT match. Developer
-  // documentation is the thing most easily caught by a pattern reaching too
-  // far, and a false positive here is what would get the guard deleted.
+  /**
+   * Real filenames from this repository that must NOT match.
+   *
+   * Developer documentation is what a pattern reaching too far catches first,
+   * and a false positive here is what would get the guard deleted rather than
+   * fixed. `README.md` is the one that matters: a pattern anchored loosely
+   * enough to match it takes the repository's front door with it.
+   */
   const CLEAN = [
     'README.md', 'AUTOGRADER_ZIP_SPEC.md', 'CONTRIBUTING.md',
     'BASELINE_2026-09-01.md', 'LABELS.csv', 'types.ts', 'index.html',
+    'PULL_REQUEST_TEMPLATE.md', 'LICENSE',
   ];
 
   let ran = 0;
-  for (let i = 0; i < DIRTY.length; i++) {
-    const name = DIRTY[i];
-    if (name === null) {
-      fail(`the self-check could not build a filename for pattern ` +
-        `${PROCESS_RECORD[i]} — add one by hand rather than leaving it unexercised`);
-      continue;
-    }
+  for (const name of DIRTY) {
     ran++;
     if (!matches(name)) {
-      fail(`the pattern list no longer matches ${name}, which pattern ` +
-        `${PROCESS_RECORD[i]} exists to catch`);
+      fail(`the pattern list no longer matches ${name}, which is a process ` +
+        `record and must never be tracked`);
     }
   }
   for (const name of CLEAN) {
@@ -146,9 +179,19 @@ console.log(`  ${plural(PROCESS_RECORD.length, 'filename pattern', 'filename pat
         `and must never be treated as a process record`);
     }
   }
+
+  // What keeps a manual list from rotting: a pattern nothing above exercises is
+  // a pattern nothing tests, and it fails here rather than sitting unproven.
+  for (const re of PROCESS_RECORD) {
+    if (!DIRTY.some((name) => re.test(name))) {
+      fail(`no fixture exercises ${re} — add a filename to DIRTY rather than ` +
+        `leaving the pattern unproven`);
+    }
+  }
+
   if (ran === 0) fail('the self-check exercised no filenames at all');
-  console.log(`  self-check — ${ran} filenames, ${DIRTY.filter(Boolean).length} that ` +
-    `must match and ${CLEAN.length} that must not`);
+  console.log(`  self-check — ${ran} filenames, ${DIRTY.length} that must match ` +
+    `and ${CLEAN.length} that must not; every pattern covered`);
 }
 
 if (offenders.length > 0) {
