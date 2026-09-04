@@ -117,19 +117,36 @@ console.log('\ncryptoService — gb1 / gb2 test suite');
 console.log(`fixture: ${fixture ? fixturePath : `NOT FOUND at ${fixturePath}`}\n`);
 
 // =====================================================
-// 1. gb2 round-trip against the verified fixture
+// 1 and 2. The gb2 envelope, against whatever keypair is available
 // =====================================================
-if (fixture) {
-  const encoded = await svc.encryptJsonGb2(fixture.plaintext_submission, fixture.public_key_spki_pem);
-  const decoded = await decryptGb2(encoded, fixture.private_key_pkcs8_pem);
+// **These assertions used to run only when the uncommitted fixture was
+// present**, which meant they ran on one machine and nowhere else. CI went
+// green on 2026-09-03 having never encrypted anything.
+//
+// Almost none of them needed that fixture. The prefix, the base64 alphabet, the
+// envelope geometry, the round trip and the tamper response are properties of
+// the format and hold for any 2048-bit RSA keypair, so they are parameterised
+// here and run against an ephemeral pair generated in-process. The fixture,
+// when present, runs the same body a second time — a real instructor key
+// exercising the same path — plus the one check below that genuinely needs it.
+//
+// **What only the committed fixture can do**, and why an ephemeral pair cannot:
+// `sample_gb2_string` is a gb2 envelope produced by the AUTOGRADER's Python
+// implementation, not by this one. Decoding it is the only check in the suite
+// that proves the two implementations agree rather than that this one is
+// self-consistent. That needs a fixed keypair and a fixed ciphertext, so it is
+// skipped loudly rather than faked.
+const gb2Body = async (label, pubPem, privPem, payload) => {
+  const encoded = await svc.encryptJsonGb2(payload, pubPem);
+  const decoded = await decryptGb2(encoded, privPem);
 
-  check('gb2 output carries the gb2: prefix', () =>
+  check(`[${label}] gb2 output carries the gb2: prefix`, () =>
     assert(encoded.startsWith('gb2:'), `got "${encoded.slice(0, 8)}..."`));
 
-  check('gb2 round-trip: fixture plaintext survives encrypt -> decrypt', () =>
-    assertEqual(decoded, fixture.plaintext_submission, 'decrypted payload differs from fixture plaintext'));
+  check(`[${label}] gb2 round-trip: the plaintext survives encrypt -> decrypt`, () =>
+    assertEqual(decoded, payload, 'decrypted payload differs from the plaintext'));
 
-  check('gb2 base64 is standard (padded, non-URL-safe)', () => {
+  check(`[${label}] gb2 base64 is standard (padded, non-URL-safe)`, () => {
     const b64 = encoded.slice(4);
     assert(!/[-_]/.test(b64), 'base64 body contains URL-safe alphabet characters');
     assert(b64.length % 4 === 0, 'base64 body is not padded to a multiple of 4');
@@ -137,74 +154,113 @@ if (fixture) {
 
   // --- envelope shape ---
   const env = parseGb2Envelope(encoded);
-  check('envelope: first two bytes are 0x01 0x00 (wrappedKeyLen = 256)', () => {
+  check(`[${label}] envelope: first two bytes are 0x01 0x00 (wrappedKeyLen = 256)`, () => {
     assertEqual([env.raw[0], env.raw[1]], [0x01, 0x00], 'wrappedKeyLen prefix bytes wrong');
     assert(env.wrappedKeyLen === 256, `wrappedKeyLen is ${env.wrappedKeyLen}, expected 256`);
   });
-  check('envelope: wrappedKey length equals the declared wrappedKeyLen', () =>
+  check(`[${label}] envelope: wrappedKey length equals the declared wrappedKeyLen`, () =>
     assert(env.wrappedKey.length === env.wrappedKeyLen,
       `wrappedKey is ${env.wrappedKey.length} bytes, declared ${env.wrappedKeyLen}`));
-  check('envelope: 12-byte IV follows the wrapped key', () =>
+  check(`[${label}] envelope: 12-byte IV follows the wrapped key`, () =>
     assert(env.iv.length === 12, `iv is ${env.iv.length} bytes`));
-  check('envelope: ciphertext+tag is at least 17 bytes', () =>
+  check(`[${label}] envelope: ciphertext+tag is at least 17 bytes`, () =>
     assert(env.ciphertextPlusTag.length >= 17,
       `ciphertext+tag is ${env.ciphertextPlusTag.length} bytes`));
-  check('envelope: total length is exactly 2 + wrappedKeyLen + 12 + ciphertext+tag', () =>
+  check(`[${label}] envelope: total length is exactly 2 + wrappedKeyLen + 12 + ciphertext+tag`, () =>
     assert(env.raw.length === 2 + env.wrappedKeyLen + 12 + env.ciphertextPlusTag.length,
       'envelope length does not add up'));
-
-  // --- our decoder agrees with the known-good sample from the autograder side ---
-  const sampleDecoded = await decryptGb2(fixture.sample_gb2_string, fixture.private_key_pkcs8_pem);
-  check('fixture sample_gb2_string decodes to the fixture plaintext (decoder sanity)', () =>
-    assertEqual(sampleDecoded, fixture.plaintext_submission, 'sample_gb2_string mismatch'));
 
   // --- tamper ---
   let tamperRaised = false;
   const tamperedEnv = Buffer.from(env.raw);
   tamperedEnv[tamperedEnv.length - 1] ^= 0xff; // flip a byte inside ciphertext+tag
   try {
-    await decryptGb2('gb2:' + tamperedEnv.toString('base64'), fixture.private_key_pkcs8_pem);
+    await decryptGb2('gb2:' + tamperedEnv.toString('base64'), privPem);
   } catch {
     tamperRaised = true;
   }
-  check('tamper: flipping a ciphertext byte makes decryption raise', () =>
+  check(`[${label}] tamper: flipping a ciphertext byte makes decryption raise`, () =>
     assert(tamperRaised, 'tampered envelope decrypted without error'));
-} else {
-  for (const name of [
-    'gb2 round-trip: fixture plaintext survives encrypt -> decrypt',
-    'envelope: first two bytes are 0x01 0x00 (wrappedKeyLen = 256)',
-    'fixture sample_gb2_string decodes to the fixture plaintext (decoder sanity)',
-    'tamper: flipping a ciphertext byte makes decryption raise',
-  ]) skip(name, 'fixture not found');
-}
 
-// =====================================================
-// 2. gb2 with an ephemeral keypair (fixture-independent)
-// =====================================================
-{
+  // --- de-identification survives the round trip ---
+  // Asserting on the DECRYPTED payload rather than the intermediate object is
+  // the point: it is what a course private key holder actually receives.
+  const withPii = {
+    student_name: 'Jane Smith', email: 'jane@example.edu', sid: '123456789',
+    student_id: 'A00123456', course_code: 'ENG17', assignment_id: 'ENG17_HW1',
+    pdf_filename: 'x.pdf', ai_feedback: true,
+    submission_data: { p0s0: { answer: 'hi', images_submitted: 0 } },
+  };
+  const cleanEncoded = await svc.encryptJsonGb2(svc.deidentifyForGb2(withPii), pubPem);
+  const cleanDecoded = await decryptGb2(cleanEncoded, privPem);
+  check(`[${label}] de-identify: the decrypted gb2 payload contains no PII fields`, () => {
+    for (const f of ['student_name', 'email', 'sid', 'student_id']) {
+      assert(!(f in cleanDecoded), `"${f}" present in decrypted payload`);
+    }
+    assert('assignment_id' in cleanDecoded && 'submission_data' in cleanDecoded,
+      'decrypted payload is missing assignment_id or submission_data');
+    assert(cleanDecoded.ai_feedback === true,
+      `ai_feedback is ${JSON.stringify(cleanDecoded.ai_feedback)} in the decrypted payload, expected true`);
+  });
+  check(`[${label}] de-identify: the name appears nowhere in the decrypted JSON text`, () =>
+    assert(!JSON.stringify(cleanDecoded).includes('Jane Smith'),
+      'student name found in decrypted payload'));
+};
+
+// ---- always: an ephemeral 2048-bit keypair, generated in-process ----
+const ephemeral = await (async () => {
   const pair = await webcrypto.subtle.generateKey(
     { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true, ['encrypt', 'decrypt']
   );
-  const pubPem = spkiPem(await webcrypto.subtle.exportKey('spki', pair.publicKey));
-  const privPem = pkcs8Pem(await webcrypto.subtle.exportKey('pkcs8', pair.privateKey));
+  return {
+    pub: spkiPem(await webcrypto.subtle.exportKey('spki', pair.publicKey)),
+    priv: pkcs8Pem(await webcrypto.subtle.exportKey('pkcs8', pair.privateKey)),
+  };
+})();
 
-  const payload = { assignment_id: 'X_Lab1', submission_data: { p0s0: { answer: 'hi', images_submitted: 0 } } };
-  const decoded = await decryptGb2(await svc.encryptJsonGb2(payload, pubPem), privPem);
-  check('gb2 round-trip with an ephemeral 2048-bit keypair', () =>
-    assertEqual(decoded, payload, 'ephemeral round-trip mismatch'));
+const EPHEMERAL_PAYLOAD = {
+  assignment_id: 'X_Lab1',
+  submission_data: { p0s0: { answer: 'hi', images_submitted: 0 } },
+};
+await gb2Body('ephemeral', ephemeral.pub, ephemeral.priv, EPHEMERAL_PAYLOAD);
 
+{
+  const { pub: pubPem, priv: privPem } = ephemeral;
   // PEM tolerance: no trailing newline, CRLF line endings, extra whitespace.
   const gnarly = pubPem.trim().replace(/\n/g, '\r\n');
-  const decoded2 = await decryptGb2(await svc.encryptJsonGb2(payload, `  ${gnarly}  `), privPem);
+  const decoded2 = await decryptGb2(
+    await svc.encryptJsonGb2(EPHEMERAL_PAYLOAD, `  ${gnarly}  `), privPem);
   check('gb2 accepts a CRLF / untrimmed / newline-less PEM', () =>
-    assertEqual(decoded2, payload, 'gnarly-PEM round-trip mismatch'));
+    assertEqual(decoded2, EPHEMERAL_PAYLOAD, 'gnarly-PEM round-trip mismatch'));
 
   // Two encryptions of the same payload must differ (fresh content key + IV).
-  const a = await svc.encryptJsonGb2(payload, pubPem);
-  const b = await svc.encryptJsonGb2(payload, pubPem);
+  const a = await svc.encryptJsonGb2(EPHEMERAL_PAYLOAD, pubPem);
+  const b = await svc.encryptJsonGb2(EPHEMERAL_PAYLOAD, pubPem);
   check('gb2 is non-deterministic (fresh content key and IV per call)', () =>
     assert(a !== b, 'two encryptions of the same payload produced identical output'));
+}
+
+// ---- when present: the same body against the real fixture keypair ----
+if (fixture) {
+  await gb2Body('fixture', fixture.public_key_spki_pem, fixture.private_key_pkcs8_pem,
+    fixture.plaintext_submission);
+
+  // The one check an ephemeral keypair cannot stand in for.
+  const sampleDecoded = await decryptGb2(fixture.sample_gb2_string, fixture.private_key_pkcs8_pem);
+  check('[fixture] interop: a gb2 string produced by the autograder decodes here', () =>
+    assertEqual(sampleDecoded, fixture.plaintext_submission, 'sample_gb2_string mismatch'));
+} else {
+  // Loud, and complete. The previous version listed four names while ten checks
+  // stopped running, so six vanished with no line of output at all — the exact
+  // failure the X-1 rule was adopted to stop. This says what did not run and
+  // what is therefore unproven.
+  skip('[fixture] the envelope body against a real instructor keypair',
+    'fixture not found — the same assertions ran against the ephemeral keypair above');
+  skip('[fixture] interop: a gb2 string produced by the autograder decodes here',
+    'fixture not found — NOTHING ELSE COVERS THIS. The format is verified ' +
+    'self-consistently; that the autograder and this app agree is not verified on ' +
+    'this run');
 }
 
 // =====================================================
@@ -280,26 +336,11 @@ if (fixture) {
   check('de-identify: does not mutate its input', () =>
     assert(full.student_name === 'Jane Smith', 'input object was mutated'));
 
-  // End-to-end: the PII must be absent from the decrypted ciphertext, not just
-  // from the intermediate object.
-  if (fixture) {
-    const encoded = await svc.encryptJsonGb2(svc.deidentifyForGb2(full), fixture.public_key_spki_pem);
-    const decoded = await decryptGb2(encoded, fixture.private_key_pkcs8_pem);
-    check('de-identify: decrypted gb2 payload contains no PII fields', () => {
-      for (const f of ['student_name', 'email', 'sid', 'student_id']) {
-        assert(!(f in decoded), `"${f}" present in decrypted payload`);
-      }
-      assert('assignment_id' in decoded && 'submission_data' in decoded,
-        'decrypted payload is missing assignment_id or submission_data');
-      assert(decoded.ai_feedback === true,
-        `ai_feedback is ${JSON.stringify(decoded.ai_feedback)} in the decrypted payload, expected true`);
-    });
-    check('de-identify: "Jane Smith" appears nowhere in the decrypted JSON text', () =>
-      assert(!JSON.stringify(decoded).includes('Jane Smith'),
-        'student name found in decrypted payload'));
-  } else {
-    skip('de-identify: decrypted gb2 payload contains no PII fields', 'fixture not found');
-  }
+  // The end-to-end form of this — PII absent from the DECRYPTED ciphertext, not
+  // just from the intermediate object — now runs in `gb2Body` above, against
+  // the ephemeral keypair and again against the fixture when there is one. It
+  // was fixture-only until 2026-09-04, which meant the assertion that matters
+  // most here never ran on CI.
 }
 
 // =====================================================

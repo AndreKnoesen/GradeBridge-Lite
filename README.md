@@ -2,7 +2,7 @@
 
 Complete academic assignments in your browser: type answers with LaTeX support and get a PDF, or photograph a printed sheet and get one cropped image per answer. Either way you download a single ZIP and upload it to your course's learning management system. Nothing is sent anywhere.
 
-![Version](https://img.shields.io/badge/version-3.8.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.9.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **[Live Demo](https://bridgesuite.github.io/GradeBridge-Student-Submission/)** 
@@ -48,10 +48,12 @@ This app handles lab reports, mini-projects, and homework:
 ### Complete an assignment — typed
 1. Get the assignment file from your instructor
 2. Click **"Upload assignment"** in the sidebar
-3. Enter your full name
-4. Complete each problem (text / images / text+image / AI-graded response)
-5. Click **"Download for Gradescope"** — downloads a single ZIP containing the submission JSON and PDF
-6. Upload the ZIP file to Gradescope
+3. Complete each problem (text / images / text+image / AI-graded response)
+4. Click **"Download for Gradescope"** — downloads a single ZIP containing the submission JSON and PDF
+5. Upload the ZIP file to Gradescope
+
+The app never asks who you are, in either walkthrough. You are identified by the
+authenticated upload in step 5 — see [Data and privacy](#data-and-privacy).
 
 ### Complete an assignment — handwritten
 Handwritten assignments are answered on paper. You get **one file**, a zip, and
@@ -85,43 +87,86 @@ npm run dev
 
 ## Assignment JSON Format
 
-Assignments are created using the **[Assignment Maker](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker)**:
+Assignments are created in the **[Assignment Maker](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker)**
+and reach you as `assignment_spec.json`, on its own or inside the assignment zip
+alongside `layout_{ID}.csv` and `assignment.pdf`. On disk it is a single
+`gb1:`-prefixed string; below is what it decodes to.
+
+**The spec carries no grading material of any kind** — no grading prompts, no
+grader notes, no answer key, no reference solutions. That is not a convention
+anyone has to remember: the Assignment Maker builds this file from an explicit
+whitelist of the fields this app reads (`STUDENT_SPEC_FIELDS` in its
+`services/exportService.ts`), so a field added for the grader is excluded by
+default rather than included by accident. Grading material travels to the
+autograder by its own route, in a file students never receive.
+
+Every field below is one this app actually reads; the shape is `types.ts`.
 
 ```json
 {
-  "courseCode": "ECE416",
-  "title": "Mini-Project 1",
-  "preamble": "Instructions for the entire assignment...",
+  "id": "a3f1c8e0-4b21-4d9a-9c77-2e5b1f0a6d34",
+  "courseCode": "ENG17",
+  "title": "Homework 1",
+  "preamble": "Show your working. Answers without working receive no credit.",
+  "createdAt": 1756944000000,
+  "updatedAt": 1756944000000,
+  "inputMode": "handwritten",
+  "aiFeedback": false,
+  "coursePublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq...\n-----END PUBLIC KEY-----\n",
   "problems": [
     {
-      "name": "System Analysis",
-      "description": "Analyze the following system...",
+      "id": "p1",
+      "name": "Node Voltage",
+      "description": "The circuit below is driven by 10 V.",
       "subsections": [
         {
-          "name": "Transfer Function",
-          "description": "Derive the transfer function",
+          "id": "p1a",
+          "name": "Transfer function",
+          "description": "Derive the transfer function.",
           "points": 50,
           "submissionType": "Text"
         },
         {
-          "name": "Step Response",
-          "description": "Plot the step response",
+          "id": "p1b",
+          "name": "Step response",
+          "description": "Plot the step response.",
           "points": 30,
           "submissionType": "Image",
           "maxImages": 2
         },
         {
+          "id": "p1c",
           "name": "Reflection",
-          "description": "Explain your approach",
+          "description": "Explain your approach.",
           "points": 20,
           "submissionType": "AI Graded: Short",
-          "aiGradingConfig": { "gradingPrompt": "..." }
+          "minWords": 50,
+          "config": "half"
         }
       ]
     }
   ]
 }
 ```
+
+**Assignment level.** `id`, `courseCode`, `title`, `preamble`, `problems`,
+`createdAt` and `updatedAt` are always present. Three are written only when the
+assignment carries them, so a spec from before a field existed is byte-for-byte
+what it was:
+
+| field | meaning |
+|---|---|
+| `inputMode` | `"electronic"` or `"handwritten"`. Absent means electronic. |
+| `aiFeedback` | Per-assignment AI-feedback flag, carried through to Gradescope. Absent means off. |
+| `coursePublicKey` | RSA public key (SPKI PEM) for the course. When present the submission is sealed with `gb2:` instead of `gb1:` — see [Submission encoding](#submission-encoding-gb1-and-gb2). **Never a private key**; this app never holds one. |
+
+**Problem level.** `id`, `name`, `description`, `subsections` — all required.
+
+**Subsection level.** `id`, `name`, `description`, `points` and `submissionType`
+are always present. `minWords`, `maxImages` and `config` appear only where the
+author set them: `maxImages` caps an image upload, `minWords` is guidance shown
+beside an AI-graded answer and is never enforced, and `config` carries the
+authored answer-space size for a handwritten part.
 
 **Submission Types:** `Text`, `Image`, `Text and Image`, `AI Graded: Binary`, `AI Graded: Short`, `AI Graded: Medium`, `AI Graded: Long`
 
@@ -218,14 +263,13 @@ instructor's and the institution's choice.
   by test. Where a course supplies a public key, `gb2:` provides real
   confidentiality — only the holder of the course private key can open it, and
   this app never holds one.
-- **On a `gb2:` course the photographs, the crops and the PDF are encrypted too**
-  (2026-09-03). Until then only the JSON was, and on a handwritten assignment
-  the JSON holds no answers at all — the answers are the images, and they
-  travelled as plain JPEGs beside it. The typed-assignment PDF was the same thing
-  one file along: it renders the answers the JSON encrypts. Now every entry in
-  the archive but the JSON's own envelope is sealed individually and named
-  `.gb2`. **On a course with no key nothing changed**, and a submission from such
-  a course is as readable as it always was.
+- **On a `gb2:` course the photographs, the crops and the PDF are encrypted
+  too.** Every entry in the archive beyond the JSON's own envelope is sealed
+  individually and named `.gb2`. This matters most on a handwritten assignment,
+  where the JSON holds no answers at all — the answers are the images. **On a
+  course with no key nothing is encrypted beyond the JSON**, and such a
+  submission is as readable as it has always been. See the
+  [changelog](#changelog) for when this changed and what it replaced.
 - **Your work is in browser storage and can be lost.** Clearing site data
   deletes it. Use *Save Backup*.
 
@@ -272,10 +316,11 @@ The submission JSON is encoded in one of two formats. The autograder detects whi
 | `coursePublicKey` present | `gb2:` — public-key envelope | Real. Only the course private key opens it, and this app never holds one. |
 
 **Neither format carries an identity field.** The payload has had no
-`student_name` since v3.8.0, and never carried an email or a student ID. `gb2:`
-additionally strips those four keys on the way out, which is belt and braces
-rather than the mechanism: if one ever returned to the payload by accident, the
-`gb2:` path would still remove it.
+`student_name` since v3.9.0 — before that `gb2:` stripped it (v3.6.0) while
+`gb1:` still carried it — and it never carried an email or a student ID. `gb2:`
+still strips those four keys on the way out, which is belt and braces rather
+than the mechanism: if one ever returned to the payload by accident, the `gb2:`
+path would still remove it.
 
 `gb2:` wraps a random AES-256-GCM content key with the course RSA public key (RSA-OAEP, SHA-256/MGF1-SHA256, empty label) and lays out the envelope as `wrappedKeyLen[uint16 BE] | wrappedKey | iv[12] | ciphertext+tag`, standard-base64 encoded. Only the course private key — held by the autograder, never by this app — can open it.
 
@@ -328,15 +373,62 @@ detection table. **That set is synthetic and is not the evidence the work order
 asks for** — see `tests/captures/README.md`, and drop real photographs into
 `tests/captures/real/` to have them scored alongside.
 
-The gb2 round-trip checks need the verified test fixture (test keypair + plaintext + a known-good `gb2:` string). It is deliberately **not** committed — it contains a private key. The runner looks for `../Encryption/gb2_test_fixture.json` relative to the repo, or wherever `GB2_FIXTURE` points:
+**The encryption is exercised wherever the suite runs.** The envelope
+assertions — prefix, base64 alphabet, envelope geometry, round trip, tamper
+response and de-identification of the decrypted payload — are properties of the
+format, so they run against a 2048-bit keypair generated in-process on every
+run, including CI.
+
+One check needs the verified test fixture and cannot be faked: `sample_gb2_string`
+is a `gb2:` envelope produced by the **autograder's** Python implementation, and
+decoding it is the only evidence the two implementations agree rather than that
+this one is self-consistent. That needs a fixed keypair and a fixed ciphertext.
+
+The fixture is deliberately **not** committed — it contains a private key. The
+runner looks for `../Encryption/gb2_test_fixture.json` relative to the repo, or
+wherever `GB2_FIXTURE` points:
 ```bash
 GB2_FIXTURE=/path/to/gb2_test_fixture.json npm test
 ```
-Without it the suite still runs everything using an ephemeral keypair and marks the fixture-bound checks SKIPPED.
+Without it the suite reports **two loud skips** and says which is which: the
+fixture-keypair pass over the same body (covered by the ephemeral run), and the
+interop check (**covered by nothing else**). With it, 45 checks pass and none
+skip; without it, 33 pass and 2 skip.
 
 ---
 
 ## Changelog
+
+### v3.9.0 — the submission carries no identity, and a keyed course seals everything
+- **`student_name` is gone from the payload and from every filename.** There was
+  never a field to type it into; the app was carrying a value it had inferred.
+  Identity is the authenticated upload to your institution's LMS and nothing
+  else. Filenames are built from the assignment and a timestamp, like
+  `ENG17_Homework_1_submission_20260903-0303.zip`. The `gb2` strip list still
+  names `student_name`, `email`, `sid` and `student_id` — that is belt and
+  braces over a payload that no longer builds them, not the mechanism.
+  **What is given up, deliberately:** the spec used to say a grader should
+  compare the typed name against Gradescope's submitter and flag a mismatch.
+  That check is gone. A self-typed name never caught an impostor, only a typo.
+- **On a course with a key, every entry in the archive is sealed — not only the
+  JSON.** Page photographs, answer crops, uploaded image answers and the
+  submission PDF each get their own standard `gb2` envelope with its own content
+  key and IV, and are named `.gb2`: `page_1.jpg.gb2`, `crops/p1a.jpg.gb2`,
+  `{stem}.pdf.gb2`. The defect this closes is specific: on a handwritten
+  assignment the JSON holds no answers at all — the answers *are* the images —
+  so a hardened course was encrypting the envelope and shipping the letter in
+  the clear. The PDF was the same thing one file along.
+- **The payload declares what it sealed**, in `image_encryption` (`"gb2"`) and
+  `encrypted_entries` (every sealed entry name, in archive order).
+  **A consumer should drive its decrypt from that list, not from filenames it
+  decides in advance**: the list names what was *actually written*, so a partial
+  submission's list is short rather than wrong. Both fields are absent — absent,
+  not `null` — when the course has no key, so test for presence.
+- **A course with no key is unchanged**, byte for byte. Nothing about the
+  keyless path moved, and a submission from such a course is as readable as it
+  always was.
+- Interface details for consumers: `AUTOGRADER_ZIP_SPEC.md` v6.0, which is
+  **breaking for a course with a key** and carries the decrypt reference.
 
 ### v3.8.0 — the handwritten submission path
 - **The student loads one file: the assignment zip.** It carries
