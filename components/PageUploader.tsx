@@ -5,6 +5,7 @@ import {
 import { PageRef } from '../types';
 import { PAGE_TOTAL_SIZE_TARGET } from '../constants';
 import { IngestedPage, formatBytes, ingestPage } from '../imageIngest';
+import InAppBrowserNotice from './InAppBrowserNotice';
 
 interface PageUploaderProps {
   pages: PageRef[];
@@ -166,6 +167,11 @@ const PageUploader: React.FC<PageUploaderProps> = ({
       </div>
 
       <div className="p-6 space-y-5">
+        {/* First thing in the photograph step and nowhere else: an in-app
+            browser costs photographs, and it costs them here. It renders
+            nothing at all in an ordinary browser or once dismissed. */}
+        <InAppBrowserNotice />
+
         <p className="text-sm text-gray-600">
           <span className="font-semibold text-gray-800">
             Take all your photos first, then upload them together

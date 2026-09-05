@@ -58,6 +58,13 @@ START_HERE*.md
 *_Memo_*.md
 *_Test_Battery_*.md
 
+# A session note's screenshots are part of the note, and go the same way. The
+# guard in `tests/no-process-records.mjs` reads `.md` basenames only, so an
+# image attached to one of these is caught here or it is caught nowhere.
+COMPLETION_*.png
+WORKORDER_*.png
+HANDOFF_*.png
+
 # Generated capture set for the registration suite (npm run captures rebuilds it).
 # Real photographs in tests/captures/real/ ARE tracked — they are the evidence.
 tests/captures/synthetic/
