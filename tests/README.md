@@ -41,11 +41,38 @@ that repo is not checked out alongside):
   surface mentions it. These read the expression out of `App.tsx` and evaluate
   it, rather than restating it — App.tsx cannot be imported here.
 
-## 2. Interop check — browser output into the real autograder
+## 2. Interoperability check — this app and the real autograder, both directions
 
-The unit suite decrypts with Node. This one decrypts browser-produced gb2
-strings with the **delivered** `crypto_utils.py`, so the contract is verified
-end to end rather than against our own reading of it.
+### CI DOES NOT RUN THIS. Read that first.
+
+**A green tick on CI does not include anything in this section.** The check
+needs a private key; the key cannot be committed; CI has no other way to obtain
+it. That is deliberate and it stays.
+
+It is therefore a **local, manual, two-command run**, not part of `npm test`.
+Nothing here is wired into `npm test`, and it must not be: an interoperability
+claim that quietly degrades into a self-consistency claim when a file is
+missing is worse than no claim at all.
+
+**Do not "fix" this by generating a keypair in-process and calling the result
+interop.** An ephemeral pair proves this app agrees with itself, which
+`run-tests.mjs` already covers thoroughly. It cannot prove agreement with
+another implementation, because both ends would be ours.
+
+### What each direction proves
+
+| | direction | proves |
+|---|---|---|
+| **forward** | our output → his decrypt | the autograder can open what the app produces |
+| **reverse** | his output → our reading | the app reads what the autograder produces |
+
+The two are independent and neither implies the other. Until 2026-09-05 the
+reverse direction ran against a keypair *we* had generated, so it was closer to
+a self-consistency check than its name suggested; it now runs against the
+autograder author's own test keypair and a `gb2:` string his implementation
+produced.
+
+### Forward: our output, his decrypt
 
 ```bash
 node tests/interop-emit.mjs > emitted.json    # encrypts using the app's cryptoService.ts
@@ -56,31 +83,90 @@ Requires Python with `cryptography` installed. It sets `GB2_PRIVATE_KEY_PEM`
 from the fixture — the same environment variable Gradescope will hold the real
 course private key in.
 
-Last run 2026-08-10 against
-`Encryption/updated_encryption_BA_7_13_2026/crypto_utils.py`
-(cryptography 41.0.0, Python 3.13.5) — all 6 checks passed:
-`is_encoded()` detects the string; `decrypt_json()` returns both the fixture
-plaintext and the de-identified App payload byte-identically; no PII fields
-survive; `assignment_id` and `submission_data` are present; a flipped
-ciphertext byte raises.
+### Reverse: his output, our reading
+
+```bash
+node tests/interop-reverse.mjs
+```
+
+Deliberately does **not** call `crypto_utils.py`: opening his ciphertext with
+his own decryptor would prove only that his code agrees with itself. The
+envelope is parsed from the format `cryptoService.ts` documents, so a
+disagreement in layout, padding or field order surfaces as a failure instead of
+being absorbed by shared code.
+
+Every failure names **which layer caught it** — RSA-OAEP unwrap, AES-GCM tag
+verification, JSON parse, or the final equality assertion. That distinction is
+the point: if a corrupted envelope is only ever caught by the equality
+assertion, authentication is not doing its job.
+
+Without a fixture it **skips loudly**, naming what did not run and what is
+therefore unproven. It never silently passes.
+
+### Proving both can go red
+
+A check nobody has watched fail is a comment. Both directions have been made to
+fail on purpose, on a single flipped byte, and both were caught by the
+cryptography rather than by the final comparison:
+
+```bash
+# reverse — flip a byte inside ciphertext+tag, feed it in without touching the fixture
+GB2_OVERRIDE='gb2:<corrupted>' node tests/interop-reverse.mjs
+#   -> FAIL  AES-256-GCM decrypts and the tag verifies
+#      CAUGHT BY: AES-GCM tag verification
+
+# forward — flip a byte inside the wrapped key in emitted.json, then re-check
+python tests/interop-check.py emitted_corrupt_wrappedkey.json
+#   -> Exception: gb2: decryption/unwrap failed (file may be tampered or wrong key)
+#      caught at the RSA-OAEP unwrap
+```
+
+Last run **2026-09-05** against
+`Encryption/updated_encryption_BA_7_13_2026/crypto_utils.py` (cryptography
+41.0.0, Python 3.13.5): forward all 6 checks passed; reverse an exact match,
+including key order and compact separators. Both went red as above on one
+corrupted byte and green again on the untouched fixture.
 
 ## The fixture
 
-Both layers need `gb2_test_fixture.json` — a throwaway 2048-bit keypair, a
-sample plaintext, and a known-good `gb2:` string generated on the autograder
-side.
+Both directions need `gb2_test_fixture.json`:
+
+| field | read at |
+|---|---|
+| `public_key_spki_pem` | `tests/interop-emit.mjs:64,65`, `tests/run-tests.mjs:246` |
+| `private_key_pkcs8_pem` | `tests/interop-check.py:38`, `tests/run-tests.mjs:246,250`, `tests/interop-reverse.mjs` |
+| `plaintext_submission` | `tests/interop-emit.mjs:65,78`, `tests/run-tests.mjs:247,252` |
+| `sample_gb2_string` | `tests/run-tests.mjs:250`, `tests/interop-reverse.mjs` |
+
+`sample_gb2_string` is the one field an ephemeral keypair cannot stand in for:
+it is an envelope produced by the *other* implementation.
+
+Since 2026-09-05 the fixture is assembled from the five files the autograder
+author delivered, and the keypair is **RSA-4096**, not the 2048-bit pair used
+before. That matters: **the live ENG17 Fall course key is also 4096-bit**, so
+this is the first fixture that exercises the configuration production will
+actually run. `wrappedKeyLen` is 512 rather than 256 and the envelope prefix is
+`0x02 0x00` rather than `0x01 0x00` — which is why `run-tests.mjs` no longer
+asserts a fixed key size, only that the big-endian prefix decodes to the length
+that follows it.
+
+Per-file sealing overhead follows the key: **542 bytes at 4096-bit**, against
+the 286 measured at 2048-bit and quoted in `CLAUDE.md`.
 
 It is **not committed**: it contains a private key, test-only or not, and this
-repo is public. Default lookup is `../Encryption/gb2_test_fixture.json`
-relative to the repo root; override with `GB2_FIXTURE`:
+repo is public. It lives outside both app repositories, under
+`GradeBridge2026/Encryption/`, which the root `.gitignore` excludes entirely.
+Default lookup is `../Encryption/gb2_test_fixture.json` relative to the repo
+root; override with `GB2_FIXTURE`:
 
 ```bash
 GB2_FIXTURE=/path/to/gb2_test_fixture.json npm test
 ```
 
 Without the fixture `npm test` still runs everything using an ephemeral
-keypair and reports the fixture-bound checks as SKIPPED. The interop check
-cannot run without it.
+keypair and reports the fixture-bound checks as SKIPPED. Neither interop
+direction can run without it.
 
 **Never add a private key to this repo, and never let one into the app
-bundle.** The app holds public keys only.
+bundle.** The app holds public keys only — `cryptoService.ts` exports no gb2
+decrypt at all, and a check in `milestone-zero.mjs` holds it that way.

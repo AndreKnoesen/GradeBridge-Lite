@@ -56,15 +56,18 @@ const SUITE = resolve(REPO, '..');
 // deliberately no default: a fallback path is a path into one person's machine,
 // and this repository is public.
 //
-// Point it at the `student/` folder of an ENG17 Homework 1 export made after the
-// 2026-09-01 target-points fix — same `layout_id` 95438EDF, and a map that
-// totals 200.
+// Point it at the `student/` folder of any ENG17 Homework 1 export: `layout_id`
+// 95438EDF, 17 regions, 16 pages. The point total is NOT part of that identity
+// and this harness no longer requires a particular one.
 //
-// **Do not point it at `CaptureSet/frozen_export/student`.** It carries the same
-// `layout_id` and the same geometry — points are outside the hash — but it
-// predates that fix and its map totals 100, so every `max_points` in the package
-// comes out halved. It fails the points check here, which is the only thing that
-// catches it.
+// `CaptureSet/frozen_export/student` is a valid input and is the one kept in the
+// tree. Its map totals 100 because it predates the 2026-09-01 target-points fix,
+// while a current export totals 200 — with the same 95438EDF, because points sit
+// outside the hash. That is the design claim, and the frozen export is the
+// evidence for it, so it is preserved rather than refreshed; see the note beside
+// it. An earlier version of this file told you not to use it, because a
+// hardcoded `=== 200` here rejected it. That was this harness's defect, not the
+// export's, and the checks below now compare the run against what it was handed.
 const EXPORT_DIR = process.env.MILESTONE_EXPORT ?? '';
 const OUT_DIR = process.env.MILESTONE_OUT ?? join(SUITE, 'CaptureSet', 'milestone_zero');
 
@@ -138,8 +141,26 @@ check(`the recomputed layout_id is ${EXPECTED_LAYOUT_ID}`,
   layout.computedLayoutId === EXPECTED_LAYOUT_ID, layout.computedLayoutId);
 check('the map declares 17 regions', layout.rows.length === 17, String(layout.rows.length));
 check('the sheet is 16 pages', layout.maxPageK === 16, String(layout.maxPageK));
+// --- points: checked against what this run was handed, never against a constant ---
+//
+// This used to read `totalPoints === 200`, and it was wrong in the way that is
+// hardest to see: it passed. It asserted a number that the assignment's own
+// identity does not determine. `layout_id` is a hash of the GEOMETRY — points
+// are deliberately outside it — so two exports of the same sheet can carry the
+// same 95438EDF, the same 17 regions and the same 16 pages while totalling 100
+// and 200. A constant here fails a legitimately 100-point assignment and says
+// "the map totals 200 points — 100", which names the symptom and not the fault.
+//
+// There are two independent statements of the points in the bundle, and neither
+// is a constant: the spec's per-part `points`, and the map's `max_points`. So
+// check what can actually be wrong — that the two agree, and that the package
+// carries through what the map declared. Both hold for every assignment.
 const totalPoints = layout.rows.reduce((s, r) => s + r.maxPoints, 0);
-check('the map totals 200 points', totalPoints === 200, String(totalPoints));
+const specParts = (spec.problems ?? []).flatMap(p => p.subsections ?? []);
+const specPoints = specParts.reduce((s, p) => s + (p.points ?? 0), 0);
+check('the map and the spec state the same total',
+  totalPoints === specPoints, `map ${totalPoints}, spec ${specPoints}`);
+console.log(`        (this assignment totals ${totalPoints} points across ${layout.rows.length} regions)`);
 
 // =====================================================
 // 2. Ingest, gate, register, crop
@@ -399,6 +420,21 @@ check('it lists all three crops', payload.crops && Object.keys(payload.crops).le
 check('every crop is signed off',
   Object.values(payload.crops ?? {}).every(c => c.student_review === 'signed_off'));
 
+// The points the package carries, against the map it was handed. This is the
+// check the hardcoded 200 was standing in for and never actually performed —
+// nothing here looked at the package's points at all. A crop that reports a
+// different `max_points` from the row it was cut from is a real defect, and it
+// is one the layout_id cannot catch, because points are outside the hash.
+const pointsMismatch = Object.values(payload.crops ?? {}).flatMap(c => {
+  const row = layout.rows.find(r => r.regionId === c.region_id);
+  if (!row) return [`${c.region_id} is in the package but not in the map`];
+  return row.maxPoints === c.max_points
+    ? []
+    : [`${c.region_id}: map says ${row.maxPoints}, package says ${c.max_points}`];
+});
+check('every crop carries the max_points its map row declared',
+  pointsMismatch.length === 0, pointsMismatch.join('; '));
+
 // --- the answer key check. This shipped to students once already. ---
 const flat = JSON.stringify(payload);
 const FORBIDDEN = [
@@ -577,7 +613,8 @@ writeFileSync(join(OUT_DIR, 'README.txt'),
   [
     'Milestone zero — produced by GradeBridge-Student-Submission/tests/milestone-zero.mjs',
     '',
-    `assignment : ENG17 HW1, layout_id ${EXPECTED_LAYOUT_ID}, 16 pages, 17 regions, 200 points`,
+    `assignment : ENG17 HW1, layout_id ${EXPECTED_LAYOUT_ID}, 16 pages, ` +
+      `${layout.rows.length} regions, ${totalPoints} points`,
     `photographs: cap01 (page 2), cap11 (page 3) — 2 of 16 pages, a deliberate partial submission`,
     `student    : none — the package carries no name (${HARNESS_LABEL} harness)`,
     `envelope   : ${built.format}`,

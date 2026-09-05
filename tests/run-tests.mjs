@@ -154,9 +154,21 @@ const gb2Body = async (label, pubPem, privPem, payload) => {
 
   // --- envelope shape ---
   const env = parseGb2Envelope(encoded);
-  check(`[${label}] envelope: first two bytes are 0x01 0x00 (wrappedKeyLen = 256)`, () => {
-    assertEqual([env.raw[0], env.raw[1]], [0x01, 0x00], 'wrappedKeyLen prefix bytes wrong');
-    assert(env.wrappedKeyLen === 256, `wrappedKeyLen is ${env.wrappedKeyLen}, expected 256`);
+  // The first two bytes are the wrapped key's length, big-endian — NOT a
+  // constant. This used to assert `0x01 0x00` / 256, which is RSA-2048's
+  // modulus size and nothing else. It passed for a year because every keypair
+  // the suite had ever seen was 2048-bit, and it failed the moment a real one
+  // arrived: the autograder author's test key is RSA-4096, so wrappedKeyLen is
+  // 512 and the prefix is `0x02 0x00`. **So is the live ENG17 Fall course key.**
+  // An assertion that would reject the configuration production actually uses is
+  // worse than no assertion, so what is checked here is the format property —
+  // the prefix decodes, big-endian, to the length that follows it.
+  check(`[${label}] envelope: the first two bytes are wrappedKeyLen, big-endian`, () => {
+    assertEqual((env.raw[0] << 8) | env.raw[1], env.wrappedKeyLen,
+      'the uint16 BE prefix does not decode to the declared wrappedKeyLen');
+    assert(env.wrappedKeyLen === 256 || env.wrappedKeyLen === 384 || env.wrappedKeyLen === 512,
+      `wrappedKeyLen is ${env.wrappedKeyLen}; expected an RSA modulus size ` +
+      '(256 = 2048-bit, 384 = 3072-bit, 512 = 4096-bit)');
   });
   check(`[${label}] envelope: wrappedKey length equals the declared wrappedKeyLen`, () =>
     assert(env.wrappedKey.length === env.wrappedKeyLen,
