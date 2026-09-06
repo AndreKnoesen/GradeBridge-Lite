@@ -18,7 +18,7 @@ import { clearPageBlobs, deletePageBlob, getPageBlob, putPageBlob, pruneExcept }
 import { DEMO_ASSIGNMENT, DEMO_LOADED_MESSAGE } from './demoAssignment';
 import { AlertTriangle, Download, ChevronLeft, Info, X, Monitor, Smartphone, Save } from 'lucide-react';
 import { isEncoded, decryptJson, GB2_KEY_ERROR } from './cryptoService';
-import { BundleError, loadAssignmentBundle } from './services/assignmentBundle';
+import { BundleError, chooseLayoutSource, loadAssignmentBundle } from './services/assignmentBundle';
 import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
 import { registerAndCropPage } from './services/pageCrops';
 import {
@@ -535,6 +535,11 @@ const App: React.FC = () => {
    * A bare `assignment_spec.json` still loads. Electronic assignments have no
    * map and never needed one, and every file already in circulation is a bare
    * spec, so refusing one would break them all to buy nothing.
+   *
+   * Since 2026-09-06 a bare spec can also BE the whole handwritten assignment:
+   * the map travels inside it, gb1-encoded with everything else, so there is
+   * no second file to open, choose wrongly, read, or edit. A separate
+   * `layout_*.csv` still wins wherever one is present.
    */
   const handleLoadAssignment = async (file: File) => {
       try {
@@ -572,37 +577,27 @@ const App: React.FC = () => {
         if (!json.problems || !json.title || !json.courseCode) {
           throw new Error("Invalid assignment file format");
         }
-        // Loading an assignment starts a fresh submission. Answers have always
-        // been cleared here; pages are photographs, so ask before dropping them.
-        if (state.pages.length > 0 && !window.confirm(
-          "Loading an assignment clears your current work, including the " +
-          `${state.pages.length} page image${state.pages.length === 1 ? '' : 's'} you uploaded.\n\n` +
-          "Continue?"
-        )) {
-          return;
-        }
-        // The map, when the bundle carries one.
+        // The map: beside the spec if the bundle carried one, otherwise inside
+        // it. A separate `layout_*.csv` wins, so every packet already in
+        // circulation loads exactly as it does today.
+        const source = chooseLayoutSource(loaded.layout, json);
         let layout: StoredLayoutMap | null = null;
-        if (loaded.layout) {
-          layout = await parseLayoutCsv(loaded.layout.text, loaded.layout.name);
+        if (source) {
+          layout = await parseLayoutCsv(source.text, source.name);
           if (layout.declaredLayoutId && layout.declaredLayoutId !== layout.computedLayoutId) {
             throw new LayoutMapError(
-              `${loaded.layout.name} says its layout id is ${layout.declaredLayoutId}, but its own ` +
+              `${source.name} says its layout id is ${layout.declaredLayoutId}, but its own ` +
               `rows come to ${layout.computedLayoutId}. The file has been edited or was not ` +
               "downloaded completely — get the assignment file again."
             );
           }
         }
 
-        void clearPageBlobs();
-        dropAllPageUrls();
-        dropAllCropUrls();
-        setState(prev => ({
-          ...prev, assignment: json, submissionData: {}, pages: [], layout, crops: {},
-        }));
-
-        // A handwritten assignment with no map can be photographed but never
-        // cropped. Say so here, plainly, rather than letting it fail later.
+        // A handwritten assignment with no map from either place can be
+        // photographed but never cropped. **Refuse it**, before anything is
+        // dropped and before any state moves. This used to warn and load
+        // anyway, which left the student in the broken state it described and
+        // let them photograph sixteen pages before finding out.
         if (json.inputMode === 'handwritten' && !layout) {
           alert(
             "This assignment is written on paper, but the file you loaded has no layout map in it.\n\n" +
@@ -611,7 +606,28 @@ const App: React.FC = () => {
             "Load the assignment zip your instructor gave you — the one you printed the PDF from — " +
             "rather than the assignment_spec.json on its own."
           );
+          return;
         }
+
+        // Loading an assignment starts a fresh submission. Answers have always
+        // been cleared here; pages are photographs, so ask before dropping them.
+        // Asked last, once the file is known to be one this app will accept:
+        // nobody should be asked to discard their pages for a load that is
+        // about to be refused.
+        if (state.pages.length > 0 && !window.confirm(
+          "Loading an assignment clears your current work, including the " +
+          `${state.pages.length} page image${state.pages.length === 1 ? '' : 's'} you uploaded.\n\n` +
+          "Continue?"
+        )) {
+          return;
+        }
+
+        void clearPageBlobs();
+        dropAllPageUrls();
+        dropAllCropUrls();
+        setState(prev => ({
+          ...prev, assignment: json, submissionData: {}, pages: [], layout, crops: {},
+        }));
       } catch (err) {
         // A bundle or map problem already says exactly what is wrong and what
         // to do about it; do not bury it under the generic advice.

@@ -56,14 +56,15 @@ The app never asks who you are, in either walkthrough. You are identified by the
 authenticated upload in step 5 — see [Data and privacy](#data-and-privacy).
 
 ### Complete an assignment — handwritten
-Handwritten assignments are answered on paper. You get **one file**, a zip, and
-you use it twice.
+Handwritten assignments are answered on paper. You get **two files**: a PDF to
+print, and one file to upload.
 
-1. Open the zip and print `assignment.pdf` **at 100%** — not "fit to page", which
-   changes the scale and moves the corner marks the app registers against
+1. Print the PDF **at 100%** — not "fit to page", which changes the scale and
+   moves the corner marks the app registers against
 2. Write your answers in the printed boxes
-3. Load **that same zip** in the app (it holds the questions and the page geometry
-   together, which is what lets the app tell a stale sheet from a current one)
+3. Load the **upload file** in the app. It holds the questions and the page
+   geometry together, which is what lets the app tell a stale sheet from a
+   current one — there is nothing to open and nothing to choose
 4. Photograph your pages and upload them. They do not have to be in order — each
    page says which page it is, in the code printed in its top-right corner
 5. **Check every answer.** The app shows you each one cut out, exactly as your
@@ -74,6 +75,10 @@ you use it twice.
 
 Flagging an answer does **not** stop you submitting — the flag goes to your
 grader with the picture.
+
+**If your assignment came as a zip of three files**, that still works exactly as
+it did: open it, print `assignment.pdf`, and load the same zip in step 3. Nothing
+about an assignment already in your hands has changed.
 
 ### Local Development
 ```bash
@@ -88,9 +93,21 @@ npm run dev
 ## Assignment JSON Format
 
 Assignments are created in the **[Assignment Maker](https://github.com/BridgeSuite/GradeBridge-Assignment-Maker)**
-and reach you as `assignment_spec.json`, on its own or inside the assignment zip
-alongside `layout_{ID}.csv` and `assignment.pdf`. On disk it is a single
-`gb1:`-prefixed string; below is what it decodes to.
+and reach you as one `gb1:`-prefixed file — on its own, or inside an assignment
+zip alongside `layout_{ID}.csv` and `assignment.pdf`. Below is what it decodes to.
+
+A handwritten spec may carry the page geometry inside itself, as two optional
+fields that are always both present or both absent:
+
+| field | |
+|---|---|
+| `layoutCsvName` | the name that map would have had, e.g. `layout_ENG17HOM496F.csv` |
+| `layoutCsv` | the **exact** text of that file, unchanged, newlines and all |
+
+Verbatim is the point. `layout_id` is hashed over the *parsed rows*, never over
+the file's bytes, so the same text through the same parser gives the same rows
+by construction and the id printed in the QR on every page cannot move. A
+separate `layout_{ID}.csv` beside the spec still wins wherever one is present.
 
 **The spec carries no grading material of any kind** — no grading prompts, no
 grader notes, no answer key, no reference solutions. That is not a convention
@@ -400,6 +417,24 @@ skip; without it, 33 pass and 2 skip.
 ---
 
 ## Changelog
+
+### v3.9.1 — a sheet to print and one file to upload
+- **The spec can carry the layout map inside it**, as `layoutCsvName` and
+  `layoutCsv` — the exact CSV text, unchanged. A student gets a PDF to print and
+  a single file to upload, with nothing to open, no second file to choose
+  wrongly, and no readable, editable map of where their answers get cut from.
+- **The hash does not move.** `layout_id` is hashed over the rows
+  `parseLayoutCsv` produces, not over the file's bytes, so the same text through
+  the same parser is identical by construction. Measured on the real ENG17
+  Homework 1 map: `95438EDF` from both routes, rows deeply equal,
+  `canonicalMapSerialization` byte-identical. Nothing in `services/qrPayload.ts`
+  or `services/layoutMap.ts` was touched.
+- **A separate `layout_{ID}.csv` still wins.** Every packet already in
+  circulation loads exactly as it did.
+- **A handwritten assignment with no map from either source is now refused**,
+  not warned about. It used to set the state and *then* alert, which left the
+  student in the broken state the message described — free to photograph sixteen
+  pages before discovering their answers could not be cut out.
 
 ### v3.9.0 — the submission carries no identity, and a keyed course seals everything
 - **`student_name` is gone from the payload and from every filename.** There was

@@ -63,6 +63,25 @@ export interface Assignment {
    * owns the election, the tally, and the pointer. No UI here.
    */
   aiFeedback?: boolean;
+  /**
+   * The layout map, carried inside the spec instead of beside it.
+   *
+   * `layoutCsv` is the EXACT text of `layout_{ID}.csv` — unchanged, newlines
+   * and all. It is not reformatted, not converted to JSON, not normalised, and
+   * that is the whole reason it is safe to carry: `computeLayoutId` hashes
+   * `canonicalMapSerialization(rows)`, the rows produced by `parseLayoutCsv`,
+   * never the file's bytes. The same text through the same parser gives the
+   * same rows by construction, so the hash printed into the QR on every sheet
+   * cannot move.
+   *
+   * `layoutCsvName` is the file name that text would have had, so a parse
+   * error still names a file the student can recognise.
+   *
+   * **Both present or both absent. Never one.** A separate `layout_*.csv` in
+   * the bundle still wins over these; see `chooseLayoutSource`.
+   */
+  layoutCsvName?: string;
+  layoutCsv?: string;
 }
 
 // =====================================================

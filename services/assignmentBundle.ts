@@ -11,9 +11,17 @@
  * A bare `assignment_spec.json` still loads. Electronic assignments have no
  * map and never needed one, and every file already in circulation is a bare
  * spec — a loader that stopped accepting one would break them all to buy
- * nothing. A *handwritten* assignment loaded without a map is a different
- * matter: it can be photographed but never cropped, and the caller says so
- * plainly at load time rather than letting it fail somewhere further down.
+ * nothing.
+ *
+ * **Since 2026-09-06 a bare spec can be a COMPLETE handwritten assignment.**
+ * The spec may carry the map inside it as `layoutCsv` / `layoutCsvName`, so
+ * the student receives a sheet to print and one file to upload, with nothing
+ * to open and no second file to choose wrongly. `chooseLayoutSource` decides
+ * between the two, and a separate `layout_*.csv` still wins.
+ *
+ * A *handwritten* assignment with a map from neither place is refused by the
+ * caller at load time: it can be photographed but never cropped, and a student
+ * must not get sixteen pages in before finding that out.
  *
  * `jszip` was already a dependency (the submission package is a zip), so this
  * adds no bundle weight and no network surface.
@@ -59,6 +67,59 @@ const baseName = (path: string): string => path.split('/').pop() ?? path;
 
 const isMacJunk = (path: string): boolean =>
   path.startsWith('__MACOSX/') || baseName(path).startsWith('._');
+
+// ---- where the map came from --------------------------------------------
+
+/** The map to parse, and which of the two places it was found in. */
+export interface LayoutSource {
+  name: string;
+  text: string;
+  from: 'bundle' | 'spec';
+}
+
+/** Only the two fields of the spec this decision reads. */
+export interface EmbeddedLayoutFields {
+  layoutCsvName?: unknown;
+  layoutCsv?: unknown;
+}
+
+/** Blank is absent. A generator writing `""` has written nothing. */
+const presentString = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim().length > 0 ? v : null;
+
+/**
+ * Which layout map to use: the one beside the spec, or the one inside it.
+ *
+ * **A separate `layout_*.csv`, when present, wins.** Every packet already in
+ * circulation is that shape, and a tester holding one must not have his run
+ * depend on when he starts it. The embedded copy is what makes a single spec
+ * file a complete assignment; it is not a replacement for the file that has
+ * always worked.
+ *
+ * Half a pair is refused rather than ignored. The contract is "both fields or
+ * neither", so a spec carrying one of them was built by something broken, and
+ * saying that is more use than falling through to "this file has no map in it".
+ * It cannot fire on valid material, because valid material never has one.
+ */
+export const chooseLayoutSource = (
+  bundleLayout: { name: string; text: string } | null,
+  spec: EmbeddedLayoutFields | null | undefined,
+): LayoutSource | null => {
+  if (bundleLayout) return { ...bundleLayout, from: 'bundle' };
+
+  const text = presentString(spec?.layoutCsv);
+  const name = presentString(spec?.layoutCsvName);
+  if (text && name) return { name, text, from: 'spec' };
+  if (text || name) {
+    throw new BundleError(
+      'That assignment file is incomplete: it carries ' +
+      (text ? 'a layout map with no file name' : 'a layout file name with no map') +
+      '.\n\nDownload the assignment file from your course again, and tell your instructor if ' +
+      'the new one does the same thing.'
+    );
+  }
+  return null;
+};
 
 export const loadAssignmentBundle = async (file: File): Promise<LoadedBundle> => {
   const buffer = await file.arrayBuffer();
