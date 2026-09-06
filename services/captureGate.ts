@@ -404,6 +404,18 @@ export interface GateOptions {
   budgetMs?: number;
   /** Injectable for tests; defaults to `Date.now`. */
   now?: () => number;
+  /**
+   * Ceiling on the QR search alone; defaults to `QR_DECODE_BUDGET_MS`.
+   *
+   * **Injectable for tests, and for one reason: so a test can ask what the
+   * detector decides rather than what the machine had time for.** A capture
+   * whose decode lands near the 1400 ms ceiling — `ios2_04` measures 1.1 to
+   * 1.8 s — reads as `too_few_marks` on an idle machine and `no_qr` on a busy
+   * one, which makes a mechanism assertion about that capture a measurement of
+   * the host. Nothing in the app passes this; the student path keeps the
+   * constant, which is product behaviour.
+   */
+  decodeBudgetMs?: number;
 }
 
 /**
@@ -440,7 +452,9 @@ export const runCaptureGate = (image: Rgba, options: GateOptions = {}): GateVerd
     // — the QR must be decoded before the page can be stood upright, and the
     // page must be upright before the marks can be found — and the gate reads
     // its result rather than re-deriving any of it.
-    const registration = registerPage(image, { decodeBudgetMs: QR_DECODE_BUDGET_MS });
+    const registration = registerPage(image, {
+      decodeBudgetMs: options.decodeBudgetMs ?? QR_DECODE_BUDGET_MS,
+    });
     measurements.marksFound = registration.marksFound;
     measurements.residualMm = registration.residualMm;
 

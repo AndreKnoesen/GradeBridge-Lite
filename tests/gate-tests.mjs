@@ -142,18 +142,92 @@ check('the tracked set is the sixteen',
   `found ${captures.filter(c => TRACKED.includes(c.folder)).length}`);
 
 // ---------- run ----------
+//
+// TWO QUESTIONS, TWO MEASUREMENTS, AND THEY USED TO BE ONE.
+//
+// "What does the detector decide about this photograph?" is a question about
+// the code. "How long did the gate take on this machine?" is a question about
+// the machine. Until 2026-09-05 both were read off a single default-budget run,
+// so the second silently answered the first: on a loaded machine `cap04` spent
+// its 2 s budget, was rejected on `budget`, and the suite reported a
+// CALIBRATION CHANGE — `of the sixteen, exactly 12 pass — 11` — which had not
+// happened. Four checks went red, three of them consequences of one slow page.
+// Measured: 3 of 5 runs red on one developer machine, 0 of 3 on CI.
+//
+// So the correctness assertions below read a verdict taken with the clock
+// removed, and the timing is measured separately and only reported.
+//
+// **`GATE_BUDGET_MS` is untouched and must stay untouched.** It is 2 s because
+// that is what a student is made to wait, and "budget spent equals reject" is a
+// product decision, not a test threshold.
+//
+// WHICH PAGES GET RE-MEASURED, AND WHY ONLY THOSE. Re-running all 41 doubles the
+// suite for nothing: a page that finished well inside its budget cannot have
+// been decided by the clock. Exactly two outcomes can be the clock's doing —
+// the gate spending its own budget (`failed === 'budget'`), and the QR search
+// giving up, which surfaces as `page_code` with a `no_qr` registration. Those
+// are re-measured; everything else is taken as it stands. In practice that is
+// three or four captures.
+//
+// **This does not change the calibration, and that was checked rather than
+// assumed**: with `budgetMs` and `decodeBudgetMs` both at 120 s, all 41
+// verdicts are identical to their default-budget verdicts on an idle machine —
+// `cap08` and `cap09` still fail `page_code`, because they genuinely do not
+// decode rather than merely running out of time.
+/**
+ * The harness's own ceiling on one page, and NOT `GATE_BUDGET_MS`.
+ *
+ * Five times the product budget. The slowest page measured on an idle machine
+ * is `cap04` at about 1.6 s and the slowest seen on a loaded one is 2.7 s, so
+ * this has room for a machine several times slower than either and still fires
+ * on a gate that has genuinely gone from two seconds to ten.
+ */
+const MACHINE_CEILING_MS = 10000;
+
+const CLOCK_FREE_BUDGET_MS = 120000;
+const CLOCK_FREE = { budgetMs: CLOCK_FREE_BUDGET_MS, decodeBudgetMs: CLOCK_FREE_BUDGET_MS };
+
+/** Could this verdict have been produced by the clock rather than the image? */
+const clockShaped = (v) => v !== null && !v.pass && (
+  v.failed === 'budget' ||
+  (v.failed === 'page_code' && v.registration !== null && v.registration.status === 'no_qr'));
+
+const shapeOf = (v) => v === null ? 'threw'
+  : `${v.pass ? 'PASS' : `FAIL(${v.failed})`}/${v.measurements.marksFound}`;
+
 const rows = [];
+/** Pages whose verdict the clock changed. Reported; never a failure on its own. */
+const clockEvents = [];
+
 for (const c of captures) {
   const image = ingestLikeApp(c.path);
-  let verdict = null, threw = null;
+
+  // The timed run: default budget, exactly what a student's phone does.
+  let timed = null, threw = null;
   const t0 = Date.now();
   try {
-    verdict = gate.runCaptureGate(image);
+    timed = gate.runCaptureGate(image);
   } catch (err) {
     threw = err;
   }
   const wallMs = Date.now() - t0;
-  rows.push({ ...c, verdict, threw, wallMs });
+
+  // The merit run: the same page with the clock taken out of the argument.
+  // `verdict` keeps its name because every assertion below is about merit.
+  let verdict = timed, remeasured = false;
+  if (clockShaped(timed)) {
+    remeasured = true;
+    try {
+      verdict = gate.runCaptureGate(image, CLOCK_FREE);
+    } catch {
+      verdict = timed;
+    }
+    if (shapeOf(verdict) !== shapeOf(timed)) {
+      clockEvents.push({ name: c.name, wallMs, was: shapeOf(timed), is: shapeOf(verdict) });
+    }
+  }
+
+  rows.push({ ...c, verdict, timed, threw, wallMs, remeasured });
 }
 
 //
@@ -230,9 +304,25 @@ for (const r of rows) {
       r.verdict.registration !== null && r.verdict.registration.transform !== null);
   }
 
-  // "Hard budget, 2 s per page. Budget spent equals reject."
-  check(`${r.name}: inside the ${gate.GATE_BUDGET_MS} ms budget`, r.wallMs <= gate.GATE_BUDGET_MS,
-    `${r.wallMs} ms`);
+  // TIMING IS MEASURED HERE, NOT ASSERTED AGAINST THE PRODUCT'S BUDGET.
+  //
+  // This used to be `r.wallMs <= gate.GATE_BUDGET_MS`, and it compared two
+  // different quantities. `GATE_BUDGET_MS` is the ceiling the gate holds
+  // ITSELF to, polled at four checkpoints (`captureGate.ts:452,478,490,498`)
+  // with unbounded work between them; `wallMs` is the harness's clock around
+  // the whole call, which also carries whatever the gate does after deciding,
+  // plus GC and scheduler time. `wallMs` is therefore always the larger, by an
+  // amount that belongs to the machine — so a gate behaving exactly as designed
+  // failed this check on a busy laptop. Same defect as the `totalPoints === 200`
+  // in `milestone-zero.mjs`: a number borrowed from something else.
+  //
+  // The ceiling below is the harness's own and is deliberately far away. It is
+  // here to catch a gate that has genuinely become slow — seconds per page, not
+  // tens of milliseconds — and nothing else. **If it ever fires, read it as "this
+  // machine, or a real regression", and look at the reported times before
+  // touching anything.**
+  check(`${r.name}: the harness's own ${MACHINE_CEILING_MS} ms ceiling (measures the machine, not the gate)`,
+    r.wallMs <= MACHINE_CEILING_MS, `${r.wallMs} ms — see the timing table`);
 }
 
 const passed = rows.filter(r => r.verdict && r.verdict.pass).length;
@@ -348,7 +438,18 @@ for (const c of MECHANISM_CASES) {
     console.log(`  SKIP  ${c.name}: not checked out (${c.folder}/)`);
     continue;
   }
-  const v = gate.runCaptureGate(ingestLikeApp(path));
+  // Clock-free, and for these cases especially. Every assertion below is about
+  // the DETECTOR's mechanism — which marks it found, what it refused on, what
+  // the residual was — and none of them is about how fast the host is.
+  //
+  // `ios2_04` is the case that forced this. Its decode measures 1.1 to 1.8 s
+  // against a 1400 ms ceiling, so on an idle machine it refuses at
+  // `corner_marks` with `too_few_marks` (the mechanism this case exists to
+  // pin: two candidates cannot form a fit) and on a busy one the decode gives
+  // up first and it refuses at `page_code` with `no_qr` instead. Same file,
+  // same code, different answer — and the case would then assert the host's
+  // speed rather than the distinction it was written for.
+  const v = gate.runCaptureGate(ingestLikeApp(path), CLOCK_FREE);
   const m = v.measurements;
   const seen = `${v.pass ? 'PASS' : `FAIL (${v.failed})`} on ${m.marksFound} marks` +
     `${v.registration && v.registration.marksDetected.length ? ` (${v.registration.marksDetected.join('+')})` : ''}` +
@@ -407,6 +508,36 @@ for (const c of MECHANISM_CASES) {
 // with this line rather than with a capture that may not be checked out.
 check('the mark floor is three', gate.MARKS_MIN === 3, String(gate.MARKS_MIN));
 
+// ---------- what the clock did, if anything ----------
+//
+// One plain line per page whose verdict the clock changed, naming the page and
+// the time. **This is information, not a failure.** A budget rejection is the
+// gate doing its job: it means this machine was too slow to judge that page in
+// the time a student is given, which is worth knowing and is not a calibration
+// change. The verdict used above is the re-measured one, so the counts stayed
+// still while this line tells you the run was slow.
+if (clockEvents.length) {
+  console.log(`\n  THE CLOCK, NOT THE IMAGE — ${clockEvents.length} page(s) re-measured ` +
+    `with the budget removed; the counts above are unaffected:`);
+  for (const e of clockEvents) {
+    console.log(`    ${e.name}: ${e.wallMs} ms at the ${gate.GATE_BUDGET_MS} ms budget ` +
+      `gave ${e.was}; with the clock removed it is ${e.is}`);
+  }
+  console.log('    This machine was busy or slow. It is not a change in the detector.');
+}
+
+// The timing measurement, always reported, never asserted against the product's
+// budget. The slowest page is the one worth watching over time.
+const slowest = rows.filter(r => typeof r.wallMs === 'number')
+  .sort((a, b) => b.wallMs - a.wallMs).slice(0, 3);
+if (slowest.length) {
+  const overBudget = rows.filter(r => r.wallMs > gate.GATE_BUDGET_MS).length;
+  console.log(`\n  timing (measured, not asserted): slowest ` +
+    slowest.map(r => `${r.name} ${r.wallMs} ms`).join(', ') +
+    ` — ${overBudget} of ${rows.length} over the ${gate.GATE_BUDGET_MS} ms product budget ` +
+    `on this machine`);
+}
+
 // ---------- the table ----------
 const table = process.argv.includes('--table') || failures > 0;
 if (table) {
@@ -427,7 +558,10 @@ if (table) {
       (m && m.residualMm !== null ? `${num(m.residualMm, 3)} mm` : '—').padEnd(10),
       num(m && m.sharpness, 4).padEnd(7),
       num(m && m.minTileLuma, 1).padEnd(9),
-      String(r.wallMs),
+      // `ms` is the TIMED run — what the machine took at the product budget —
+      // while every column left of it is the merit verdict. A `!` marks a page
+      // where those two disagreed and the clock was taken out.
+      String(r.wallMs) + (r.remeasured && shapeOf(r.timed) !== shapeOf(r.verdict) ? ' !' : ''),
     );
   }
   console.log('\n  * a known-open disagreement — see KNOWN_OPEN in this file');
