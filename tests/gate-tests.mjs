@@ -175,14 +175,20 @@ check('the tracked set is the sixteen',
 // `cap08` and `cap09` still fail `page_code`, because they genuinely do not
 // decode rather than merely running out of time.
 /**
- * The harness's own ceiling on one page, and NOT `GATE_BUDGET_MS`.
+ * The harness's own ceiling on the MEDIAN page, and NOT `GATE_BUDGET_MS`.
  *
- * Five times the product budget. The slowest page measured on an idle machine
- * is `cap04` at about 1.6 s and the slowest seen on a loaded one is 2.7 s, so
- * this has room for a machine several times slower than either and still fires
- * on a gate that has genuinely gone from two seconds to ten.
+ * The median is the statistic because it answers the question actually worth
+ * asking — "has the gate become slow?" — and is immune to the one that is not,
+ * "did this machine hiccup on one page?". Measured across runs on one developer
+ * laptop the median sits at **628 to 790 ms**, and it stayed at 790 in the very
+ * run where a single page took 86,300 ms. A gate that genuinely doubled or
+ * trebled would move it; any number of stalled pages will not.
+ *
+ * 5000 ms is six to eight times the observed median. It is a smoke alarm, not a
+ * budget: `GATE_BUDGET_MS` is the product's promise to a student and is
+ * untouched.
  */
-const MACHINE_CEILING_MS = 10000;
+const MEDIAN_CEILING_MS = 5000;
 
 const CLOCK_FREE_BUDGET_MS = 120000;
 const CLOCK_FREE = { budgetMs: CLOCK_FREE_BUDGET_MS, decodeBudgetMs: CLOCK_FREE_BUDGET_MS };
@@ -316,13 +322,15 @@ for (const r of rows) {
   // failed this check on a busy laptop. Same defect as the `totalPoints === 200`
   // in `milestone-zero.mjs`: a number borrowed from something else.
   //
-  // The ceiling below is the harness's own and is deliberately far away. It is
-  // here to catch a gate that has genuinely become slow — seconds per page, not
-  // tens of milliseconds — and nothing else. **If it ever fires, read it as "this
-  // machine, or a real regression", and look at the reported times before
-  // touching anything.**
-  check(`${r.name}: the harness's own ${MACHINE_CEILING_MS} ms ceiling (measures the machine, not the gate)`,
-    r.wallMs <= MACHINE_CEILING_MS, `${r.wallMs} ms — see the timing table`);
+  // **No per-page timing assertion of any kind.** One page's wall clock says
+  // nothing reliable: measured on this machine, `cap05` took 86,300 ms in one
+  // run while every neighbour ran 595 to 1,645 ms, with no leftover load and no
+  // change in its verdict — an antivirus pass or a descheduling, entirely
+  // outside this repository. A per-page ceiling generous enough to survive that
+  // would be too slack to catch anything, and one tight enough to be useful goes
+  // red on a hiccup, which is the disease being cured rather than a cure for it.
+  //
+  // The timing that IS asserted is the median over all pages, once, below.
 }
 
 const passed = rows.filter(r => r.verdict && r.verdict.pass).length;
@@ -528,14 +536,25 @@ if (clockEvents.length) {
 
 // The timing measurement, always reported, never asserted against the product's
 // budget. The slowest page is the one worth watching over time.
-const slowest = rows.filter(r => typeof r.wallMs === 'number')
-  .sort((a, b) => b.wallMs - a.wallMs).slice(0, 3);
-if (slowest.length) {
+const times = rows.filter(r => typeof r.wallMs === 'number').map(r => r.wallMs).sort((a, b) => a - b);
+if (times.length) {
+  const median = times.length % 2
+    ? times[(times.length - 1) / 2]
+    : Math.round((times[times.length / 2 - 1] + times[times.length / 2]) / 2);
+  const slowest = rows.filter(r => typeof r.wallMs === 'number')
+    .sort((a, b) => b.wallMs - a.wallMs).slice(0, 3);
   const overBudget = rows.filter(r => r.wallMs > gate.GATE_BUDGET_MS).length;
-  console.log(`\n  timing (measured, not asserted): slowest ` +
+  console.log(`\n  timing (measured): median ${median} ms, slowest ` +
     slowest.map(r => `${r.name} ${r.wallMs} ms`).join(', ') +
     ` — ${overBudget} of ${rows.length} over the ${gate.GATE_BUDGET_MS} ms product budget ` +
     `on this machine`);
+
+  // The one timing assertion in this file, and it is about the machine.
+  check(`the median page is under the harness's ${MEDIAN_CEILING_MS} ms ceiling ` +
+    `(measures the machine, not the gate)`,
+    median <= MEDIAN_CEILING_MS,
+    `median ${median} ms over ${times.length} pages — if this fires, the gate has become ` +
+    `slow across the board, or this machine has. Individual slow pages do not move it.`);
 }
 
 // ---------- the table ----------
