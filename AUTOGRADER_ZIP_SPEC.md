@@ -204,8 +204,18 @@ Same two photographs, same crops, same pixels — only the course key differs.
 
 Archive total **1,141,466 bytes, up 24,035 (+2.15%)**.
 
-**Every image entry is exactly 286 bytes larger than its plaintext**: 258 bytes
-of wrapped key, a 12-byte IV and a 16-byte GCM tag. Five images is 1,430 bytes.
+**Every image entry is larger than its plaintext by a fixed amount set by the
+course key size**: the wrapped key (2 bytes of length prefix plus the RSA
+modulus), a 12-byte IV and a 16-byte GCM tag.
+
+| course key | wrapped key | + IV + tag | **overhead per entry** |
+|---|---:|---:|---:|
+| RSA-2048 | 258 | 28 | **286 bytes** |
+| RSA-4096 | 514 | 28 | **542 bytes** |
+
+The run tabulated above used a 2048-bit key, so five images is 1,430 bytes.
+**The live ENG17 Fall course key is 4096-bit**, where the same five would be
+2,710. Read the length prefix; never assume either number.
 The rest of the 24,035 is not overhead in the envelope — it is **DEFLATE giving
 up**: a photograph deflates by a percent or two inside the ZIP and ciphertext
 deflates by nothing, so the archive loses the compression it used to get.
@@ -481,8 +491,11 @@ keys, and that is correct, not a bug.**
 **A fresh 12-byte IV per file**, from the platform CSPRNG. Asserted distinct
 across all 33 entries of the sixteen-page run.
 
-**Overhead: exactly 286 bytes per file** — 258 wrapped key (RSA-2048; 514 with a
-4096-bit course key), 12 IV, 16 GCM tag. Measured on every entry, not computed.
+**Overhead per file: exactly 286 bytes with an RSA-2048 course key, exactly 542
+with an RSA-4096 one** — wrapped key 258 or 514 (2-byte length prefix plus the
+modulus), 12 IV, 16 GCM tag. Measured on every entry, not computed. **The live
+ENG17 Fall course key is 4096-bit, so 542 is the number in production**; the
+worked example below and the §1 table were both measured at 2048.
 
 Worked example, from `crops/p1a.jpg.gb2` in §1 — 40,982 bytes on disk, 40,696
 bytes of JPEG:
@@ -512,11 +525,13 @@ photographed, and a render deflates to **51.9%** of its size inside the ZIP.
 Ciphertext deflates to 100%. So sealing does not add 2.4 MB — it stops DEFLATE
 removing 2.4 MB that a real photograph never offers in the first place. A phone
 photograph is already entropy-dense, which is why the honest measurement is the
-first row: **about 2%, plus 286 bytes a file.**
+first row: **about 2%, plus the per-entry overhead — 286 bytes a file at
+RSA-2048, 542 at RSA-4096.**
 
 **The electronic row measures the same effect and lands in the same place.** The
 PDF the app builds is `jsPDF` over `html2canvas` rasters — 979,728 bytes that
-DEFLATE only to **98.1%** — so sealing it costs its 286 bytes and the 1.9% the
+DEFLATE only to **98.1%** — so sealing it costs its one entry's overhead (286
+bytes at RSA-2048, 542 at RSA-4096) and the 1.9% the
 ZIP was getting. **This is a property of that PDF, not of PDFs.** The ENG17
 *assignment* PDF, which is vector text, deflates to **61.9%**, and sealing a PDF
 like that would cost **+62%** of the archive. If the submission PDF ever becomes

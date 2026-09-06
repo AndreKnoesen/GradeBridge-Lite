@@ -326,9 +326,11 @@ path would still remove it.
 
 **Each sealed entry is the same envelope over its raw bytes**, with its own
 content key and its own IV, written into the ZIP unencoded: base64 would add a
-third to a multi-megabyte archive for nothing. The overhead is 286 bytes a file
-(258 wrapped key, 12 IV, 16 tag) — measured at **+2.15%** on a real handwritten
-two-page submission and **+2.41%** on a typed one carrying a real PDF. The full
+third to a multi-megabyte archive for nothing. The overhead per file is set by
+the course key size — **286 bytes with an RSA-2048 key** (258 wrapped key, 12
+IV, 16 tag) and **542 with an RSA-4096 one** (514, 12, 16). The live ENG17 Fall
+key is 4096-bit. Measured at **+2.15%** on a real handwritten two-page
+submission and **+2.41%** on a typed one carrying a real PDF, both at 2048. The full
 interface, including how to open one by hand, is `AUTOGRADER_ZIP_SPEC.md` v6.0.
 
 Identity comes from the authenticated upload to your institution's LMS, not from anything in the file. If a spec carries a `coursePublicKey` that cannot be read, the submission fails with an error rather than downgrading to `gb1:`.
