@@ -71,6 +71,12 @@ import { MarkCandidate, findMarksInWindow } from './markDetect';
 import { QrReading, decodePageQrCandidates } from './qrDecode';
 import { Rgba, rotateGray, toGray } from './raster';
 
+// Re-exported, not merely imported. `registerPage` is synchronous and the
+// decoder behind it is a wasm module that has to be built first, so every
+// consumer of this module has a precondition to satisfy, and it should not have
+// to know which file the decoder lives in to satisfy it.
+export { initQrReader, qrReaderReady } from './qrDecode';
+
 export type RegistrationStatus = 'ok' | 'degraded' | 'no_qr' | 'too_few_marks' | 'residual';
 
 export interface RegistrationResult {

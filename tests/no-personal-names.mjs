@@ -72,6 +72,13 @@ const EXCUSED = new Map([
    'a letter run at ~byte 803093 of 1,379,962 bytes of compressed JPEG scan ' +
    'data. Its metadata segment ends at byte 2562, so this is image ' +
    'content and not a name.'],
+  ['vendor/zxingReaderWasm.ts',
+   'three letter runs inside 1,457,720 characters of base64 over a ' +
+   '64-character alphabet. The file is generated, not written: ' +
+   'tests/qr-decoder-tests.mjs decodes it and asserts it is byte-identical to ' +
+   "node_modules/zxing-wasm's shipped binary and starts with the WebAssembly " +
+   'magic number, so every byte in it came from a compiler and none from a ' +
+   'person. Regenerate it with scripts/vendor-zxing.mjs.'],
 ]);
 
 let failed = 0;

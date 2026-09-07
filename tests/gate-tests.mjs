@@ -37,6 +37,13 @@ const gate = await loadModule('services/captureGate.ts', 'captureGate.mjs');
 const fmt = await loadModule('services/pageFormat.ts', 'pageFormat_gate.mjs');
 const qrp = await loadModule('services/qrPayload.ts', 'qrPayload_gate.mjs');
 
+// The decoder is a wasm module and building it is asynchronous, so a
+// synchronous entry point like `runCaptureGate` has a precondition. Each
+// `loadModule` call is its own esbuild bundle carrying its own copy of the
+// decoder's module state, so the initialiser is called on the bundle that will
+// do the decoding — once per entry point, not once per run.
+await gate.initQrReader();
+
 let failures = 0;
 const check = (name, condition, detail = '') => {
   if (condition) return;
@@ -258,13 +265,13 @@ for (const c of captures) {
 // deleted. Nothing else may leave this list any other way.
 //
 // Anything not on this list must agree. A new disagreement fails.
-const KNOWN_OPEN = {
-  android04_p2_others_qr: {
-    got: 'FAIL', failed: 'page_code',
-    why: 'the target page is fully visible and readable, and no symbol on it '
-      + 'decodes while neighbouring sheets show their own codes. Reviewed PASS',
-  },
-};
+// **`android04_p2_others_qr` was here until 2026-09-08 and is gone because it
+// was fixed**, the same mechanism working a second time. Its disagreement was a
+// decoder failure — the target sheet fully visible and readable, its own symbol
+// not decoding while neighbouring sheets showed theirs — and the zxing-cpp swap
+// reads it: four marks, 0.677 mm, a pass. This suite failed on "it agrees now —
+// delete this KNOWN_OPEN entry", and the entry was deleted.
+const KNOWN_OPEN = {};
 
 // ---------- the acceptance criteria ----------
 for (const r of rows) {

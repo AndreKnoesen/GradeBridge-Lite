@@ -11,6 +11,7 @@
 import { LayoutMap, LayoutRow, rowsForPage } from './layoutMap';
 import { RegistrationResult, registerPage } from './registration';
 import { CroppedRegion, cropRegions } from './cropRegions';
+import { initQrReader } from './qrDecode';
 import { Rgba } from './raster';
 
 export const CROP_JPEG_QUALITY = 0.9;
@@ -93,6 +94,11 @@ export interface PageCropResult {
 export const registerAndCropPage = async (
   pageBlob: Blob, map: LayoutMap | null
 ): Promise<PageCropResult> => {
+  // The decoder is a wasm module built from bytes already in the bundle, so this
+  // cannot fail on a bad connection and cannot block on one. It is awaited here
+  // rather than assumed because `registerPage` is synchronous all the way down:
+  // this is the last asynchronous point above it.
+  await initQrReader();
   const image = await decodeToRgba(pageBlob);
   const registration = registerPage(image);
 

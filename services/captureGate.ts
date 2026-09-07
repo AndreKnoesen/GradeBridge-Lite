@@ -44,6 +44,11 @@
 import { Rgba, toGray } from './raster';
 import { Matrix3, Point, applyMatrix, homographyFromQuad } from './homography';
 import { RegistrationResult, registerPage } from './registration';
+
+// See the note in registration.ts: the gate runs synchronously over a decoder
+// that must be built first, and a caller should not have to go two modules
+// deeper to find the initialiser.
+export { initQrReader, qrReaderReady } from './registration';
 import {
   PAGE_H_MM, PAGE_W_MM, QR_MODULES, QR_RECT_MM, QR_SIZE_MM, RESIDUAL_MAX_MM,
 } from './pageFormat';

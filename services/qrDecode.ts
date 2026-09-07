@@ -1,11 +1,29 @@
 /**
  * qrDecode.ts — stage 1 of the registration pipeline.
  *
- * `jsqr` is pure JavaScript with no wasm and no runtime fetch, which is the
- * whole reason it is the decoder here: the CONSUME contract is offline, and a
- * library that pulls a `.wasm` at runtime cannot satisfy it however good it is.
- * It is also already the decoder the Assignment Maker's own template self-test
- * uses, so the two ends of the contract are checked by the same reader.
+ * ## The reader is zxing-cpp, and jsQR is why
+ *
+ * `jsqr` held this position because it is pure JavaScript and fetches nothing,
+ * which the CONSUME contract requires. It reads **7 of the 12 good pages** in
+ * the 2026-09-07 seventeen-frame corpus — five students' photographs refused for
+ * no defect — and Peiqi Zhu's independent set agrees at 5 of 16.
+ *
+ * Four of those frames, `IMG_8575`, `IMG_8577`, `IMG_8580` and `IMG_8582`, fail
+ * **every** treatment measured in `WORKORDER_SS_QR_DECODER_2026-09-08.md`: six
+ * ladder rungs, five preprocessing variants, a native-resolution crop, upscaling,
+ * perspective-correcting the symbol to a square, and both other pure-JavaScript
+ * decoders (`@zxing/library`, `@nuintun/qrcode`) — which top out at 8 of 12.
+ * Handed the symbol perfectly located, tightly cropped, quiet-zoned and
+ * rectified, jsQR still refuses those four. **It is not failing to find the
+ * symbol; it is failing to read it**, and nothing in front of a decoder fixes
+ * that. Nor is it the images: at the size the app decodes, the four failures
+ * carry QR sides of 169–177 px and region contrast of 158–192, indistinguishable
+ * from the frames that read.
+ *
+ * So the reader is swapped and **the ladder is kept** — the ladder is sound, and
+ * it rejects all three true defects (blur, steep angle, dim room) under every
+ * decoder tried. `services/zxingReader.ts` carries the reader and, more
+ * importantly, why the wasm is inlined into the bundle rather than fetched.
  *
  * The QR is decoded **first** because it is the only self-orienting element on
  * the page. The registration marks are four identical unkeyed squares: they can
@@ -28,27 +46,34 @@
  * decode is reshot, not rescued, and the only thing worth optimising about
  * failure is how fast it arrives.
  *
- * What remains, both measured on all sixteen:
+ * What remains:
  *
- *   - **The whole frame**, at native size and at half. Ends it for 13 of the 14
- *     captures that decode at all — five at native size, eight at half.
- *   - **Four overlapping quadrants.** `cap04` decodes from a quadrant of the
- *     very same image that fails as a whole, and it is the only capture that
- *     needs this. Nothing is added by cropping except a different binarization:
- *     jsqr thresholds against the range it is given, and a frame holding three
- *     sheets and a dark desk gives it a range in which the symbol's own light
- *     and dark modules land on the same side. A tile holding mostly paper does
- *     not. It is kept because deleting it would reject `cap04`, which is a
- *     photograph a student should not have to take twice.
+ *   - **The whole frame**, at native size and at half.
+ *   - **Four overlapping quadrants**, native size only, run only if the first
+ *     rung found nothing.
  *
- * The second pass runs only when the first found nothing, so a well-lit
- * photograph pays for none of it.
+ * **Measured over all 58 photographs this project holds** — the 41 in
+ * `tests/captures/` plus the 2026-09-07 corpus of 17 — the first rung ends it
+ * for every frame that reads: 37 at native size, 17 at half, 4 read by nothing.
+ * **The quadrant rung now finds no symbol that the whole frame does not.**
+ *
+ * It is kept anyway, and the reason is recorded rather than assumed. Under jsQR
+ * it was load-bearing: `cap04` decoded from a quadrant of the very same image
+ * that failed as a whole, because a frame holding three sheets and a dark desk
+ * gives a global binarizer a range in which the symbol's light and dark modules
+ * land on the same side, and a tile holding mostly paper does not. zxing does
+ * its own local binarization and no longer needs the help. Deleting the rung is
+ * a separate decision with its own evidence — it is the only thing standing
+ * between a decoder change and a page that reads today — and the cost of
+ * keeping it is paid only by a photograph that has already failed.
  */
 
-import jsQR from 'jsqr';
 import { Rgba, cropRgba, downscaleRgba } from './raster';
 import { QrFields, parsePayload } from './qrPayload';
 import { Point } from './homography';
+import { RawSymbol, readSymbols, qrReaderReady } from './zxingReader';
+
+export { initQrReader, qrReaderReady } from './zxingReader';
 
 export interface QrReading {
   payload: string;
@@ -64,10 +89,16 @@ export interface QrReading {
 /**
  * Native size, then half. A page photographed to fill a 2200 px frame carries
  * about 5 px per QR module, and halving that is already marginal — the half pass
- * is there for a sheet that fills the frame so completely that jsqr's finder
- * search struggles, and it earns its place: eight of the fourteen captures that
- * decode need it. **A third pass at one-third size is deleted.** No capture in
- * the set was ever found by it.
+ * is there for a sheet that fills the frame so completely that the finder search
+ * struggles, and it still earns its place under zxing: **17 of the 54 frames
+ * that read need it**, including `cap06` and `cap10`. **A third pass at
+ * one-third size is deleted.** No capture in the set was ever found by it.
+ *
+ * The half pass has a cost worth knowing about. A symbol found at 1/2 has its
+ * corners multiplied by 2, so they land on even pixels — a ±1 px quantisation of
+ * the seed that the mark search and the page fit inherit. On `cap06`, the
+ * worst-fitting capture that passes, that is the difference between a 0.971 mm
+ * residual and a 1.002 mm one, against a 1.0 mm budget.
  */
 const SCALES = [1, 2];
 
@@ -95,28 +126,17 @@ interface Attempt {
   label: string;
 }
 
-const decodeAttempt = (attempt: Attempt): QrReading | null => {
-  const { image } = attempt;
-  if (image.width < 60 || image.height < 60) return null;
-
-  let result: ReturnType<typeof jsQR>;
-  try {
-    result = jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
-  } catch {
-    return null;
-  }
-  if (!result) return null;
-
-  const fields = parsePayload(result.data);
+const readingFrom = (attempt: Attempt, symbol: RawSymbol): QrReading | null => {
+  const fields = parsePayload(symbol.text);
   // A QR that decodes but is not a GradeBridge page payload is somebody else's
   // symbol in the photograph. Keep looking rather than claiming it.
   if (!fields) return null;
 
   const corners = {
-    topLeft: attempt.toSource(result.location.topLeftCorner),
-    topRight: attempt.toSource(result.location.topRightCorner),
-    bottomRight: attempt.toSource(result.location.bottomRightCorner),
-    bottomLeft: attempt.toSource(result.location.bottomLeftCorner),
+    topLeft: attempt.toSource(symbol.corners.topLeft),
+    topRight: attempt.toSource(symbol.corners.topRight),
+    bottomRight: attempt.toSource(symbol.corners.bottomRight),
+    bottomLeft: attempt.toSource(symbol.corners.bottomLeft),
   };
 
   // Both edges of the symbol vote on the angle, so a single mis-located corner
@@ -130,15 +150,54 @@ const decodeAttempt = (attempt: Attempt): QrReading | null => {
     (Math.cos(top) + Math.cos(bottom)) / 2
   );
 
-  return { payload: result.data, fields, corners, theta, foundBy: attempt.label };
+  return { payload: symbol.text, fields, corners, theta, foundBy: attempt.label };
+};
+
+/**
+ * **Every** GradeBridge symbol this attempt's raster holds, not the first.
+ *
+ * jsQR returned at most one symbol per call, so a frame with two sheets in it
+ * only yielded both because the tile rung cut them apart. zxing returns all of
+ * them from one call, which is what `registration.ts` wants: it masks every
+ * decoded symbol's keep-out before hunting for marks, because a neighbouring
+ * sheet's three finder patterns are perfect false fiducials.
+ */
+const decodeAttempt = (attempt: Attempt): QrReading[] => {
+  const { image } = attempt;
+  if (image.width < 60 || image.height < 60) return [];
+
+  let symbols: RawSymbol[];
+  try {
+    symbols = readSymbols(image);
+  } catch {
+    return [];
+  }
+  const out: QrReading[] = [];
+  for (const symbol of symbols) {
+    const reading = readingFrom(attempt, symbol);
+    if (reading) out.push(reading);
+  }
+  return out;
 };
 
 /**
  * The rungs, each a lazy list of attempts. A rung is run to completion — so
  * that a frame holding two sheets yields both symbols rather than the first —
- * and the next rung is only built if the previous one yielded nothing. That
- * matters: rung 3 rewrites every pixel of the image, and a well-lit photograph
- * must never pay for it.
+ * and the next rung is only built if the previous one yielded nothing. So a
+ * well-lit photograph pays for the first rung and nothing else.
+ *
+ * **Running the rung to completion matters less than it did, and the reason is
+ * worth writing down rather than rediscovering.** jsQR returned at most one
+ * symbol per call, so a frame holding two sheets only yielded both because the
+ * quadrant rung cut them apart — which is how `cap04` came to return two.
+ * zxing returns every symbol it finds from one call, but measured over all 58
+ * photographs it returns **one per frame**, never two, where jsQR's quadrant
+ * pass on `cap04` returned two. `registration.ts` masks every decoded symbol's
+ * keep-out before hunting for marks, because a neighbouring sheet's three
+ * finder patterns are perfect false fiducials, so fewer symbols means less
+ * masking. It has not hurt any capture in the set — `cap04` improves from 0.536
+ * to 0.416 mm — but the hazard that comment describes is guarded slightly less
+ * well than it was, and that is a change, not a non-event.
  */
 const rungs = (image: Rgba): Array<() => Generator<Attempt>> => {
   const whole = function* (source: Rgba, tag: string): Generator<Attempt> {
@@ -169,7 +228,7 @@ const rungs = (image: Rgba): Array<() => Generator<Attempt>> => {
   };
 
   return [
-    // The whole frame. Ends it for 13 of the 14 captures that decode.
+    // The whole frame. Ends it for all 54 of the 58 photographs that decode.
     () => whole(image, 'image'),
     // Overlapping quadrants. Same pixels, a binarization that can see them.
     // A 3x3 grid is deleted with the normalizing rung: nothing was ever found
@@ -226,6 +285,17 @@ export interface DecodeOptions {
 export const decodePageQrCandidates = (
   image: Rgba, options: DecodeOptions = {}
 ): QrReading[] => {
+  // **Loud, not quiet.** The reader is a wasm module and building it is
+  // asynchronous, so this synchronous function has a precondition it cannot
+  // satisfy itself. Returning "no symbol found" when the module is simply not
+  // built yet would be indistinguishable from a dark room, and a caller that
+  // forgot to await `initQrReader()` would ship looking like a decoder that
+  // rejects every page. `registerPage` turns this into its own message and
+  // records the reason, so a wiring mistake reads as a wiring mistake.
+  if (!qrReaderReady()) {
+    throw new Error('QR decoder not built: initQrReader() must be awaited before decoding');
+  }
+
   const now = options.now ?? Date.now;
   const deadline = now() + (options.budgetMs ?? QR_SEARCH_BUDGET_MS);
   const byPayload = new Map<string, QrReading>();
@@ -236,13 +306,13 @@ export const decodePageQrCandidates = (
     if (now() > deadline) break;
     for (const attempt of rung()) {
       if (now() > deadline) break;
-      const reading = decodeAttempt(attempt);
-      if (!reading) continue;
-      const previous = byPayload.get(reading.payload);
-      // Keep the biggest instance of each symbol: it is the least foreshortened
-      // read, and every geometric estimate downstream comes from its corners.
-      if (!previous || symbolArea(reading) > symbolArea(previous)) {
-        byPayload.set(reading.payload, reading);
+      for (const reading of decodeAttempt(attempt)) {
+        const previous = byPayload.get(reading.payload);
+        // Keep the biggest instance of each symbol: it is the least foreshortened
+        // read, and every geometric estimate downstream comes from its corners.
+        if (!previous || symbolArea(reading) > symbolArea(previous)) {
+          byPayload.set(reading.payload, reading);
+        }
       }
     }
     if (byPayload.size > 0) break;

@@ -1,0 +1,32 @@
+# Expected verdict per frame for tests/qr-corpus-tests.mjs.
+# Copied verbatim from workorders/WORKORDER_SS_QR_DECODER_EXPECTATIONS.tsv.
+# The images themselves are a student's photographs and are NOT in this
+# repository; this file names frames and payloads and nothing else.
+# Acceptance corpus for WORKORDER_SS_QR_DECODER_2026-09-08.
+# Seventeen photographs, one student, iPhone 14 Pro Max, packets printed
+# double-sided on a shared residence printer, some pages faint.
+# Columns: file, kind, expected verdict, expected payload, jsQR today at 2200
+# file	kind	expect	payload	jsqr_today
+IMG_8573.jpeg	good	READ	GB1-ENG17HOM496F-HWMSTR-2-16-95438EDF	reads
+IMG_8575.jpeg	good	READ	GB1-ENG17HOM496F-HWMSTR-4-16-95438EDF	FAILS
+IMG_8576.jpeg	good	READ	GB1-ENG17HOM496F-HWMSTR-3-16-95438EDF	reads
+IMG_8577.jpeg	good	READ	GB1-ENG17HOM496F-HWMSTR-16-16-95438EDF	FAILS
+IMG_8578.jpeg	good	READ	GB1-ENG17HOMBBE5-HWMSTR-6-18-8505F1E5	FAILS
+IMG_8579.jpeg	good	READ	GB1-ENG17HOMBBE5-HWMSTR-13-18-8505F1E5	reads
+IMG_8580.jpeg	good	READ	GB1-ENG17HOMBBE5-HWMSTR-14-18-8505F1E5	FAILS
+IMG_8581.jpeg	good	READ	GB1-ENG17HOMAF86-HWMSTR-9-22-B549DC53	reads
+IMG_8582.jpeg	good	READ	GB1-ENG17HOMAF86-HWMSTR-10-22-B549DC53	FAILS
+IMG_8583.jpeg	good	READ	GB1-ENG17HOMAF86-HWMSTR-11-22-B549DC53	reads
+IMG_8584.jpeg	good	READ	GB1-ENG17HOMAF86-HWMSTR-15-22-B549DC53	reads
+IMG_8585.jpeg	good	READ	GB1-ENG17HOMAF86-HWMSTR-16-22-B549DC53	reads
+IMG_8587.jpeg	defect-shadow	READ	GB1-ENG17HOM496F-HWMSTR-2-16-95438EDF	reads, from the top-right tile
+IMG_8586.jpeg	defect-blur	REFUSE	-	refuses
+IMG_8588.jpeg	defect-angle	REFUSE	-	refuses
+IMG_8590.jpeg	defect-dim	REFUSE	-	refuses
+IMG_8589.jpeg	defect-corner	RECORD-ONLY	GB1-ENG17HOM496F-HWMSTR-2-16-95438EDF	reads
+# IMG_8589 carries a thumb over the bottom-left registration square. Its QR
+# reads under every decoder tried and the page is still unusable, because
+# registration needs four squares and this frame shows three. It is not a
+# decoder failure and must not be made one. Record what happens; refusing it
+# belongs in registration and is a separate order.
+# IMG_8574 does not exist. The student deleted one frame from the camera roll.
