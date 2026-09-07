@@ -78,20 +78,37 @@ interface ZXingPixmapReader {
 }
 
 /**
- * Reader options.
+ * Reader options. **Two settings are passed and everything else is the
+ * library's own default**, which `encodeOptions` below spells out in full so
+ * that "the default" is a value in this file and not a thing to go and look up.
  *
- * `formats: ['QRCode']` is the whole of the tuning. Everything else is the
- * library default, and the defaults matter: measured on the 2026-09-01
+ * The defaults matter and are not a shrug: measured on the 2026-09-01
  * evaluation, turning `tryHarder` / `tryRotate` / `tryInvert` / `tryDownscale`
- * off drops the repo's 29-capture set from 28 reads to 14. There is no cheap
- * mode here worth having.
+ * off drops the repo's capture set from 28 reads to 14. There is no cheap mode
+ * here worth having.
  *
- * **`tryDenoise` is on and is the one non-default.** It is marked
- * `@experimental` by the library — "may change without a major version bump" —
- * and it is the only setting that reads `stale04`, a capture that passes today.
- * It is not needed by the 2026-09-07 corpus, which reads 12 of 12 either way;
- * it is needed by the existing suite, which is the tripwire if a version bump
- * ever removes it.
+ * `formats: ['QRCode']` is the whole of the speed tuning — the library default
+ * is every format it knows, which costs about 4x for symbologies this page
+ * cannot contain.
+ *
+ * **`tryDenoise: true` is the one non-default, and it is load-bearing for
+ * exactly one capture.** Re-measured 2026-09-08 over all 58 photographs this
+ * project holds, changing nothing but this flag:
+ *
+ *     tryDenoise: true    54 of 58 read — misses cap09 and the three true
+ *                         defects in the 2026-09-07 corpus, all labelled FAIL
+ *     tryDenoise: false   53 of 58 read — the one extra miss is `stale04`
+ *
+ * So the 2026-09-01 finding holds unchanged on four times the evidence: it
+ * recovers `stale04` and nothing else, and `stale04` is labelled PASS and
+ * passes today. **The 2026-09-07 corpus reads 12 of 12 either way** — this flag
+ * is not what fixed the student's pages.
+ *
+ * The flag is marked `@experimental` by the library, "may change without a
+ * major version bump". That is why `zxing-wasm` is pinned to an exact version
+ * with no caret, and `tests/qr-decoder-tests.mjs` asserts the pin. **`stale04`
+ * is the tripwire**: if a version bump ever drops or changes the flag, that
+ * capture fails by name in `tests/gate-tests.mjs` and needs no new test.
  */
 const READER_OPTIONS: ReaderOptions = {
   formats: ['QRCode'],

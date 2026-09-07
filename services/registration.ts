@@ -399,6 +399,38 @@ const registerAgainstQr = (
   // in the same photograph are three perfect false fiducials. Masking only the
   // sheet being registered left them in play, and on two real captures the fit
   // chose them and landed 125 mm out while reporting four marks found.
+  //
+  // **WEAKENED BY THE 2026-09-08 DECODER SWAP, AND NOT BY ACCIDENT — READ THIS
+  // BEFORE TRUSTING IT.** jsQR returned at most one symbol per call, so a frame
+  // holding two sheets only ever yielded both because the quadrant rung cut them
+  // apart. zxing returns every symbol it finds from one call, and measured over
+  // all 58 photographs this project holds it returns **exactly one, on every
+  // frame, without exception**. So `allReadings` is now always a single-element
+  // array and the line below cannot differ from masking `qr` alone. The clause
+  // that catches the second sheet is, on all present evidence, unreachable.
+  //
+  // Measured on `cap04`, the one capture where the swap actually unmasks
+  // something — jsQR read pages 2 and 3 from two quadrants, zxing reads only
+  // page 3, from the whole frame, so page 2's keep-out is no longer masked:
+  //
+  //     masked  4 marks NW+NE+SW+SE, residual 0.4162 mm, ok
+  //   unmasked  4 marks NW+NE+SW+SE, residual 0.4162 mm, ok
+  //
+  // Identical to within 1e-9. Same on `android05` and `android11`; on
+  // `android04` jsQR read nothing at all, so it never masked anything there
+  // either. The chooser rejects the false fiducials on its own — this mask is
+  // redundancy, not the only line of defence.
+  //
+  // **The change is that it is now the ONLY line of defence that has ever been
+  // tested, and it is no longer being tested.** Two things had to fail together
+  // before; one does now. Nothing in the suite would notice if this mask stopped
+  // working, because no capture in the set produces a second symbol to mask.
+  // Do not delete it on the strength of that silence: the hazard is a property
+  // of the page format — 5.1 mm solid squares, three per symbol — and it has not
+  // gone anywhere. What went away is the evidence.
+  //
+  // A capture that decodes two GradeBridge symbols in one frame would restore
+  // it. `cap04` under jsQR was that capture and no longer is.
   const exclude = allReadings.map(r =>
     qrBounds(QR_CORNER_KEYS.map(k => inUpright(r.corners[k])), QR_KEEPOUT_MARGIN_MM * pxPerMm));
 
