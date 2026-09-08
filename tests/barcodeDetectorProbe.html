@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BarcodeDetector probe</title>
+<!--
+  Does the platform's own barcode reader read the pages jsQR refuses?
+
+  `WORKORDER_SS_QR_DECODER_2026-09-08.md` asks for ten minutes on the platform
+  `BarcodeDetector` API: zero bytes, no wasm, nothing fetched, and on Android
+  Chrome the same algorithm family as zxing-cpp. It cannot be the only answer —
+  it does not exist on iOS Safari and this cohort is mostly iPhones — but as a
+  first rung ahead of the wasm it would let most Android students skip the
+  download entirely.
+
+  It is a page rather than a node script for two reasons. `BarcodeDetector` is a
+  browser API and there is no node equivalent to stand in for it. And the frames
+  are a student's photographs: this asks for them through a file picker, so no
+  path is written down, nothing is uploaded, and nothing is served.
+
+  HOW TO RUN
+    1. Open this file in the browser you want the answer for. The answer differs
+       per platform, so run it on an Android phone and on an iPhone, not only on
+       a desktop — Chrome exposes BarcodeDetector only where the OS provides an
+       implementation (Android, ChromeOS, macOS), so a Windows desktop will
+       almost certainly say "not available" and that is not the answer wanted.
+       Serve the folder over http (`npx serve tests`) if the browser refuses a
+       file:// picker.
+    2. Choose the seventeen frames.
+    3. Read the table. The four that matter are IMG_8575, IMG_8577, IMG_8580 and
+       IMG_8582 — the frames no pure-JavaScript decoder reads.
+
+  The ingest below is the app's: EXIF upright, long edge to PAGE_MAX_EDGE 2200,
+  re-encoded at PAGE_JPEG_QUALITY 0.85. Measuring the untouched original would
+  measure an image registration never sees, and flatter the result.
+-->
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 60rem; }
+  h1 { font-size: 1.2rem; }
+  table { border-collapse: collapse; margin-top: 1rem; }
+  th, td { border: 1px solid #ccc; padding: 3px 10px; text-align: left; }
+  td.read { background: #e6f4ea; }
+  td.miss { background: #fce8e6; }
+  code { background: #f2f2f2; padding: 0 4px; }
+  #support { margin: 1rem 0; padding: 10px; background: #f2f2f2; white-space: pre-wrap; }
+</style>
+
+<h1>BarcodeDetector probe — GradeBridge page codes</h1>
+<div id="support">checking…</div>
+<p><input type="file" id="files" multiple accept="image/*"></p>
+<div id="out"></div>
+
+<script>
+const PAGE_MAX_EDGE = 2200;
+const PAGE_JPEG_QUALITY = 0.85;
+
+// The four frames the work order says no pure-JavaScript decoder reads.
+const HARD = ['IMG_8575', 'IMG_8577', 'IMG_8580', 'IMG_8582'];
+
+const support = document.getElementById('support');
+(async () => {
+  const lines = [];
+  lines.push(`userAgent: ${navigator.userAgent}`);
+  if (!('BarcodeDetector' in window)) {
+    lines.push('BarcodeDetector: NOT AVAILABLE in this browser.');
+    lines.push('This is the expected answer on iOS Safari and on Windows desktop Chrome.');
+  } else {
+    lines.push('BarcodeDetector: available.');
+    try {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      lines.push(`supported formats: ${formats.join(', ')}`);
+      lines.push(formats.includes('qr_code')
+        ? 'qr_code IS supported — the probe below is meaningful.'
+        : 'qr_code is NOT supported — the API exists but cannot read these pages.');
+    } catch (err) {
+      lines.push(`getSupportedFormats threw: ${err}`);
+    }
+  }
+  support.textContent = lines.join('\n');
+})();
+
+/** The same EXIF walk imageIngest.ts does, including the 0xFF fill-byte resync. */
+const readExifOrientation = (buf) => {
+  const view = new DataView(buf);
+  if (view.byteLength < 4 || view.getUint16(0) !== 0xffd8) return 1;
+  let offset = 2;
+  while (offset + 4 <= view.byteLength) {
+    if (view.getUint8(offset) !== 0xff) { offset++; continue; }
+    let markerAt = offset + 1;
+    while (markerAt < view.byteLength && view.getUint8(markerAt) === 0xff) markerAt++;
+    if (markerAt >= view.byteLength) break;
+    const marker = view.getUint8(markerAt);
+    offset = markerAt + 1;
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (marker === 0xda || marker === 0xd9) break;
+    if (offset + 2 > view.byteLength) break;
+    const size = view.getUint16(offset);
+    if (size < 2) break;
+    const segStart = offset + 2;
+    if (marker === 0xe1 && segStart + 6 <= view.byteLength &&
+        view.getUint32(segStart) === 0x45786966 && view.getUint16(segStart + 4) === 0x0000) {
+      const tiff = segStart + 6;
+      if (tiff + 8 > view.byteLength) return 1;
+      const endian = view.getUint16(tiff);
+      const little = endian === 0x4949;
+      if (!little && endian !== 0x4d4d) return 1;
+      if (view.getUint16(tiff + 2, little) !== 0x002a) return 1;
+      const ifd0 = tiff + view.getUint32(tiff + 4, little);
+      const entries = view.getUint16(ifd0, little);
+      for (let i = 0; i < entries; i++) {
+        const entry = ifd0 + 2 + i * 12;
+        if (entry + 12 > view.byteLength) break;
+        if (view.getUint16(entry, little) === 0x0112) {
+          const v = view.getUint16(entry + 8, little);
+          return v >= 1 && v <= 8 ? v : 1;
+        }
+      }
+      return 1;
+    }
+    offset += size;
+  }
+  return 1;
+};
+
+const ORIENT = {
+  1: (w, h) => ({ w, h, t: [1, 0, 0, 1, 0, 0] }),
+  2: (w, h) => ({ w, h, t: [-1, 0, 0, 1, w, 0] }),
+  3: (w, h) => ({ w, h, t: [-1, 0, 0, -1, w, h] }),
+  4: (w, h) => ({ w, h, t: [1, 0, 0, -1, 0, h] }),
+  5: (w, h) => ({ w: h, h: w, t: [0, 1, 1, 0, 0, 0] }),
+  6: (w, h) => ({ w: h, h: w, t: [0, 1, -1, 0, h, 0] }),
+  7: (w, h) => ({ w: h, h: w, t: [0, -1, -1, 0, h, w] }),
+  8: (w, h) => ({ w: h, h: w, t: [0, -1, 1, 0, 0, w] }),
+};
+
+const ingest = async (file) => {
+  const buf = await file.arrayBuffer();
+  const orientation = readExifOrientation(buf);
+  const bitmap = await createImageBitmap(new Blob([buf]));
+  const { w, h, t } = ORIENT[orientation](bitmap.width, bitmap.height);
+
+  const upright = document.createElement('canvas');
+  upright.width = w; upright.height = h;
+  const uctx = upright.getContext('2d');
+  uctx.setTransform(...t);
+  uctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  const scale = Math.min(1, PAGE_MAX_EDGE / Math.max(w, h));
+  let src = upright;
+  // Step down in halves: one naive jump aliases a 2 px pen stroke into a dotted
+  // line, which is why imageIngest.ts does the same.
+  while (src.width > w * scale * 2 && src.height > h * scale * 2) {
+    const half = document.createElement('canvas');
+    half.width = Math.max(1, src.width >> 1);
+    half.height = Math.max(1, src.height >> 1);
+    half.getContext('2d').drawImage(src, 0, 0, half.width, half.height);
+    src = half;
+  }
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(w * scale));
+  out.height = Math.max(1, Math.round(h * scale));
+  out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+
+  // Re-encode, because the app does and JPEG loss is part of what the decoder
+  // is handed.
+  const blob = await new Promise(r => out.toBlob(r, 'image/jpeg', PAGE_JPEG_QUALITY));
+  return await createImageBitmap(blob);
+};
+
+document.getElementById('files').addEventListener('change', async (event) => {
+  const out = document.getElementById('out');
+  if (!('BarcodeDetector' in window)) {
+    out.textContent = 'BarcodeDetector is not available here — nothing to measure.';
+    return;
+  }
+  const detector = new BarcodeDetector({ formats: ['qr_code'] });
+  const files = [...event.target.files].sort((a, b) => a.name.localeCompare(b.name));
+  out.innerHTML = '<p>working…</p>';
+
+  const rows = [];
+  for (const file of files) {
+    let text = null, ms = 0, error = '';
+    try {
+      const bitmap = await ingest(file);
+      const started = performance.now();
+      const found = await detector.detect(bitmap);
+      ms = Math.round(performance.now() - started);
+      const page = found.find(f => /^GB1-/.test(f.rawValue));
+      text = page ? page.rawValue : (found[0]?.rawValue ?? null);
+      bitmap.close();
+    } catch (err) {
+      error = String(err);
+    }
+    rows.push({ name: file.name, text, ms, error });
+  }
+
+  const read = rows.filter(r => r.text && /^GB1-/.test(r.text));
+  const hard = rows.filter(r => HARD.some(h => r.name.includes(h)));
+  const hardRead = hard.filter(r => r.text && /^GB1-/.test(r.text));
+
+  out.innerHTML =
+    `<p><b>${read.length} of ${rows.length}</b> frames returned a GradeBridge page code. ` +
+    `<b>${hardRead.length} of ${hard.length}</b> of the four jsQR cannot read ` +
+    `(${HARD.join(', ')}).</p>` +
+    '<table><tr><th>frame</th><th>payload</th><th>ms</th></tr>' +
+    rows.map(r => `<tr><td>${r.name}</td>` +
+      `<td class="${r.text ? 'read' : 'miss'}">${r.error || r.text || '—'}</td>` +
+      `<td>${r.ms}</td></tr>`).join('') +
+    '</table>';
+});
+</script>

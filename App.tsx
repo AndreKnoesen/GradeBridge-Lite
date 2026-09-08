@@ -21,6 +21,7 @@ import { isEncoded, decryptJson, GB2_KEY_ERROR } from './cryptoService';
 import { BundleError, chooseLayoutSource, loadAssignmentBundle } from './services/assignmentBundle';
 import { LayoutMapError, parseLayoutCsv } from './services/layoutMap';
 import { registerAndCropPage } from './services/pageCrops';
+import { initQrReader } from './services/qrDecode';
 import {
   SUBMISSION_ZIP_OPTIONS, buildSubmissionPackage, cropBlobKey, cropList, submissionBaseName,
 } from './services/submissionPackage';
@@ -164,6 +165,19 @@ const App: React.FC = () => {
       ...Object.keys(crops).map(cropKey),
     ]);
   }, [setPageUrl, setCropUrl]);
+
+  // Build the QR decoder as soon as the app mounts.
+  //
+  // Nothing is fetched — the wasm is bytes already in this bundle — so this
+  // cannot fail on a bad connection and there is no window in which the app is
+  // up and the decoder is not. It is started here only so the compile is paid
+  // while the student is still reading the page rather than after their first
+  // photograph. `registerAndCropPage` awaits it regardless, so a mount that
+  // never runs this costs a few tens of milliseconds and nothing else; the
+  // rejection is swallowed for the same reason.
+  useEffect(() => {
+    initQrReader().catch(() => {});
+  }, []);
 
   // Mobile detection
   useEffect(() => {

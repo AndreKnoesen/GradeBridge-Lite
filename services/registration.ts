@@ -71,6 +71,12 @@ import { MarkCandidate, findMarksInWindow } from './markDetect';
 import { QrReading, decodePageQrCandidates } from './qrDecode';
 import { Rgba, rotateGray, toGray } from './raster';
 
+// Re-exported, not merely imported. `registerPage` is synchronous and the
+// decoder behind it is a wasm module that has to be built first, so every
+// consumer of this module has a precondition to satisfy, and it should not have
+// to know which file the decoder lives in to satisfy it.
+export { initQrReader, qrReaderReady } from './qrDecode';
+
 export type RegistrationStatus = 'ok' | 'degraded' | 'no_qr' | 'too_few_marks' | 'residual';
 
 export interface RegistrationResult {
@@ -393,6 +399,63 @@ const registerAgainstQr = (
   // in the same photograph are three perfect false fiducials. Masking only the
   // sheet being registered left them in play, and on two real captures the fit
   // chose them and landed 125 mm out while reporting four marks found.
+  //
+  // **WHAT THIS ACTUALLY MASKS, because the sentence above overstates it.** The
+  // exclusion is `qrBounds` of each symbol's own corners plus a 4 mm margin —
+  // the QR keep-out and nothing else. It covers a neighbouring sheet's three
+  // FINDER PATTERNS. It has never covered a neighbouring sheet's four CORNER
+  // MARKS, which are 5.0 mm printed squares elsewhere on that sheet and are not
+  // excluded by anything here.
+  //
+  // **UNEXERCISED SINCE THE 2026-09-08 DECODER SWAP. Measured 2026-09-08, in
+  // answer to the addendum to WORKORDER_SS_QR_CORNER_REFINE_2026-09-08.md.**
+  //
+  // jsQR returned at most one symbol per call, so a frame holding two sheets
+  // only ever yielded both because the quadrant rung cut them apart. zxing
+  // returns every symbol it finds from one call — **and it does return two when
+  // two are legible**, confirmed on a synthesised two-sheet frame. What is true
+  // is narrower and is about the photographs, not the decoder: across all 58
+  // this project holds, no second sheet's code is legible enough to decode, so
+  // `allReadings` has one element every time and this line cannot differ from
+  // masking `qr` alone. **Unexercised on present evidence, not unreachable.**
+  //
+  // On `cap04`, the one capture where the swap unmasks anything — jsQR read
+  // pages 2 and 3 from two quadrants, zxing reads only page 3 — the outcome is
+  // identical to within 1e-9 either way: 4 marks NW+NE+SW+SE, 0.4162 mm, ok.
+  // Same on `android05` and `android11`; on `android04` jsQR read nothing at
+  // all, so it masked nothing there either.
+  //
+  // **Does the held-out reprojection check catch a fit that took a neighbour's
+  // fiducials? No, and it never could.** Six such fits were forced and measured;
+  // every one reported `heldOut` = 0.0000 mm and was refused by the QR residual
+  // instead, at 46.6, 50.7, 72.7, 102.8, 174.6 and 223.9 mm against a 1.0 mm
+  // budget. The reason is structural: the loop below skips any declined
+  // candidate more than `HELDOUT_MAX_MM` (10.0) from one of THIS fit's own
+  // predicted corners, and a fit that has gone to another sheet puts the real
+  // marks 37 to 224 mm away — measured at all four corners. **The held-out check
+  // is a local check.** It catches a fit that is nearly right and discarded a
+  // nearby mark, which is `ios2_05` at 3.162 mm. It is not a foreign-sheet
+  // guard and must not be relied on as one.
+  //
+  // **What refuses a foreign-sheet fit is `scoreFit`** — the QR reprojection
+  // residual, measured against evidence no fit ever consumes — and it is exact:
+  // for a perfect four-mark fit onto a sheet displaced 223.9 mm the residual is
+  // 223.9 mm. The residual IS the displacement, so a foreign-sheet fit cannot
+  // come under a 1 mm budget unless the foreign sheet is within 1 mm of exactly
+  // overlapping the subject. That defence is untouched by the decoder swap.
+  //
+  // **And the 125 mm failure recorded above was a refusal, not a bad crop.** A
+  // 125 mm residual is 125x the budget: `usable` false, the student asked for
+  // the page again. The harm was a good page rejected, not a wrong rectangle
+  // shipped, which is a much smaller thing than the wording suggests.
+  //
+  // So: keep it, and know what it is. It is redundancy over `scoreFit` and
+  // `arrangementIsPlausible`, both of which are unaffected by the decoder. What
+  // went away is not a defence but the evidence for one — nothing in the suite
+  // would notice if this line stopped working. Do not delete it on the strength
+  // of that silence: the hazard is a property of the page format and has not
+  // gone anywhere. A capture that decodes two GradeBridge symbols in one frame
+  // would restore the evidence; `cap04` under jsQR was that capture.
   const exclude = allReadings.map(r =>
     qrBounds(QR_CORNER_KEYS.map(k => inUpright(r.corners[k])), QR_KEEPOUT_MARGIN_MM * pxPerMm));
 

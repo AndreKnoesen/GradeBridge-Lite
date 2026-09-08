@@ -65,6 +65,12 @@ const mdet = await loadModule('services/markDetect.ts', 'markDetect.mjs');
 const pkg = await loadModule('services/submissionPackage.ts', 'submissionPackage.mjs');
 const crypto = await loadModule('cryptoService.ts', 'cryptoService2.mjs');
 
+// Each bundle carries its own copy of the decoder's module state, so both the
+// one that decodes directly and the one that registers have to be built. See
+// the note in services/registration.ts.
+await qrd.initQrReader();
+await reg.initQrReader();
+
 console.log('\nStudent Submission — registration and crop\n');
 
 const { map: fixture, manifest } = await ensureCaptures();
