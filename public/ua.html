@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Browser information</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5c5c5c;
+    --line: #d8d8d8;
+    --panel: #f6f6f6;
+    --accent: #0b6ea8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181a;
+      --fg: #ececec;
+      --muted: #a2a2a2;
+      --line: #34383c;
+      --panel: #1f2225;
+      --accent: #6fc2ef;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px 16px 48px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 12px; font-weight: 600; }
+  p { margin: 0 0 16px; color: var(--muted); }
+  h2 {
+    font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 28px 0 8px;
+  }
+  #ua {
+    display: block; width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    font: 15px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  button {
+    margin-top: 12px;
+    font: inherit; font-weight: 600;
+    color: #fff; background: var(--accent);
+    border: 0; border-radius: 8px;
+    padding: 12px 18px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  button:active { opacity: 0.8; }
+  #copied { margin-left: 10px; font-size: 0.9rem; color: var(--muted); }
+  dl { margin: 0; border-top: 1px solid var(--line); }
+  div.row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 10px 2px; border-bottom: 1px solid var(--line);
+  }
+  dt { color: var(--muted); font-size: 0.95rem; }
+  dd {
+    margin: 0; text-align: right;
+    font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-word;
+  }
+  footer { margin-top: 28px; font-size: 0.88rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Browser information</h1>
+  <p>
+    This page shows what your browser says about itself. It is here to help
+    diagnose display problems. Nothing on this page is saved and nothing is
+    sent anywhere &mdash; the text below is read from your browser and shown
+    to you, and that is all it does. If you opened this page by mistake, you
+    can close it.
+  </p>
+
+  <h2>Browser identification</h2>
+  <div id="ua">&hellip;</div>
+  <button id="copy" type="button">Copy this text</button><span id="copied" role="status"></span>
+
+  <h2>Additional details</h2>
+  <dl>
+    <div class="row"><dt>Platform</dt><dd id="platform">&hellip;</dd></div>
+    <div class="row"><dt>Device memory</dt><dd id="memory">&hellip;</dd></div>
+    <div class="row"><dt>Processor cores</dt><dd id="cores">&hellip;</dd></div>
+  </dl>
+
+  <footer>
+    These details are reported by every browser to every site it visits. They
+    describe the software, not the person using it.
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var NOT_REPORTED = 'not reported';
+
+  // Every reader is wrapped: a browser may leave a property undefined, and a
+  // hardened one may throw when it is read. Either way the row says
+  // "not reported" and the rest of the page still renders. This page exists to
+  // be read on the very browsers most likely to behave oddly, so nothing here
+  // may be allowed to take the page down with it.
+  function read(get) {
+    try {
+      var v = get();
+      if (v === undefined || v === null || v === '') return NOT_REPORTED;
+      return String(v);
+    } catch (e) {
+      return NOT_REPORTED;
+    }
+  }
+
+  function put(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  var ua = read(function () { return navigator.userAgent; });
+
+  put('ua', ua);
+  put('platform', read(function () { return navigator.platform; }));
+  put('memory', read(function () {
+    var m = navigator.deviceMemory;
+    return (typeof m === 'number') ? m + ' GB' : m;
+  }));
+  put('cores', read(function () { return navigator.hardwareConcurrency; }));
+
+  // Selecting the text is the fallback that works everywhere, including where
+  // the clipboard is unavailable: the person can then copy it by hand with the
+  // usual gesture. It runs first so that a clipboard failure still leaves the
+  // text selected and ready.
+  function selectUa() {
+    try {
+      var node = document.getElementById('ua');
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function say(message) {
+    put('copied', message);
+  }
+
+  var button = document.getElementById('copy');
+  if (button) {
+    button.addEventListener('click', function () {
+      var selected = selectUa();
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ua).then(
+            function () { say('Copied.'); },
+            function () { say(selected ? 'Selected \u2014 copy it now.' : 'Select the text above to copy it.'); }
+          );
+          return;
+        }
+      } catch (e) { /* fall through to the manual route below */ }
+
+      try {
+        if (document.execCommand && document.execCommand('copy')) {
+          say('Copied.');
+          return;
+        }
+      } catch (e) { /* fall through */ }
+
+      say(selected ? 'Selected \u2014 copy it now.' : 'Select the text above to copy it.');
+    });
+  }
+})();
+</script>
+</body>
+</html>

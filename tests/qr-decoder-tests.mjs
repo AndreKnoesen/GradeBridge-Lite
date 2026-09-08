@@ -123,6 +123,22 @@ if (!existsSync(distDir)) {
   check('dist/ emits no .wasm asset at all',
     !distFiles.some(p => extname(p) === '.wasm'),
     distFiles.filter(p => extname(p) === '.wasm').join(', '));
+
+  // `public/` is copied into `dist/` verbatim by Vite, and until `ua.html` was
+  // added the only thing in there was `.nojekyll` — a file whose absence breaks
+  // nothing that anyone would notice quickly. So the copy step has never had a
+  // check, and `public/ua.html` is a diagnostics page whose ONLY failure mode is
+  // silence: if a `publicDir` setting, a config change or a bundler upgrade
+  // stopped the copy, the page would 404 and nobody would learn of it until they
+  // opened the link, probably in the middle of diagnosing something else.
+  //
+  // Asserted at the exact path the published URL resolves to, not merely
+  // somewhere under `dist/`: `base` is `/GradeBridge-Student-Submission/`, so
+  // the page is only reachable if it sits at the root of the built output.
+  const uaPage = join(distDir, 'ua.html');
+  check('dist/ carries the ua.html diagnostics page at its root',
+    existsSync(uaPage) && statSync(uaPage).size > 0,
+    existsSync(uaPage) ? 'present but empty' : 'missing — is public/ still being copied?');
 }
 
 // =====================================================
