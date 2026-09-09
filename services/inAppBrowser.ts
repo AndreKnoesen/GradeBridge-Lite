@@ -1,21 +1,49 @@
 // =====================================================
 // Is the student inside an app's built-in browser?
 // =====================================================
-// On 2026-09-04 the first end-to-end run by a person was done inside the Gmail
-// app's in-app browser, because she opened the assignment link from an email on
-// her phone. She did not choose that browser and did not know she was in one.
-//
-// The run completed — sixteen pages, seventeen crops, all registered — but two
+// WHAT WAS OBSERVED on 2026-09-04, and it still stands. The first end-to-end
+// run by a person was done by opening the assignment link from an email on an
+// Android phone, without choosing a browser or knowing one had been chosen. The
+// run completed — sixteen pages, seventeen crops, all registered — but two
 // photographs hit an Android "low memory" popup and **silently failed to load**.
-// The same sixteen pages, on the same phone, at the same 9% free storage, in
-// Chrome, produced no popup at all. So the constraint is the WebView, not the
-// app and not the phone: an Android WebView runs on a smaller memory budget
-// than the browser it looks like.
+// The same sixteen pages, on the same phone, at the same 9% free storage, opened
+// deliberately in Chrome, produced no popup at all.
 //
-// That is the default path, not an edge case. A student taps a link in Canvas,
-// in Gmail, or in a messaging app and lands in a WebView without ever choosing
-// a browser — and the student most likely to hit it is the one who does not
-// read instructions, which is exactly the student a written note will not reach.
+// WHAT WAS INFERRED FROM IT, and is no longer supported. The comment here used
+// to continue: *"So the constraint is the WebView, not the app and not the
+// phone: an Android WebView runs on a smaller memory budget than the browser it
+// looks like."* **That inference is withdrawn as of 2026-09-08.** The user agent
+// was never captured on 2026-09-04, and the whole rule table below was built
+// from published user agent shapes rather than from a measured string.
+//
+// THE FIRST REAL STRING THIS PROJECT HAS, captured 2026-09-08 by a tester
+// opening the link from the Gmail app on Android, exactly as the 2026-09-04 run
+// was done:
+//
+//   Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko)
+//   Chrome/152.0.0.0 Mobile Safari/537.36
+//
+// **There is no `wv` token.** `(Linux; Android 10; K)` is Chrome's reduced user
+// agent, not a WebView's. Gmail hands links to an Android Custom Tab, which IS
+// Chrome — so the rule below correctly did not fire, and the notice was
+// correctly absent. The detector was right; the paragraph explaining why it
+// existed was wrong.
+//
+// **So the mechanism behind the two lost photographs is now unexplained.** If
+// Gmail hands links to Chrome, the 2026-09-04 session was probably Chrome too,
+// and Chrome-in-a-Custom-Tab and Chrome standalone are the same engine on the
+// same memory budget. The difference between the two runs remains real and
+// remains unaccounted for. The live suspect is not the browser at all: the page
+// gallery renders sixteen `<img>` and the review step seventeen, none of them
+// lazy (`REPORT_FULL_ASSIGNMENT_2026-09-03` §4), a mechanism that does not care
+// which browser it runs in.
+//
+// **NONE OF THIS WEAKENS THE RULES BELOW, and none were changed.** A student who
+// taps a link in Facebook, Instagram, WeChat, Line or the Google app really does
+// land in an embedded WebView without choosing a browser, and the notice still
+// has that job. What changed is only the stated reason — and how far the notice
+// reaches is a separate open question, since the two apps most likely to carry a
+// course link, Gmail and Canvas, may both hand off to Chrome.
 //
 // WHAT THIS IS: a heuristic over the user agent string. There is no API for it,
 // every method is a guess, and the population changes without notice.
@@ -70,12 +98,19 @@ const RULES: Rule[] = [
   {
     // The single highest-value signal. Chromium stamps `; wv` into the platform
     // section of every Android WebView user agent — `(Linux; Android 14; …; wv)`
-    // — and Chrome for Android never carries it. Gmail, Canvas, Facebook,
-    // Instagram and most Android apps embed a WebView, so this one rule covers
-    // the 2026-09-04 failure and most of its neighbours.
+    // — and Chrome for Android never carries it. Facebook, Instagram and many
+    // Android apps embed a WebView, and this one rule covers all of them.
     //
     // It does not cover Android Custom Tabs: those ARE Chrome, with Chrome's own
     // memory budget, and are correctly not flagged.
+    //
+    // **Corrected 2026-09-08.** This comment used to claim the rule "covers the
+    // 2026-09-04 failure", and it named Gmail and Canvas as WebView embedders.
+    // A captured string (see the header) shows Gmail handing links to a Custom
+    // Tab — `(Linux; Android 10; K)`, no `wv`, plain Chrome — so this rule does
+    // NOT fire there, correctly, and cannot have covered that failure. Canvas is
+    // untested and is no longer claimed either way. **The rule is unchanged**;
+    // only the claim about what it catches was wrong.
     name: 'android-webview',
     test: (ua) => /;\s*wv[);]/i.test(ua),
   },
